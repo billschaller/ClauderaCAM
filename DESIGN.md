@@ -1,0 +1,90 @@
+# ClauderaCAM design
+
+Claude-drivable 2.5D heightmap CAM for the Makera Carvera Air. Born from two
+cut-metal coin jobs (aluminum, then the Ø52 brass Mango) whose CAM was done in
+scattered numpy scripts after FreeCAD's CAM workbench proved programmatically
+hostile. ClauderaCAM consolidates the exact code that cut those coins.
+
+## Scope
+
+STL relief → rough / semi / finish / cutout → physical verification → preview,
+for material that is heightmap-representable (no undercuts).
+Explicitly NOT general 3-axis CAM: no rest machining, no undercut awareness,
+no holder collision — that is Fusion's job.
+
+## Architecture
+
+```
+job TOML ──► job.py ──► engine.py ──────────► emit.py ──► .nc
+                          │  heightmap.py (STL → z-buffer raster)
+                          │  offset.py    (ball/flat tool offset surfaces)
+                          │  ops/rough    (layered flat, disc boundary)
+                          │  ops/raster   (ball serpentine, semi+finish)
+                          │  ops/cutout   (spiral ramp + tabs)
+                          ▼
+        simulate.py (sequential stock carve) ◄── the .nc, not the intent
+                          │
+              verify.py (gate)   preview.py (hillshade)   viewer/ (live 3D app)
+                          ▲
+       mcp_server.py / cli.py — same library, two frontends
+```
+
+The MCP server is the primary interface (tools: load_job, generate, verify,
+preview, view). There is deliberately NO machine-upload tool for now (user
+decision 2026-07-27): verified .nc files reach the Carvera only by hand.
+The viewer is a localhost app (threaded HTTP server + three.js frontend)
+that polls the latest simulated stock and verification results — re-running
+verify updates the open tab live.
+
+## Requirements (each traced to a real incident)
+
+1. **Toolpath boundaries are shapes, not boxes.** FreeCAD's `BoundBox=Stock`
+   rough rastered the full square — tool edge within 1.7mm of the corners
+   where the clamps sat. Ops take a disc (later: arbitrary region) boundary.
+2. **Fixturing is a first-class job object.** `[fixture] keepout_radius`
+   constrains what may be generated AND is verified against the simulated
+   stock. The verifier reports the exact location of any violation.
+3. **Every .nc passes physical stock simulation before metal.** Checks:
+   footprint-dilated lateral rapids vs remaining stock; ball engagement
+   ≤ 0.5mm (a 1mm ball snapped in a pocket the rough couldn't enter before
+   this check existed — gouge-free ≠ safe); model surface machined to the
+   skim plane; field ring cleared; slot floor at depth; fixture keep-out
+   untouched.
+4. **One coordinate convention.** Carve maps world→pixel as
+   `i = round((half−y)·ppm)`, `j = round((x+half)·ppm)`; every analysis mask
+   inverts with `x = j/ppm − half`, `y = half − i/ppm`. A mask that re-derived
+   its center as `(n−1)/2` was 0.075mm off and produced a false FAIL.
+5. **Fully parametric jobs.** Shrinking the coin Ø56.5→52 previously meant
+   editing three generators, the verifier, and hand-splicing four .nc
+   sections. Now: change `[model] radius`, re-run generate + verify.
+6. **Own G-code emission end to end.** The community FreeCAD post interpreted
+   Custom-op F words as mm/s (×60 feeds), emitted float tool numbers,
+   redundant S words, and no spin-up dwell. emit.py enforces the Carvera
+   dialect: G4 P in SECONDS, ≤128-char lines, M5 before M6, `M6 Tn`,
+   `G4 P2` after M3, proven G28 park footer, no arcs (simulator can't check
+   them — the verifier aborts on G2/G3, so the emitter refuses them too).
+7. **Previews render the simulated stock, never the target model.**
+8. **Machine-verified brass parameters** live in jobs/mango.toml: 12k RPM;
+   3.175 flat F300 (0.2 layers, 60% stepover); 2mm ball semi F500 (0.30
+   step, +0.05 allowance); 1mm ball finish (0.09 step); spiral cutout
+   0.15mm/rev; tabs 0.5×2mm; skim 0.15; overcut 0.15 into sacrificial sheet.
+
+## v0 status (2026-07-27)
+
+DONE. Golden test (`tests/golden_mango.py`): the mango job regenerated
+through this library reproduces the toolpaths that cut the physical coin
+**byte-for-byte** (all four ops), and the assembled .nc passes both this
+verifier and the original standalone one. Viewer and MCP smoke-tested.
+
+## Roadmap
+
+- **v1 model placement**: `[model] transform` (scale/rotate/translate the
+  STL in-config) so raw hi3d output doesn't need external prep; auto-derive
+  `floor_z` from the mesh.
+- **v1 tool library**: import the Makera .fctb so ops reference tools by
+  name with feeds/speeds defaults per material.
+- **v1 viewer**: toolpath overlay per op, A/B against target model,
+  per-check highlight (e.g. paint the engagement hotspot).
+- **v2**: adaptive/trochoidal rough option, rest-rough between tools sized
+  from the offset-surface delta (the semi-finish danger-zone logic from
+  coinforge), two-sided jobs with registration features.

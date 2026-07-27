@@ -1,0 +1,92 @@
+# The mango brass coin — ClauderaCAM's golden job. This 40-line file fully
+# describes the cut that produced the Ø52 coin on 2026-07-27; regenerating it
+# must reproduce the verified toolpaths byte-for-byte (tests/golden_mango.py).
+
+[job]
+name = "mango-brass"
+stl = "/home/dad/scratch/carvera/mango-brass/mango-coin-d52.stl"
+out = "../out/mango-brass.nc"
+
+[stock]
+size = 63.75
+thickness = 3.2
+
+[model]
+radius = 26.0     # STL is pre-positioned: XY-centered, top at -skim
+skim = 0.15
+floor_z = -2.193  # relief field (mesh bottom)
+
+[fixture]
+keepout_radius = 29.5   # nothing machined beyond this — clamp zone
+
+[[tool]]
+num = 1
+type = "flat"
+diameter = 3.175
+rpm = 12000
+
+[[tool]]
+num = 2
+type = "ball"
+diameter = 2.0
+rpm = 12000
+
+[[tool]]
+num = 4
+type = "ball"
+diameter = 1.0
+rpm = 12000
+
+[[op]]
+kind = "rough"
+tool = 1
+stepdown = 0.2
+stepover = 1.905      # 60% of diameter
+allowance = 0.2
+boundary_r = 27.75    # tool-center bound -> cleared to 29.3375
+map_half = 29.5
+grid = 0.1
+simplify = 0.01
+feed = 300
+plunge = 150
+
+[[op]]
+kind = "raster"
+label = "semi"
+tool = 2
+stepover = 0.30
+offset = 0.05
+axis = "x"
+grid = 0.05
+margin = 1.6
+bound_extra = 1.0
+simplify = 0.005
+feed = 500
+plunge = 200
+
+[[op]]
+kind = "raster"
+label = "finish"
+tool = 4
+stepover = 0.09
+offset = 0.0
+axis = "y"
+grid = 0.05
+margin = 1.6
+bound_extra = 1.0
+simplify = 0.005
+feed = 500
+plunge = 200
+
+[[op]]
+kind = "cutout"
+tool = 1
+z_start = -1.85
+z_final = -3.35
+ramp = 0.15
+tabs = [45, 135, 225, 315]
+tab_width = 2.0
+tab_top = -2.7
+seg = 128
+feed = 300
+plunge = 150

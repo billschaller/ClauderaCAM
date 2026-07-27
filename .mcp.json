@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "clauderacam": {
+      "command": "/home/dad/scratch/carvera/clauderacam/.venv/bin/python",
+      "args": ["-m", "clauderacam.mcp_server"]
+    }
+  }
+}

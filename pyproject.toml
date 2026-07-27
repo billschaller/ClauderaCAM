@@ -1,0 +1,19 @@
+[project]
+name = "clauderacam"
+version = "0.1.0"
+description = "Claude-drivable 2.5D heightmap CAM for the Makera Carvera Air"
+requires-python = ">=3.11"
+dependencies = ["numpy", "scipy", "pillow", "mcp[cli]"]
+
+[project.scripts]
+clauderacam = "clauderacam.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"clauderacam.viewer" = ["static/*"]
