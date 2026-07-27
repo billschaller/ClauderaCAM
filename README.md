@@ -44,11 +44,32 @@ surface completeness, and the fixture keep-out zone.
 .venv/bin/python tests/golden_mango.py
 ```
 
-Regenerates the mango job and asserts byte-identical toolpaths against the
-G-code that cut the physical coin, then verifies the assembled program.
-Run it after touching anything in `ops/`, `engine.py`, or `heightmap.py`.
-(The golden assets — the coin STL and its reference toolpaths — are the
-maintainer's local files, not distributed here; the test skips without them.)
+Regenerates the mango job (`assets/mango-coin-d52.stl` — yes, that's a real
+cat) and asserts byte-identical toolpaths against the G-code in
+`tests/golden/` that cut the physical coin, then verifies the assembled
+program. Run it after touching anything in `ops/`, `engine.py`, or
+`heightmap.py`.
+
+## Reference suite
+
+```sh
+.venv/bin/python tests/reference_suite.py
+```
+
+`assets/generate_references.py` synthesizes four deterministic shapes, each
+paired with a job in `jobs/` that stresses a different hazard:
+
+| job | exercises |
+|---|---|
+| `terraces` | layered-rough terracing on 0.22mm steps, simplify on flats, cutout with tabs |
+| `dome` | 2mm flat rough (smaller tool = relaxed slope budget), two-ball finish chain, no cutout |
+| `ripple` | 1mm ball finishing **directly** after rough — legal only because every slope is inside the engagement budget |
+| `pocketfield` | graduated feature access: Ø7 pocket (rough enters) down to 1.3mm slots (1mm ball only), depths sized to the engagement limit |
+
+Together with mango these cover the supported tool set: flat 3.175, flat 2.0,
+ball 2.0, ball 1.0 — the geometries validated by cut metal. V-bits and
+tapered ball noses need a conical offset model plus a real-world tip
+engagement limit, so they are roadmap, not shipped guesses.
 
 ## Project law
 

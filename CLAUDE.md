@@ -33,8 +33,9 @@ asserts **byte-identical** toolpaths. Run it after any change to
 An intentional output change requires: (1) an explanation of the numerical
 difference in the commit message, (2) re-verification of the new output,
 (3) explicitly re-blessed reference files. "The diff looks fine" is not one
-of the three. (The golden reference assets are the maintainer's local files
-and are not distributed with the repo; the test skips cleanly without them.)
+of the three. The golden assets live in `assets/` (the coin STL) and
+`tests/golden/` (its cut toolpaths). `tests/reference_suite.py` must also
+pass: four synthetic jobs, each stressing a different hazard.
 
 ## Article IV — One Coordinate Convention
 

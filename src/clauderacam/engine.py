@@ -37,7 +37,30 @@ def path_length(lines: list[str]) -> float:
     return float(L)
 
 
+def op_reach(job: Job, op: dict) -> float:
+    """Outermost radius this op's tool EDGE can touch."""
+    tool = job.tool(op["tool"])
+    if op["kind"] == "rough":
+        return op["boundary_r"] + tool.radius
+    if op["kind"] == "raster":
+        return job.model_radius + op["bound_extra"] + tool.radius
+    if op["kind"] == "cutout":
+        return job.model_radius + tool.diameter
+    raise ValueError(f"unknown op kind: {op['kind']}")
+
+
 def generate_ops(job: Job) -> list[OpResult]:
+    # fixture keep-out constrains GENERATION, not just verification: refuse
+    # any op whose reach crosses it (a reference job's ball footprint once
+    # crossed a keep-out sized only for the rough disc — caught in sim, now
+    # impossible to generate)
+    for op in job.ops:
+        reach = op_reach(job, op)
+        if reach > job.keepout_radius:
+            raise ValueError(
+                f"op '{op.get('label', op['kind'])}' reaches r={reach:.3f} "
+                f"but fixture keep-out starts at r={job.keepout_radius}")
+
     tris = heightmap.load_stl(job.stl)
     hmaps: dict[tuple, np.ndarray] = {}
     offs: dict[tuple, np.ndarray] = {}

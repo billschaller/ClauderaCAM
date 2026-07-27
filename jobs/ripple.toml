@@ -1,0 +1,60 @@
+# Reference: gentle cosine rings — 1mm ball finishing DIRECTLY after the
+# 3.175 rough (no semi pass). Only legal because every slope stays inside the
+# first-ball engagement budget; the reduced 0.15 rough allowance buys margin.
+# Expect the highest passing engagement numbers in the suite.
+
+[job]
+name = "ripple"
+stl = "../assets/generated/ripple.stl"
+out = "../out/ripple.nc"
+
+[stock]
+size = 44.0
+thickness = 3.2
+
+[model]
+radius = 17.0
+skim = 0.15
+floor_z = -1.35
+
+[fixture]
+keepout_radius = 20.4
+
+[[tool]]
+num = 1
+type = "flat"
+diameter = 3.175
+rpm = 12000
+
+[[tool]]
+num = 4
+type = "ball"
+diameter = 1.0
+rpm = 12000
+
+[[op]]
+kind = "rough"
+tool = 1
+stepdown = 0.2
+stepover = 1.905
+allowance = 0.15
+boundary_r = 18.5
+map_half = 20.3
+grid = 0.1
+simplify = 0.01
+feed = 300
+plunge = 150
+
+[[op]]
+kind = "raster"
+label = "finish"
+tool = 4
+stepover = 0.10
+offset = 0.0
+axis = "x"
+grid = 0.05
+margin = 1.6
+bound_extra = 1.0
+simplify = 0.005
+feed = 500
+plunge = 200

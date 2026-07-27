@@ -1,0 +1,85 @@
+# Reference: graduated access — which bit reaches which feature.
+#   big pocket Ø7      rough (2mm flat) enters and clears it
+#   pocket Ø2.2        2mm tools enter, rough footprint barely fits
+#   pocket Ø1.8        only the 1mm ball reaches the floor
+#   slots 1.3 / 1.5mm  only the 1mm ball; depths sized so its first-contact
+#                      engagement stays under the 0.5mm limit
+# Deeper narrow features need depth-stepped clearing — a roadmap op.
+
+[job]
+name = "pocketfield"
+stl = "../assets/generated/pocketfield.stl"
+out = "../out/pocketfield.nc"
+
+[stock]
+size = 40.0
+thickness = 3.2
+
+[model]
+radius = 16.0
+skim = 0.15
+floor_z = -0.7
+
+# keep-out must clear every op's reach: rough 16.5+1.0=17.5, ball rasters
+# 16+1.0+1.0=18.0 — the engine refuses to generate ops that cross it
+[fixture]
+keepout_radius = 18.2
+
+[[tool]]
+num = 3
+type = "flat"
+diameter = 2.0
+rpm = 12000
+
+[[tool]]
+num = 2
+type = "ball"
+diameter = 2.0
+rpm = 12000
+
+[[tool]]
+num = 4
+type = "ball"
+diameter = 1.0
+rpm = 12000
+
+[[op]]
+kind = "rough"
+tool = 3
+stepdown = 0.2
+stepover = 1.2
+allowance = 0.15
+boundary_r = 16.5
+map_half = 17.6
+grid = 0.1
+simplify = 0.01
+feed = 300
+plunge = 150
+
+[[op]]
+kind = "raster"
+label = "semi"
+tool = 2
+stepover = 0.30
+offset = 0.05
+axis = "x"
+grid = 0.05
+margin = 1.6
+bound_extra = 1.0
+simplify = 0.005
+feed = 500
+plunge = 200
+
+[[op]]
+kind = "raster"
+label = "finish"
+tool = 4
+stepover = 0.09
+offset = 0.0
+axis = "y"
+grid = 0.05
+margin = 1.6
+bound_extra = 1.0
+simplify = 0.005
+feed = 500
+plunge = 200

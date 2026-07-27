@@ -1,23 +1,22 @@
-# The mango brass coin — ClauderaCAM's golden job. This 40-line file fully
-# describes the cut that produced the Ø52 coin on 2026-07-27; regenerating it
-# must reproduce the verified toolpaths byte-for-byte (tests/golden_mango.py).
+# Reference: stepped cone — layered-rough terracing, simplify on flats,
+# ball engagement on 0.22mm step walls, spiral cutout with tabs.
 
 [job]
-name = "mango-brass"
-stl = "../assets/mango-coin-d52.stl"
-out = "../out/mango-brass.nc"
+name = "terraces"
+stl = "../assets/generated/terraces.stl"
+out = "../out/terraces.nc"
 
 [stock]
-size = 63.75
+size = 40.0
 thickness = 3.2
 
 [model]
-radius = 26.0     # STL is pre-positioned: XY-centered, top at -skim
+radius = 15.0
 skim = 0.15
-floor_z = -2.193  # relief field (mesh bottom)
+floor_z = -2.35
 
 [fixture]
-keepout_radius = 29.5   # nothing machined beyond this — clamp zone
+keepout_radius = 18.5
 
 [[tool]]
 num = 1
@@ -41,10 +40,10 @@ rpm = 12000
 kind = "rough"
 tool = 1
 stepdown = 0.2
-stepover = 1.905      # 60% of diameter
+stepover = 1.905
 allowance = 0.2
-boundary_r = 27.75    # tool-center bound -> cleared to 29.3375
-map_half = 29.5
+boundary_r = 16.7
+map_half = 18.5
 grid = 0.1
 simplify = 0.01
 feed = 300
@@ -68,7 +67,7 @@ plunge = 200
 kind = "raster"
 label = "finish"
 tool = 4
-stepover = 0.09
+stepover = 0.10
 offset = 0.0
 axis = "y"
 grid = 0.05
@@ -81,7 +80,7 @@ plunge = 200
 [[op]]
 kind = "cutout"
 tool = 1
-z_start = -1.85
+z_start = -2.0
 z_final = -3.35
 ramp = 0.15
 tabs = [45, 135, 225, 315]
