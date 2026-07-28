@@ -1,13 +1,13 @@
-# The two-sided mango coin — Ø40, brass, machined front AND back with
+# The two-sided mango coin — Ø44, brass, machined front AND back with
 # pin-and-flip registration (designed 2026-07-28; decisions in DESIGN.md).
 #
-# LOCAL-ASSET JOB: the STLs live in the operator's home directory (188MB
+# LOCAL-ASSET JOB (Ø44 models, 2026-07-28): STLs in the operator's home (~130-190MB
 # each) and are not part of the repo; CI does not run this job — the
 # committed twoside-ref job covers the mode.
 #
 # Physical setup: 63.75mm square brass blank, 3.2mm, on 1/2" MDF
 # spoilboard. Side 1 machines the front art + moat, spot-faces and
-# peck-drills two Ø2 holes at (0, ±26) through the brass into the MDF
+# peck-drills two Ø2 holes at (0, ±27.5) through the brass into the MDF
 # (Ø2.0 twist drill, Spare Tools case — MEASURE its reach-to-shank-step
 # and update flute_length before cutting). Flip LEFT-RIGHT (about the Y
 # axis) onto two Ø2×12 dowel pins. Side 2 machines the back art + moat,
@@ -32,7 +32,7 @@ name = "brass"
 keepout_radius = 29.5
 
 [model]
-radius = 20.0
+radius = 22.0
 skim = 0.15
 z = "relief"        # STLs are z-up reliefs (base 0); floor_z derived
 
@@ -44,7 +44,7 @@ flip_axis = "y"
 [pins]
 diameter = 2.0
 length = 12.0
-positions = [[0.0, 26.0], [0.0, -26.0]]
+positions = [[0.0, 27.5], [0.0, -27.5]]
 drill_tool = 5
 spot_tool = 1
 peck = 0.8
@@ -93,8 +93,8 @@ tool = 1
 stepdown = 0.2
 stepover = 1.905
 allowance = 0.2
-boundary_r = 20.6     # art + moat only; the ring stays full thickness
-map_half = 22.5
+boundary_r = 22.6     # art + moat only; the ring stays full thickness
+map_half = 24.5
 grid = 0.1
 simplify = 0.01
 feed = 300
@@ -149,8 +149,8 @@ tool = 1
 stepdown = 0.2
 stepover = 1.905
 allowance = 0.2
-boundary_r = 21.9     # wider moat: must clear the cutout slot's reach
-map_half = 23.7
+boundary_r = 23.7     # wider moat: must clear the cutout slot's reach
+map_half = 25.5
 grid = 0.1
 simplify = 0.01
 feed = 300
