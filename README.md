@@ -53,7 +53,12 @@ stage-detail card (removed volume, tool contact, windowed chip load and
 cutting power, each drawn as a utilization bar against its limit), the
 tool library with the active stage's tool marked, and the full check
 list. Claude runs the job; the viewer exists so a human — including a
-CAM expert — can audit it.
+CAM expert — can audit it. Each session offers a **download** of its
+program — serving the exact bytes that were verified (stored at push
+time; a later regenerate can never hand out unverified toolpaths under
+a displayed PASS), with an explicit are-you-sure on anything not
+cleared for metal. Downloading to a human hand is the Article VII
+workflow: the file still reaches the machine only by that hand.
 
 ## CLI
 

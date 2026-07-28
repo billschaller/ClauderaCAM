@@ -84,6 +84,9 @@ class Check:
 class Report:
     checks: list[Check]
     carve: CarveResult | None
+    program: str = ""   # the EXACT text this report judged — downloads
+    #                     serve these bytes, never the (possibly newer)
+    #                     file on disk
 
     @property
     def ok(self) -> bool:
@@ -275,7 +278,8 @@ def verify(job: Job, nc_path=None) -> Report:
 
     # dialect lint on the raw program text (spindle-state semantics the
     # geometric simulator cannot see)
-    problems = lint_program(open(nc_path).read().splitlines())
+    program_text = open(nc_path).read()
+    problems = lint_program(program_text.splitlines())
     checks.append(Check("dialect lint", float(len(problems)), "0 problems",
                         not problems, "; ".join(problems[:3])))
 
@@ -284,4 +288,4 @@ def verify(job: Job, nc_path=None) -> Report:
     for pc in physics_checks(job, res.metrics):
         checks.append(Check(pc.name, pc.value, pc.limit, pc.ok, pc.detail))
 
-    return Report(checks, res)
+    return Report(checks, res, program=program_text)

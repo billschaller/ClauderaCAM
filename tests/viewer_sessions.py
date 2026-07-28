@@ -116,9 +116,29 @@ check("same path joins the same session",
       json.loads(resp)["sid"] == sid)
 ripple = jobmod.load(REPO / "jobs" / "ripple.toml")
 emit.write(ripple, engine.generate_ops(ripple))
-pushed = client.push_job(ripple, verifymod.verify(ripple))
+ripple_report = verifymod.verify(ripple)
+pushed = client.push_job(ripple, ripple_report)
 check("client.push_job lands a second session", pushed is not None
       and pushed[1] != sid, str(pushed))
+
+print("program download (the verified bytes, never the live file)")
+rsid = pushed[1]
+req = urllib.request.Request(url + f"api/session/{rsid}/program")
+with urllib.request.urlopen(req, timeout=10) as r:
+    disp = r.headers.get("Content-Disposition", "")
+    got = r.read()
+check("download serves the exact verified bytes",
+      got == ripple_report.program.encode(), f"{len(got)} bytes")
+check("download names the .nc file", "ripple" in disp, disp)
+original = ripple.out.read_bytes()
+ripple.out.write_bytes(b"G21\nMUTATED AFTER VERIFY\n")
+with urllib.request.urlopen(url + f"api/session/{rsid}/program",
+                            timeout=10) as r:
+    got2 = r.read()
+ripple.out.write_bytes(original)
+check("disk mutation cannot reach the download", got2 == got)
+code, _ = get(url + f"api/session/{sid}/program")
+check("programless session -> 404", code == 404, str(code))
 code, resp = get(url + "api/sessions")
 rows = json.loads(resp)["sessions"]
 check("two sessions listed", len(rows) == 2, str(len(rows)))

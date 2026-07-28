@@ -62,15 +62,17 @@ def push_job(job, report) -> tuple[str, str] | None:
         return None
     meta, stocks = stages.viewer_payload(job, report)
     blobs = server.encode_stocks(stocks)
+    program = report.program.encode()
     if server.running():
-        sid = server.push_session(meta["path"], meta, blobs)
+        sid = server.push_session(meta["path"], meta, blobs, program)
         return f"http://localhost:{server.current_port()}/", sid
     found = discover()
     if not found:
         return None
     head = json.dumps({"meta": meta,
-                       "stage_bytes": [len(b) for b in blobs]}).encode()
-    body = head + b"\n" + b"".join(blobs)
+                       "stage_bytes": [len(b) for b in blobs],
+                       "program_bytes": len(program)}).encode()
+    body = head + b"\n" + b"".join(blobs) + program
     req = urllib.request.Request(
         found["url"] + "api/push?token=" +
         urllib.parse.quote(found["token"]),

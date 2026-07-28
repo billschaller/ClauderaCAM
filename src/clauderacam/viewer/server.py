@@ -63,6 +63,8 @@ class Session:
     error: str = ""
     meta: dict | None = None
     stocks: list[bytes] = field(default_factory=list)
+    program: bytes = b""      # the VERIFIED program bytes — downloads
+    #                           serve these, never the live file on disk
     version: str | None = None
     updated: float = 0.0
 
@@ -89,9 +91,11 @@ def encode_stocks(stocks: list[np.ndarray]) -> list[bytes]:
     return [np.ascontiguousarray(s.astype("<f4")).tobytes() for s in stocks]
 
 
-def push_session(path: str, meta: dict, stocks: list[bytes]) -> str:
+def push_session(path: str, meta: dict, stocks: list[bytes],
+                 program: bytes = b"") -> str:
     """Create or update (JOIN) the session for a job path. stocks are the
-    already-encoded little-endian f32 stage grids. Returns the sid."""
+    already-encoded little-endian f32 stage grids; program is the exact
+    verified .nc text. Returns the sid."""
     path = str(Path(path).resolve())
     sid = _sid_for(path)
     with _lock:
@@ -102,8 +106,9 @@ def push_session(path: str, meta: dict, stocks: list[bytes]) -> str:
         s.label = meta.get("job") or s.label
         s.status, s.error = "ready", ""
         s.meta = {**meta, "path": path, "version": v, "stale": False,
-                  "nstages": len(stocks)}
+                  "nstages": len(stocks), "has_program": bool(program)}
         s.stocks = stocks
+        s.program = program
         s.version = v
         s.updated = time.time()
         _sessions[sid] = s
@@ -185,7 +190,8 @@ def _load_in_background(path: Path) -> str:
                         continue
                     meta, stocks = stages.viewer_payload(side_j, rep)
                     push_session(str(side_j.path), meta,
-                                 encode_stocks(stocks))
+                                 encode_stocks(stocks),
+                                 rep.program.encode())
                 close_session(sid)
                 return
             j = jobmod.load(path)
@@ -200,7 +206,8 @@ def _load_in_background(path: Path) -> str:
                               (report.checks[0].detail or "unparseable"))
                 return
             meta, stocks = stages.viewer_payload(j, report)
-            push_session(str(path), meta, encode_stocks(stocks))
+            push_session(str(path), meta, encode_stocks(stocks),
+                         report.program.encode())
         except Exception as e:  # surfaced in the session row, not lost
             error_session(str(path), str(e))
 
@@ -277,6 +284,28 @@ class Handler(BaseHTTPRequestHandler):
                         return
                     self._send(200, "application/octet-stream", body)
                     return
+                if what == "program":
+                    # the VERIFIED bytes stored at push time — never the
+                    # live file (a regenerate must not hand out unverified
+                    # toolpaths under a displayed PASS)
+                    if not s.program:
+                        self._send(404, "text/plain", b"no program stored")
+                        return
+                    name = (s.meta or {}).get("nc") or "program.nc"
+                    try:
+                        self.send_response(200)
+                        self.send_header("Content-Type", "text/plain")
+                        self.send_header(
+                            "Content-Disposition",
+                            f'attachment; filename="{name}"')
+                        self.send_header("Content-Length",
+                                         str(len(s.program)))
+                        self.send_header("Cache-Control", "no-store")
+                        self.end_headers()
+                        self.wfile.write(s.program)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                    return
             self._send(404, "text/plain", b"not found")
         elif path.startswith("/static/"):
             f = STATIC / Path(path).name
@@ -331,14 +360,17 @@ class Handler(BaseHTTPRequestHandler):
                 head, _, blob = body.partition(b"\n")
                 h = json.loads(head)
                 meta, lens = h["meta"], h["stage_bytes"]
+                plen = int(h.get("program_bytes", 0))
                 stocks, off = [], 0
                 for ln in lens:
                     stocks.append(blob[off:off + ln])
                     off += ln
+                program = blob[off:off + plen]
+                off += plen
                 if off != len(blob) or any(len(s) != ln for s, ln
                                            in zip(stocks, lens)):
                     raise ValueError("stock byte count mismatch")
-                sid = push_session(meta["path"], meta, stocks)
+                sid = push_session(meta["path"], meta, stocks, program)
             except (KeyError, ValueError, json.JSONDecodeError) as e:
                 self._json({"error": str(e)}, 400)
                 return

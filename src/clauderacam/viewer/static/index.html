@@ -42,6 +42,12 @@
   .badge.stale{ color: #3a2c05; background: var(--warn); }
   #jobfacts { color: var(--dim); margin-top: 6px; }
   #jobfacts b { color: var(--fg); font-weight: 600; }
+  #dl { display: inline-block; margin-top: 8px; padding: 4px 12px;
+        border-radius: 6px; text-decoration: none; font-weight: 600;
+        color: var(--fg); background: #2c3a55; border: 1px solid #3d5a99; }
+  #dl:hover { background: #34466a; }
+  #dl.warn { background: #4a3510; border-color: #7a5a1a;
+             color: var(--warn); }
 
   /* stage list */
   .stage { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
@@ -146,6 +152,7 @@
       <div id="head"><span id="live"></span><span id="jobname">–</span>
         <span id="verdict" class="badge"></span></div>
       <div id="jobfacts"></div>
+      <a id="dl" href="#" style="display:none">⬇ download program</a>
     </div>
     <div class="card" id="stagesCard"><h2>Stages</h2><div id="stages"></div></div>
     <div class="card" id="detailCard"><h2>Stage detail</h2>

@@ -200,6 +200,24 @@ function renderHeader() {
     `<span style="color:var(--dimmer)">(est, + tool changes)</span>` +
     (meta.stale ? `<br><span style="color:var(--warn)">toolpaths were ` +
       `regenerated — re-run verify</span>` : '');
+  const dl = $('dl');
+  if (meta.has_program && meta.sid) {
+    dl.style.display = 'inline-block';
+    dl.href = `/api/session/${encodeURIComponent(meta.sid)}/program`;
+    const clear = meta.ok === true && !meta.stale;
+    dl.className = clear ? '' : 'warn';
+    dl.textContent = clear
+      ? `⬇ download ${meta.nc ?? 'program'} (verified PASS)`
+      : `⬇ download ${meta.nc ?? 'program'} — NOT cleared for metal`;
+    // these are the bytes the verdict judged, not the live file; still,
+    // never let a FAIL/STALE program leave without an explicit yes
+    dl.onclick = clear ? null : (e) => {
+      if (!confirm('This program did NOT pass verification (or is ' +
+                   'stale). Download anyway?')) e.preventDefault();
+    };
+  } else {
+    dl.style.display = 'none';
+  }
 }
 
 function renderStages() {
