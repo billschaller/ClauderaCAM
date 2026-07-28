@@ -9,7 +9,7 @@ from __future__ import annotations
 from mcp.server.fastmcp import FastMCP, Image
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
-    stages as stagesmod, verify as verifymod
+    stages as stagesmod, twosided as twomod, verify as verifymod
 from .viewer import client as viewer
 
 mcp = FastMCP("clauderacam")
@@ -50,10 +50,36 @@ def load_job(path: str) -> str:
     return "\n".join(lines)
 
 
+def _twosided_verify_text(ts, reports) -> str:
+    lines = []
+    for side in ("front", "back"):
+        rep = reports[side]
+        j = ts.front if side == "front" else ts.back
+        lines.append(f"=== {side} ({j.out.name}) ===")
+        lines.append(rep.text())
+        if rep.carve is not None:
+            lines += stagesmod.stage_lines(stagesmod.stage_stats(j, rep.carve))
+            pushed = viewer.push_job(j, rep)
+            if pushed:
+                lines.append(f"viewer session: {pushed[0]}#{pushed[1]}")
+    return "\n".join(lines)
+
+
 @mcp.tool()
 def generate(path: str) -> str:
-    """Generate all toolpaths for a job and write the .nc program.
+    """Generate all toolpaths for a job and write the .nc program(s).
     Returns per-op stats. Always run `verify` before cutting."""
+    if twomod.is_twosided(path):
+        ts = twomod.load(path)
+        out = []
+        for side, ops in twomod.generate(ts).items():
+            j = ts.front if side == "front" else ts.back
+            viewer.invalidate(j)
+            out += [f"[{side}] {r.label}: T{r.tool} {len(r.lines)} moves, "
+                    f"~{r.est_min:.0f} min" for r in ops]
+            out.append(f"[{side}] wrote {j.out}")
+        out.append("NOT verified yet — run verify before cutting.")
+        return "\n".join(out)
     j = _job(path)
     ops = engine.generate_ops(j)
     out = emit.write(j, ops)
@@ -71,7 +97,12 @@ def generate(path: str) -> str:
 def verify(path: str) -> str:
     """Physical stock-simulation verification of the job's .nc (rapids,
     ball engagement, surface completeness, fixture keep-out). The file is
-    cleared for metal only if this returns PASS. Updates the viewer if open."""
+    cleared for metal only if this returns PASS. Updates the viewer if open.
+    Two-sided jobs verify both sides; the back is checked against the
+    carried (flipped) front stock."""
+    if twomod.is_twosided(path):
+        ts = twomod.load(path)
+        return _twosided_verify_text(ts, twomod.verify(ts))
     j = _job(path)
     report = verifymod.verify(j)
     note = _push_viewer(j, report)
@@ -92,7 +123,12 @@ def preview(path: str):
 def view(path: str, port: int = 8323) -> str:
     """Open (or join) this job's session in the live viewer app: starts a
     server only if none is running anywhere, verifies the job, and pushes
-    its state. Returns the session URL to open in a browser."""
+    its state. Returns the session URL to open in a browser. Two-sided
+    jobs open one session per side."""
+    if twomod.is_twosided(path):
+        ts = twomod.load(path)
+        viewer.ensure_server(port, jobs_dir=ts.path.parent)
+        return _twosided_verify_text(ts, twomod.verify(ts))
     j = _job(path)
     url, started = viewer.ensure_server(port, jobs_dir=j.path.parent)
     report = verifymod.verify(j)

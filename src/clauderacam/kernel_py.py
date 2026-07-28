@@ -11,7 +11,15 @@ tests/kernel_parity.py enforces it):
     are tested footprint-max-stock vs z
   - cutting contact: max over the tool footprint of stock - (z + drop),
     measured against the MOVE-START snapshot (a plunge carves its own
-    footprint incrementally; per-sample pre-carve is not enough)
+    footprint incrementally; per-sample pre-carve is not enough).
+    Contact uses the INNER footprint (radius - half a pixel): a wall at
+    exactly tool-edge radius — every slot's own walls — is a tangential
+    kiss with ~zero radial engagement, and whether its boundary pixel
+    rounds into the footprint is sub-pixel luck (the twoside reference
+    read its slot wall as a 1.6mm "bite" because rc landed on a half
+    pixel; the mango golden was one alignment away from the same false
+    FAIL). Removal, engagement fraction and rapids keep the full
+    footprint.
   - removed volume: sum over footprint of max(0, stock - (z + drop)) * px²,
     against the LIVE stock (actual removal, no double counting)
   - engagement fraction: removing pixels / footprint pixels, max over samples
@@ -32,10 +40,11 @@ def _kit(dia_mm: float, ball: bool, ppm: float):
     dy, dx = np.mgrid[-r_px:r_px + 1, -r_px:r_px + 1]
     rr = np.hypot(dx, dy) / ppm
     f = rr <= dia_mm / 2 + 1e-9
+    f_in = rr <= dia_mm / 2 - 0.5 / ppm + 1e-9   # contact: real penetration
     R = dia_mm / 2
     drop = (R - np.sqrt(np.maximum(R * R - rr * rr, 0))) if ball \
         else np.zeros_like(rr)
-    return r_px, f, drop.astype(np.float32)
+    return r_px, f, f_in, drop.astype(np.float32)
 
 
 def measure(*, n, ppm, half, step, check,
@@ -73,7 +82,7 @@ def measure(*, n, ppm, half, step, check,
 
     for k in range(nm):
         t = int(tool_idx[k])
-        r_px, foot, drop = kits[t]
+        r_px, foot, foot_in, drop = kits[t]
         rapid = motion[k] == 0
         lateral = (x1[k] != x0[k]) or (y1[k] != y0[k])
         dz = z1[k] - z0[k]
@@ -92,7 +101,7 @@ def measure(*, n, ppm, half, step, check,
             bj0 = max(0, min(jj) - r_px - 2)
             bj1 = min(n, max(jj) + r_px + 3)
             snap = stock[bi0:bi1, bj0:bj1].copy()
-        r_pxs, foots, _ = skits[t]
+        r_pxs, foots, _, _ = skits[t]
         fl = float(flute_len[t])
 
         for t_ in np.linspace(0, 1, max(2, int(L / step) + 1)):
@@ -106,7 +115,7 @@ def measure(*, n, ppm, half, step, check,
             j0, j1b = max(0, j - r_px), min(n, j + r_px + 1)
             fs = (slice(i0 - (i - r_px), i1b - (i - r_px)),
                   slice(j0 - (j - r_px), j1b - (j - r_px)))
-            f, d = foot[fs], drop[fs]
+            f, fi, d = foot[fs], foot_in[fs], drop[fs]
             region = stock[i0:i1b, j0:j1b]
             if not f.any():
                 continue
@@ -121,12 +130,15 @@ def measure(*, n, ppm, half, step, check,
                 live = region[f]
                 if check:
                     sregion = snap[i0 - bi0:i1b - bi0, j0 - bj0:j1b - bj0]
-                    over = float((sregion[f] - surf).max())
-                    if over > 1e-6:
-                        contact_samples[k] += 1
-                        if over > contact[k]:
-                            contact[k] = over
-                            contact_x[k], contact_y[k] = x, y
+                    # contact on the INNER footprint only (see module doc:
+                    # tangential wall kisses are not flank engagement)
+                    if fi.any():
+                        over = float((sregion[fi] - (z + d[fi])).max())
+                        if over > 1e-6:
+                            contact_samples[k] += 1
+                            if over > contact[k]:
+                                contact[k] = over
+                                contact_x[k], contact_y[k] = x, y
                     removed = live - surf
                     removing = removed > 1e-9
                     volume[k] += float(removed[removing].sum()) * px_area

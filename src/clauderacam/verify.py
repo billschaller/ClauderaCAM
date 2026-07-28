@@ -48,6 +48,10 @@ from .simulate import CarveResult, GcodeError, carve_check
 # Full derivation: DESIGN.md "Engagement recalibration".
 BALL_ENGAGE_FRAC = 0.65  # of tool diameter
 MAX_ENGAGE_FLAT = 1.0    # measured max on validated jobs: 0.40 (rough end caps)
+MAX_ENGAGE_DRILL = 1.2   # a peck advances 0.8 into its own hole; drills cut
+#                          full-face by design, so the bound exists to catch
+#                          a runaway peck, not flank flex. PROVISIONAL: no
+#                          pin hole drilled on this machine yet.
 MAX_OVERCUT = 0.5        # below stock bottom (sacrificial board territory)
 GOUGE_TOL = 0.15         # measured max on validated jobs: 0.102
 
@@ -55,8 +59,11 @@ GOUGE_TOL = 0.15         # measured max on validated jobs: 0.102
 def contact_limit(tool) -> float:
     """Per-tool footprint-contact limit (derivation above). Single source —
     used by the gate here and by the per-stage model in stages.py."""
-    return BALL_ENGAGE_FRAC * tool.diameter if tool.type == "ball" \
-        else MAX_ENGAGE_FLAT
+    if tool.type == "ball":
+        return BALL_ENGAGE_FRAC * tool.diameter
+    if tool.type == "drill":
+        return MAX_ENGAGE_DRILL
+    return MAX_ENGAGE_FLAT
 
 
 @dataclass
@@ -126,17 +133,69 @@ def verify(job: Job, nc_path=None) -> Report:
                         f"at {res.shank_at[:2]}, line {res.shank_at[2]}"
                         if res.shank_at else ""))
 
-    depth_limit = -(job.stock_thickness + MAX_OVERCUT)
-    worst_depth = min(res.min_cut_z, float(stock.min()))
-    checks.append(Check("depth floor", worst_depth,
-                        f">= {depth_limit:.3f}", worst_depth >= depth_limit))
-
     # world coords MUST match the carve mapping (see simulate.py docstring)
     yy, xx = np.mgrid[0:n, 0:n]
     xw = xx / ppm - half
     yw = half - yy / ppm
     rr = np.hypot(xw, yw)
     r = job.model_radius
+
+    # pin holes (pindrill ops) are the ONE legal way below the overcut
+    # floor: through the stock into the spoilboard. Everything they exempt
+    # from the depth floor they must themselves account for — position,
+    # depth, and staying clear of the machine bed.
+    pin_specs = [(x, y, op["depth"], job.tool(op["tool"]).radius)
+                 for op in job.ops if op["kind"] == "pindrill"
+                 for x, y in op["positions"]]
+    depth_limit = -(job.stock_thickness + MAX_OVERCUT)
+    if not pin_specs:
+        worst_depth = min(res.min_cut_z, float(stock.min()))
+        checks.append(Check("depth floor", worst_depth,
+                            f">= {depth_limit:.3f}",
+                            worst_depth >= depth_limit))
+    else:
+        m = res.metrics
+        is_drill = np.array([job.tool(int(t)).type == "drill"
+                             for t in m.tool_num])
+        cutmove = m.motion == 1
+        nz = np.minimum(m.z0, m.z1)
+        sel = cutmove & ~is_drill
+        worst_nondrill = float(nz[sel].min()) if sel.any() else 0.0
+        pinmask = np.zeros_like(stock, dtype=bool)
+        for px_, py_, _, prad in pin_specs:
+            pinmask |= np.hypot(xw - px_, yw - py_) <= prad + 0.3
+        worst_depth = min(worst_nondrill, float(stock[~pinmask].min()))
+        checks.append(Check("depth floor (excl. pin holes)", worst_depth,
+                            f">= {depth_limit:.3f}",
+                            worst_depth >= depth_limit))
+        # every drill cutting move must be AT a configured pin position
+        dsel = cutmove & is_drill
+        if dsel.any():
+            dx = m.x1[dsel]
+            dy = m.y1[dsel]
+            dist = np.min(np.stack([np.hypot(dx - px_, dy - py_)
+                                    for px_, py_, _, _ in pin_specs]),
+                          axis=0)
+            worst_off = float(dist.max())
+        else:
+            worst_off = 0.0
+        checks.append(Check("drill only at pin positions", worst_off,
+                            "<= 0.2", worst_off <= 0.2))
+        # drilled depth at each pin (simulated as a flat-bottom hole; the
+        # real drill point adds its cone below this — depth already
+        # includes the tip allowance)
+        worst_err = 0.0
+        for px_, py_, pdepth, prad in pin_specs:
+            disc = np.hypot(xw - px_, yw - py_) <= max(prad - 0.15, 0.1)
+            hole = float(stock[disc].min())
+            worst_err = max(worst_err, abs(hole + pdepth))
+        checks.append(Check("pin hole depth error", worst_err, "<= 0.1",
+                            worst_err <= 0.1,
+                            f"{len(pin_specs)} holes"))
+        bed_limit = -(job.stock_thickness + job.spoil_thickness - 2.0)
+        drill_tip = float(nz[dsel].min()) if dsel.any() else 0.0
+        checks.append(Check("drill clear of machine bed", drill_tip,
+                            f">= {bed_limit:.3f}", drill_tip >= bed_limit))
 
     # gouge: nowhere inside the model may the stock be cut below the target
     # surface. The target is rasterized in heightmap convention and then
@@ -146,8 +205,11 @@ def verify(job: Job, nc_path=None) -> Report:
     # a single pixel legitimately contains both wall top and wall bottom, and
     # the cut correctly reaches the bottom — without the envelope that reads
     # as a wall-height "gouge". Real gouges are deeper than one pixel wide.
-    tris = heightmap.load_stl(job.stl)
+    tris = job.model_tris()
     H = heightmap.rasterize(tris, half, 1.0 / ppm).astype(np.float32)
+    if job.clip_disc:
+        H = heightmap.clip_disc(H, half, 1.0 / ppm, job.model_radius,
+                                job.floor_z).astype(np.float32)
     H = ndimage.minimum_filter(H, size=3, mode="nearest")
     npx = H.shape[0]
     iH = np.clip(np.round((yw + half) * ppm).astype(int), 0, npx - 1)
@@ -163,17 +225,22 @@ def verify(job: Job, nc_path=None) -> Report:
     checks.append(Check("model surface top", coin_top,
                         f"<= {top_limit:.3f}", coin_top <= top_limit))
 
-    ring = (rr > r + 0.35) & (rr < r + 1.15)
-    rough_allow = next((op["allowance"] for op in job.ops
-                        if op["kind"] == "rough"), 0.2)
-    ring_limit = job.floor_z + rough_allow + 0.1
-    ring_top = float(stock[ring].max())
-    checks.append(Check("field ring top", ring_top,
-                        f"<= {ring_limit:.3f}", ring_top <= ring_limit))
-
     cut = next((op for op in job.ops if op["kind"] == "cutout"), None)
     if cut:
-        floor = float(stock.min())
+        # field ring: the annulus the cutout enters must be cleared to
+        # rough depth (guards the slam its z_start promises against).
+        # Scoped to sides WITH a cutout: on a two-sided front the ring
+        # legitimately carries art fillets, and the back side — the one
+        # that cuts — runs this check on its own field.
+        ring = (rr > r + 0.35) & (rr < r + 1.15)
+        rough_allow = next((op["allowance"] for op in job.ops
+                            if op["kind"] == "rough"), 0.2)
+        ring_limit = job.floor_z + rough_allow + 0.1
+        ring_top = float(stock[ring].max())
+        checks.append(Check("field ring top", ring_top,
+                            f"<= {ring_limit:.3f}", ring_top <= ring_limit))
+        floor = float(stock.min()) if not pin_specs \
+            else float(stock[~pinmask].min())
         checks.append(Check("slot floor", floor,
                             f"== {cut['z_final']:.3f} ±0.02",
                             abs(floor - cut["z_final"]) <= 0.02))

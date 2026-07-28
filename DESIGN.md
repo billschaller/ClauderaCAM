@@ -270,6 +270,88 @@ STALE on regenerate. tests/viewer_sessions.py drives the whole protocol
 over real HTTP: discovery, token auth, join semantics, 409/404, traversal
 refusal, background open reaching ready, close.
 
+## 2026-07-28 (night): pin-and-flip two-sided jobs
+
+Decided with the machinist (their calls: Ø2.0 twist drill from inventory
+for the registration holes; cutout+tabs on the BACK side with hand-snap
+release; coin at Ø40 as modeled). The mode:
+
+  side 1: front art + minimal moat (ring stays FULL thickness — facing
+  the whole field would leave the flipped ring an unsupported membrane
+  over the spoilboard) → spot-face pins (entry burr sits below the
+  resting plane; a burr ring is Z-registration error) → peck-drill Ø2
+  through brass into MDF — same setup as the art, so holes are coaxial
+  by construction and flip accuracy = pin-to-hole clearance (~0.02-0.04,
+  under the simulation pixel). Flip about the configured axis onto pins
+  (positions must be flip-symmetric — enforced). Side 2: back art +
+  moat, then cutout with tabs.
+
+New machinery: `[model] z="relief"` transform (z-up reliefs
+auto-positioned, floor_z derived); tool type `drill` with its own
+plunge-feed limit (PROVISIONAL 250 brass — handbook band floor; no pin
+hole drilled yet) and contact bound (1.2 = peck + margin); `spotface` /
+`pindrill` ops emitted as plain G0/G1 (no canned cycles — Article I);
+plan-time refusals (no spoilboard / blind hole / bed proximity / hole
+deeper than the drill's reach-to-shank-step / asymmetric pins / cutout
+on side 1); verify: pin-hole depth+position checks and a depth floor
+that exempts ONLY the pin discs.
+
+Cross-side verification (twosided.py): the back verifies against the
+BOTTOM FIELD B = -thickness - S1(flip(x,y)) — the mirror-resample of
+side 1's SIMULATED stock (explicit world-coordinate resample; Article
+IV). Checks: punch-through (back never cuts into front art; lower
+envelope for the wall-pixel class), sever vs ACTUAL bottom (the front
+moat thins the inner slot band; -thickness alone is not the truth
+there), TAB BRIDGE (walk each tab radially: continuous material ledge
+coin→skeleton ≥ 0.10 — found on paper: the front moat's overrun band
+plus a blind tab_top leaves tabs floating in air), and pin keep-out
+(pins are steel and flush-recessed; nothing machined over them).
+
+**Incident — the tangential wall kiss (contact metric, fixed same day):**
+the twoside reference read a 1.6mm T1 "bite" on tab entry/exit moves.
+Root cause (empirically pinned to two pixels): the slot's own walls sit
+at exactly tool-edge radius, and whether a wall-boundary pixel rounds
+into the footprint is sub-pixel luck — twoside-ref's rc=9.0 lands on an
+exact half-pixel (9.0 x 12.5 px/mm = 112.5), so its wall pixels rounded
+IN and read the full standing wall height at zero radial engagement.
+The mango golden's own cutout was one grid-alignment away from the same
+false FAIL (its walls stand 1.16 above the slot floor, limit 1.0).
+Fix in BOTH kernels (Article X): contact measures the INNER footprint
+(radius − half a pixel — real radial penetration); removal, engagement
+fraction and rapid checks keep the full footprint. Metal anchors after
+the change: T2 1.007 (unchanged — buried flank), T4 0.544→0.509 (its
+old max included a boundary pixel), all 24 negative controls still
+caught. Same quantization-guard family as the gouge min-filter and the
+0.075mm mask-registration incident.
+
+Scope note: the "field ring top" check now runs only on sides WITH a
+cutout (its incident lineage is cutout-entry slam). A two-sided front
+legitimately carries art fillets in that band; the back — the side that
+cuts — runs the check on its own field.
+
+Known limits, stated plainly: the back-side 3D preview starts from flat
+stock (the carved front face is the flipped part's UNDERSIDE — invisible
+to a heightfield); B carries it for the checks, not the picture. The
+drill is simulated flat-bottomed; the configured depth includes the tip
+allowance. Real-world flip accuracy assumes the MDF stays fixed and the
+same WCS is used for both sides — re-zeroing XY between sides would
+throw away the registration the holes bought.
+
+**Incident — the slab underside (relief floor derivation, fixed same
+day):** the mango back v2 arrived as a 40×40 square export with a base
+slab; the slab's BOTTOM face carries vertices at z=-0.5 inside the disc
+too, so a vertex-minimum floor derivation set floor_z 1.0 too deep. The
+gate caught both consequences on the first verify (ball bites at the
+over-excavated moat step; tabs standing below the carried front floor —
+tab bridge read NEGATIVE). Fix: relief z derives from the TOP SURFACE —
+top = in-disc vertex max (junk sits below art by nature); floor = min
+over 0.5mm cells of max triangle-centroid z (bottom faces share cells
+with the top face and lose the max; a floor must be a flat AREA ≥ the
+cell size, which wall slivers cannot fake — winding orientation is NOT
+usable, open sheets wind arbitrarily). Relief maps are also clipped to
+floor outside the model radius (coin semantic: everything past the rim
+is cut away; square-export frame junk never reaches the generators).
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
@@ -285,5 +367,5 @@ refusal, background open reaching ready, close.
   limit before any job ships with one.
 - **v1 viewer**: toolpath overlay per op, A/B against target model,
   per-check highlight (e.g. paint the engagement hotspot).
-- **v2**: adaptive/trochoidal rough option, two-sided jobs with
-  registration features.
+- **v2**: adaptive/trochoidal rough option. (Two-sided pin-and-flip
+  jobs: SHIPPED 2026-07-28, see above.)

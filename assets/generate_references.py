@@ -102,11 +102,31 @@ def pocketfield(X, Y, rr):
     return -0.7 + (z + 0.7) * w
 
 
+def twoside_front(X, Y, rr):
+    # z-UP relief (model z="relief" convention — exercises the in-config
+    # transform): coin rim ring + center boss, base plane at 0
+    ring = np.where((rr > 6.8) & (rr < 7.6), 0.9, 0.0)
+    boss = np.clip(1.0 * (1 - (rr / 4.5) ** 2), 0, None)
+    return np.maximum(ring, boss)
+
+
+def twoside_back(X, Y, rr):
+    # the flip side: matching rim ring, shallow radial waves fading to a
+    # WIDE flat base band (floor derivation resolves flats >= 0.5mm; a
+    # field that is all waves would read a trough as the floor)
+    ring = np.where((rr > 6.8) & (rr < 7.6), 0.7, 0.0)
+    fade = np.clip((5.5 - rr) / 1.0, 0, 1)
+    waves = (0.35 + 0.25 * np.cos(2 * np.pi * rr / 4.0)) * fade
+    return np.maximum(ring, np.clip(waves, 0, None))
+
+
 SHAPES = {
     "terraces": (terraces, 15.0, -2.35),
     "dome": (dome, 12.0, -1.95),
     "ripple": (ripple, 17.0, -1.35),
     "pocketfield": (pocketfield, 16.0, -0.7),
+    "twoside_front": (twoside_front, 8.0, 0.0),
+    "twoside_back": (twoside_back, 8.0, 0.0),
 }
 
 

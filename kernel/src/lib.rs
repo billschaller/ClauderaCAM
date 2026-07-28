@@ -15,6 +15,7 @@ struct Kit {
     r_px: i64,
     w: usize,             // 2*r_px + 1
     foot: Vec<bool>,
+    foot_in: Vec<bool>,   // contact: real penetration (radius - half px)
     drop: Vec<f32>,
 }
 
@@ -22,6 +23,7 @@ fn make_kit(dia: f64, ball: bool, ppm: f64) -> Kit {
     let r_px = (dia / 2.0 * ppm).ceil() as i64;
     let w = (2 * r_px + 1) as usize;
     let mut foot = vec![false; w * w];
+    let mut foot_in = vec![false; w * w];
     let mut drop = vec![0f32; w * w];
     let radius = dia / 2.0;
     for dy in -r_px..=r_px {
@@ -36,9 +38,12 @@ fn make_kit(dia: f64, ball: bool, ppm: f64) -> Kit {
                             as f32;
                 }
             }
+            if rr <= radius - 0.5 / ppm + 1e-9 {
+                foot_in[idx] = true;
+            }
         }
     }
-    Kit { r_px, w, foot, drop }
+    Kit { r_px, w, foot, foot_in, drop }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -213,11 +218,16 @@ fn measure<'py>(
                         let cell = ii as usize * n + jj as usize;
                         let live = stock[cell] as f64;
                         if check {
-                            let sv = snap[((ii - bi0) as usize) * bw
-                                + (jj - bj0) as usize] as f64;
-                            let ov = sv - surf;
-                            if ov > over_max {
-                                over_max = ov;
+                            // contact on the INNER footprint only (see
+                            // kernel_py.py: tangential wall kisses are
+                            // not flank engagement)
+                            if kit.foot_in[fi] {
+                                let sv = snap[((ii - bi0) as usize) * bw
+                                    + (jj - bj0) as usize] as f64;
+                                let ov = sv - surf;
+                                if ov > over_max {
+                                    over_max = ov;
+                                }
                             }
                             let rm = live - surf;
                             if rm > 1e-9 {

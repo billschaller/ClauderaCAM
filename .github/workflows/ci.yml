@@ -22,6 +22,8 @@ jobs:
         run: python tests/stage_model.py
       - name: viewer sessions (discovery, push, join, open, 409 discipline)
         run: python tests/viewer_sessions.py
+      - name: two-sided pin-and-flip (cross-side checks + negatives)
+        run: python tests/twosided_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -38,3 +40,5 @@ jobs:
         run: python tests/stage_model.py
       - name: viewer sessions on the pure-python kernel
         run: python tests/viewer_sessions.py
+      - name: two-sided pin-and-flip on the pure-python kernel
+        run: python tests/twosided_suite.py

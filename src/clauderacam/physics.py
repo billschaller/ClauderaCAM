@@ -63,6 +63,11 @@ MATERIALS = {
         # the slam class (~0.156 sustained) the check exists to catch
         "a_tooth_max_frac": 0.0055,
         "plunge_feed_max": 400.0,    # mm/min straight-down, validated 150-200
+        # twist drills plunge BY DESIGN (that is the tool geometry's job);
+        # handbook 2mm-in-brass feeds run 0.03-0.05mm/rev (300-500mm/min at
+        # 10k) — 250 is the conservative floor of that band. PROVISIONAL:
+        # no pin hole has been drilled on this machine yet.
+        "drill_plunge_max": 250.0,
         "sustained_w": 80.0,         # rolling-window mean power cap, PROXY
         "heat_window_s": 10.0,
         "enclosed_chip_mm3": 2500.0,  # brass chips free-cutting; anchor 900
@@ -72,6 +77,7 @@ MATERIALS = {
         "fz_min_frac": 0.002,        # 6061 work-hardens when rubbed
         "a_tooth_max_frac": 0.003,
         "plunge_feed_max": 300.0,
+        "drill_plunge_max": 200.0,   # PROVISIONAL, see brass note
         "sustained_w": 60.0,
         "heat_window_s": 10.0,
         "enclosed_chip_mm3": 600.0,  # gummy: chips weld if they can't escape
@@ -222,10 +228,23 @@ def physics_checks(job, metrics) -> list[PhysCheck]:
                             "0 moves", n_rub == 0, detail))
 
     # --- plunge rate -------------------------------------------------------
-    worst_pl = float(m.feed[plungey].max()) if plungey.any() else 0.0
+    # end mills and drills plunge under different physics: an end mill's
+    # center barely cuts (limit is tight), a twist drill's point geometry
+    # exists to plunge (limit is the material's drilling feed band)
+    is_drill = np.array([job.tool(int(t)).type == "drill"
+                         for t in m.tool_num])
+    mill_pl = plungey & ~is_drill
+    worst_pl = float(m.feed[mill_pl].max()) if mill_pl.any() else 0.0
     checks.append(PhysCheck("plunge feed", worst_pl,
                             f"<= {mat['plunge_feed_max']:g} mm/min",
                             worst_pl <= mat["plunge_feed_max"]))
+    if is_drill.any():
+        drill_pl = plungey & is_drill
+        worst_dr = float(m.feed[drill_pl].max()) if drill_pl.any() else 0.0
+        checks.append(PhysCheck(
+            "drill plunge feed", worst_dr,
+            f"<= {mat['drill_plunge_max']:g} mm/min",
+            worst_dr <= mat["drill_plunge_max"]))
 
     # --- spindle power / stall (windowed, computed above) ------------------
     checks.append(PhysCheck(

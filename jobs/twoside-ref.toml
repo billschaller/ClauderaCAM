@@ -1,0 +1,137 @@
+# Two-sided pin-and-flip reference job (synthetic; tests/twosided_suite.py).
+# Exercises the whole mode: relief z-transform, front art+moat (ring left
+# full-thickness), spot-face + peck-drilled Ø2 registration holes into the
+# spoilboard, flip about the Y axis onto pins at (0, ±13.5), back art, and
+# the cutout-with-tabs on the back — verified against the carried bottom
+# field (tab bridge, punch-through, sever-vs-bottom, pin keep-out).
+
+[job]
+name = "twoside-ref"
+out_front = "../out/twoside-ref-front.nc"
+out_back = "../out/twoside-ref-back.nc"
+
+[stock]
+size = 32.0
+thickness = 3.2
+
+[spoilboard]
+thickness = 12.7
+
+[material]
+name = "brass"
+
+[fixture]
+keepout_radius = 15.2
+
+[model]
+radius = 8.0
+skim = 0.15
+z = "relief"    # STLs are z-up reliefs; top -> -skim, floor_z derived
+
+[twosided]
+front_stl = "../assets/generated/twoside_front.stl"
+back_stl = "../assets/generated/twoside_back.stl"
+flip_axis = "y"     # flip left-right; pins on the Y axis map to themselves
+
+[pins]
+diameter = 2.0
+length = 12.0
+positions = [[0.0, 13.5], [0.0, -13.5]]
+drill_tool = 9
+spot_tool = 3
+peck = 0.8
+feed = 120
+
+[[tool]]
+num = 3
+type = "flat"
+diameter = 2.0
+rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 2
+type = "ball"
+diameter = 2.0
+rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 9
+type = "drill"
+diameter = 2.0
+rpm = 10000
+flutes = 2
+flute_length = 14.0   # reach to shank step — MEASURE on the real drill
+shank_diameter = 3.175
+
+[[side.front.op]]
+kind = "rough"
+tool = 3
+stepdown = 0.3
+stepover = 1.2
+allowance = 0.2
+boundary_r = 8.7
+map_half = 10.5
+grid = 0.1
+simplify = 0.01
+feed = 300
+plunge = 150
+
+[[side.front.op]]
+kind = "raster"
+label = "finish"
+tool = 2
+stepover = 0.12
+offset = 0.0
+axis = "x"
+grid = 0.05
+margin = 1.6
+bound_extra = 0.5
+simplify = 0.005
+feed = 500
+plunge = 200
+
+[[side.back.op]]
+kind = "rough"
+tool = 3
+stepdown = 0.3
+stepover = 1.2
+allowance = 0.2
+boundary_r = 9.2
+map_half = 11.0
+grid = 0.1
+simplify = 0.01
+feed = 300
+plunge = 150
+
+[[side.back.op]]
+kind = "raster"
+label = "finish"
+tool = 2
+stepover = 0.12
+offset = 0.0
+axis = "y"
+grid = 0.05
+margin = 1.6
+bound_extra = 0.5
+simplify = 0.005
+feed = 500
+plunge = 200
+
+[[side.back.op]]
+kind = "cutout"
+tool = 3
+z_start = -0.6
+z_final = -3.35
+ramp = 0.15
+tabs = [45, 135, 225, 315]
+tab_width = 2.0
+tab_top = -1.6      # tab neck rides ABOVE the front moat's carried floor
+seg = 96
+feed = 300
+plunge = 150

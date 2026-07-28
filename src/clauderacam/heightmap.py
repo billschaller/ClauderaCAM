@@ -61,6 +61,18 @@ def rasterize(tris: np.ndarray, half: float, grid: float) -> np.ndarray:
     return H
 
 
+def clip_disc(H: np.ndarray, half: float, grid: float, radius: float,
+              floor: float) -> np.ndarray:
+    """Force the map to `floor` outside the model disc. The machining
+    semantic for a coin — everything past the rim is cut away by the
+    cutout — and the guard against base slabs / frame junk that real
+    exports carry outside the art (see job.resolve_model_z)."""
+    npx = H.shape[0]
+    ii, jj = np.mgrid[0:npx, 0:npx]
+    rr = np.hypot(jj * grid - half, ii * grid - half)
+    return np.where(rr > radius, floor, H)
+
+
 def simplify(pts: list, tol: float) -> list:
     """Slope-corridor 1D simplification of (t, z) samples along a line."""
     if len(pts) <= 2:

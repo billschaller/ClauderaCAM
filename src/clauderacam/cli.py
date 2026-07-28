@@ -4,9 +4,10 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+from pathlib import Path
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
-    stages as stagesmod, verify as verifymod
+    stages as stagesmod, twosided as twomod, verify as verifymod
 from .viewer import client as viewer
 
 
@@ -36,6 +37,9 @@ def main(argv=None) -> int:
         except KeyboardInterrupt:
             pass
         return 0
+
+    if twomod.is_twosided(args.job):
+        return run_twosided(args)
 
     j = jobmod.load(args.job)
     if args.cmd in ("generate", "all"):
@@ -78,6 +82,60 @@ def main(argv=None) -> int:
             except KeyboardInterrupt:
                 pass
     return 0
+
+
+def run_twosided(args) -> int:
+    """generate/verify/preview/all/view for a pin-and-flip job: both sides,
+    every side through the same gate, back verified against the carried
+    bottom field."""
+    ts = twomod.load(args.job)
+    if args.cmd in ("generate", "all"):
+        for side, ops in twomod.generate(ts).items():
+            j = ts.front if side == "front" else ts.back
+            viewer.invalidate(j)
+            for r in ops:
+                print(f"[{side}] {r.label}: T{r.tool} {len(r.lines)} moves, "
+                      f"{r.path_len_mm/1000:.1f}m, ~{r.est_min:.0f} min")
+            print(f"[{side}] wrote {j.out}")
+    rc = 0
+    reports = None
+    if args.cmd in ("verify", "all", "view"):
+        reports = twomod.verify(ts)
+        for side in ("front", "back"):
+            rep = reports[side]
+            j = ts.front if side == "front" else ts.back
+            print(f"=== {side} ({j.out.name}) ===")
+            print(rep.text())
+            if rep.carve is not None:
+                for line in stagesmod.stage_lines(
+                        stagesmod.stage_stats(j, rep.carve)):
+                    print(line)
+            if not rep.ok:
+                rc = 1
+    if args.cmd in ("preview", "all"):
+        for j in (ts.front, ts.back):
+            print("preview:", previewmod.render(j))
+    if args.cmd == "view":
+        url, started = viewer.ensure_server(args.port,
+                                            jobs_dir=Path(args.job).parent)
+        for side in ("front", "back"):
+            j = ts.front if side == "front" else ts.back
+            pushed = viewer.push_job(j, reports[side])
+            if pushed:
+                print(f"[{side}] session: {pushed[0]}#{pushed[1]}")
+        if started:
+            print("serving — ctrl-c to stop")
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                pass
+    if args.cmd in ("verify", "all") and reports:
+        # sessions update live if a viewer is running anywhere
+        for side in ("front", "back"):
+            j = ts.front if side == "front" else ts.back
+            viewer.push_job(j, reports[side])
+    return rc
 
 
 if __name__ == "__main__":

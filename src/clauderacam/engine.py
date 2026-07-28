@@ -10,7 +10,7 @@ import numpy as np
 
 from . import heightmap, offset
 from .job import Job
-from .ops import cutout, raster, rough
+from .ops import cutout, drill, raster, rough
 
 
 @dataclass
@@ -52,6 +52,8 @@ def op_reach(job: Job, op: dict) -> float:
             + op["grid"] / 2
     if op["kind"] == "cutout":
         return job.model_radius + tool.diameter
+    if op["kind"] in ("spotface", "pindrill"):
+        return max(np.hypot(x, y) for x, y in op["positions"]) + tool.radius
     raise ValueError(f"unknown op kind: {op['kind']}")
 
 
@@ -84,6 +86,36 @@ def check_job_plan(job: Job) -> None:
             raise ValueError(
                 f"op '{op.get('label', op['kind'])}' reaches r={reach:.3f} "
                 f"but fixture keep-out starts at r={job.keepout_radius}")
+
+    for op in job.ops:
+        if op["kind"] != "pindrill":
+            continue
+        # pin holes go through the stock into a SPOILBOARD, never the bed
+        tool = job.tool(op["tool"])
+        if tool.type != "drill":
+            raise ValueError(
+                f"pindrill op uses T{tool.num} ({tool.type}) — pecking a "
+                f"12mm hole is a twist drill's job, not an end mill's")
+        if job.spoil_thickness <= 0:
+            raise ValueError(
+                "pindrill without [spoilboard] thickness — a through hole "
+                "must land in sacrificial material, not the machine bed")
+        if op["depth"] <= job.stock_thickness:
+            raise ValueError(
+                f"pindrill depth {op['depth']} does not pass through "
+                f"{job.stock_thickness}mm stock — a blind hole cannot "
+                f"register a flip")
+        if op["depth"] > job.stock_thickness + job.spoil_thickness - 2.0:
+            raise ValueError(
+                f"pindrill depth {op['depth']} comes within 2mm of the "
+                f"machine bed (stock {job.stock_thickness} + spoilboard "
+                f"{job.spoil_thickness})")
+        if op["depth"] > tool.flute_length:
+            raise ValueError(
+                f"pindrill depth {op['depth']} exceeds T{tool.num}'s "
+                f"{tool.flute_length}mm reach — the shank would enter the "
+                f"hole (measure the drill's reach-to-shank-step before "
+                f"trusting this number)")
 
     cleared = max((op["boundary_r"] + job.tool(op["tool"]).radius
                    for op in job.ops if op["kind"] == "rough"))
@@ -124,14 +156,19 @@ def check_job_plan(job: Job) -> None:
 def generate_ops(job: Job) -> list[OpResult]:
     check_job_plan(job)
 
-    tris = heightmap.load_stl(job.stl)
+    tris = job.model_tris()
     hmaps: dict[tuple, np.ndarray] = {}
     offs: dict[tuple, np.ndarray] = {}
 
     def hmap(half: float, grid: float) -> np.ndarray:
         key = (round(half, 6), round(grid, 6))
         if key not in hmaps:
-            hmaps[key] = heightmap.rasterize(tris, half, grid)
+            H = heightmap.rasterize(tris, half, grid)
+            if job.clip_disc:
+                # tris already carry z_offset; the map is in job coords
+                H = heightmap.clip_disc(H, half, grid, job.model_radius,
+                                        job.floor_z)
+            hmaps[key] = H
         return hmaps[key]
 
     results: list[OpResult] = []
@@ -171,6 +208,11 @@ def generate_ops(job: Job) -> list[OpResult]:
                 tab_top=op["tab_top"], tab_width=op["tab_width"],
                 tool_dia=tool.diameter, tab_centers_deg=op["tabs"],
                 seg=op["seg"], feed=op["feed"], plunge_feed=op["plunge"])
+        elif kind == "spotface":
+            lines = drill.spotface(op["positions"], op["depth"], op["feed"])
+        elif kind == "pindrill":
+            lines = drill.pindrill(op["positions"], op["depth"],
+                                   op["peck"], op["feed"])
         else:
             raise ValueError(f"unknown op kind: {kind}")
         plen = path_length(lines)

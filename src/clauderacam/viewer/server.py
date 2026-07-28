@@ -163,7 +163,31 @@ def _load_in_background(path: Path) -> str:
 
     def work():
         try:
-            from .. import job as jobmod, stages, verify as verifymod
+            from .. import job as jobmod, stages, twosided, \
+                verify as verifymod
+            if twosided.is_twosided(path):
+                # a two-sided document opens as one session per side; the
+                # placeholder session for the raw path dissolves into them
+                ts = twosided.load(path)
+                missing = [j.out.name for j in (ts.front, ts.back)
+                           if not j.out.exists()]
+                if missing:
+                    error_session(str(path),
+                                  f"no toolpaths ({', '.join(missing)}) — "
+                                  f"ask Claude to generate")
+                    return
+                reports = twosided.verify(ts)
+                for side_j, rep in ((ts.front, reports["front"]),
+                                    (ts.back, reports["back"])):
+                    if rep.carve is None:
+                        error_session(str(side_j.path),
+                                      "fatal: " + rep.checks[0].detail)
+                        continue
+                    meta, stocks = stages.viewer_payload(side_j, rep)
+                    push_session(str(side_j.path), meta,
+                                 encode_stocks(stocks))
+                close_session(sid)
+                return
             j = jobmod.load(path)
             if not j.out.exists():
                 error_session(str(path),

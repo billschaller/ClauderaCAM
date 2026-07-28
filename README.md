@@ -122,9 +122,25 @@ paired with a job in `jobs/` that stresses a different hazard:
 | `pocketfield` | graduated feature access by tool BODY (Ø7 down to 1.3mm slots) — honestly annotated: the shallow features are bottomed by the 2mm ball's contact circle; true tool exclusion awaits depth-stepped clearing |
 
 Together with mango these cover the supported tool set: flat 3.175, flat 2.0,
-ball 2.0, ball 1.0 — the geometries validated by cut metal. V-bits and
-tapered ball noses need a conical offset model plus a real-world tip
-engagement limit, so they are roadmap, not shipped guesses.
+ball 2.0, ball 1.0, plus twist drills for registration holes — the
+geometries validated by cut metal. V-bits and tapered ball noses need a
+conical offset model plus a real-world tip engagement limit, so they are
+roadmap, not shipped guesses.
+
+## Two-sided (pin-and-flip) jobs
+
+One TOML with `[twosided]`, `[pins]` and per-side op lists describes a
+coin machined on BOTH faces: side 1 cuts the front art plus a minimal
+moat, then spot-faces and peck-drills registration holes through the
+stock into the spoilboard — same setup, so the holes are coaxial by
+construction. Flip the blank onto dowel pins (layout must be symmetric
+under the configured flip axis — enforced), and side 2 cuts the back art
+and the tabbed cutout. Two .nc programs come out; each verifies through
+the same gate, and the back side is additionally checked against the
+carried, flipped front stock: punch-through into the front art, sever
+against the actual material bottom, a continuous tab bridge from coin to
+skeleton, and pin keep-out. `jobs/twoside-ref.toml` +
+`tests/twosided_suite.py` are the executable spec, negatives included.
 
 ## Project law
 
