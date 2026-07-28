@@ -107,6 +107,61 @@ class PhysCheck:
     detail: str = ""
 
 
+def windowed_load_power(job, m):
+    """Per-move sustained chip load and cutting power, the LOAD_WINDOW_S
+    prorated sliding window ending at each cutting move (windows never span
+    retracts or tool changes — see the sustained-phenomena note above).
+
+    Returns (load_ratio, power_w): load_ratio[k] is the windowed chip per
+    tooth as a FRACTION of that move's limit (a_tooth_max_frac · d²), so 1.0
+    is the line; power_w[k] is the windowed mean cutting power in watts.
+    Non-cutting moves are 0. physics_checks() takes the maxima; the stage
+    model (stages.py) takes per-stage maxima of the same arrays."""
+    mat = job.material
+    nmoves = len(m.volume)
+    load_ratio = np.zeros(nmoves)
+    power_w = np.zeros(nmoves)
+    cutting = (m.motion == 1)
+    t_s = m.time_s
+    dia = np.array([job.tool(int(t)).diameter for t in m.tool_num])
+    flutes = np.array([job.tool(int(t)).flutes for t in m.tool_num])
+    rpm = np.maximum(m.rpm, 1.0)
+    tooth_rate = t_s * rpm / 60.0 * flutes        # tooth-passes per move
+    energy = mat["specific_energy"] * m.volume    # J per move
+    k = 0
+    while k < nmoves:
+        if not cutting[k]:
+            k += 1
+            continue
+        k1 = k
+        while k1 < nmoves and cutting[k1]:
+            k1 += 1
+        rt = t_s[k:k1]
+        ct = np.cumsum(rt)
+        cv = np.concatenate([[0.0], np.cumsum(m.volume[k:k1])])
+        ctp = np.concatenate([[0.0], np.cumsum(tooth_rate[k:k1])])
+        ce = np.concatenate([[0.0], np.cumsum(energy[k:k1])])
+        for j1 in range(k1 - k):
+            t_end = ct[j1]
+            t_start = max(0.0, t_end - LOAD_WINDOW_S)
+            idx = int(np.searchsorted(ct, t_start, side="right"))
+            # full moves idx+1..j1, plus the tail fraction of move idx
+            frac = 0.0
+            if idx <= j1 and rt[idx] > 0:
+                frac = (ct[idx] - t_start) / rt[idx]
+            dv = cv[j1 + 1] - cv[idx + 1] + frac * m.volume[k + idx]
+            dtp = ctp[j1 + 1] - ctp[idx + 1] + frac * tooth_rate[k + idx]
+            de = ce[j1 + 1] - ce[idx + 1] + frac * energy[k + idx]
+            dts = t_end - t_start
+            if dtp > 0:
+                load_ratio[k + j1] = dv / dtp / (
+                    mat["a_tooth_max_frac"] * dia[k + j1] ** 2)
+            if dts > 0:
+                power_w[k + j1] = de / dts
+        k = k1
+    return load_ratio, power_w
+
+
 def physics_checks(job, metrics) -> list[PhysCheck]:
     """metrics: the kernel's per-move arrays (see simulate.MoveMetrics)."""
     mat = job.material
@@ -140,46 +195,12 @@ def physics_checks(job, metrics) -> list[PhysCheck]:
     # Moves are internally uniform-rate, so boundary moves enter the window
     # FRACTIONALLY (prorated) — whole-move windows degenerate to a single
     # 30ms move when its neighbors are long, defeating the smoothing.
-    tooth_rate = t_s * rpm / 60.0 * flutes        # tooth-passes per move
-    energy = mat["specific_energy"] * m.volume    # J per move
-    worst_load = 0.0
-    load_i = 0
-    worst_pwr = 0.0
-    pwr_i = 0
-    k = 0
-    while k < nmoves:
-        if not cutting[k]:
-            k += 1
-            continue
-        k1 = k
-        while k1 < nmoves and cutting[k1]:
-            k1 += 1
-        rt = t_s[k:k1]
-        ct = np.cumsum(rt)
-        cv = np.concatenate([[0.0], np.cumsum(m.volume[k:k1])])
-        ctp = np.concatenate([[0.0], np.cumsum(tooth_rate[k:k1])])
-        ce = np.concatenate([[0.0], np.cumsum(energy[k:k1])])
-        for j1 in range(k1 - k):
-            t_end = ct[j1]
-            t_start = max(0.0, t_end - LOAD_WINDOW_S)
-            idx = int(np.searchsorted(ct, t_start, side="right"))
-            # full moves idx+1..j1, plus the tail fraction of move idx
-            frac = 0.0
-            if idx <= j1 and rt[idx] > 0:
-                frac = (ct[idx] - t_start) / rt[idx]
-            dv = cv[j1 + 1] - cv[idx + 1] + frac * m.volume[k + idx]
-            dtp = ctp[j1 + 1] - ctp[idx + 1] + frac * tooth_rate[k + idx]
-            de = ce[j1 + 1] - ce[idx + 1] + frac * energy[k + idx]
-            dts = t_end - t_start
-            if dtp > 0:
-                a = dv / dtp / (mat["a_tooth_max_frac"] * dia[k + j1] ** 2)
-                if a > worst_load:
-                    worst_load, load_i = a, k + j1
-            if dts > 0:
-                p = de / dts
-                if p > worst_pwr:
-                    worst_pwr, pwr_i = p, k + j1
-        k = k1
+    # (Computation shared with the per-stage model — windowed_load_power.)
+    wload, wpower = windowed_load_power(job, m)
+    worst_load = float(wload.max()) if nmoves else 0.0
+    load_i = int(np.argmax(wload)) if nmoves else 0
+    worst_pwr = float(wpower.max()) if nmoves else 0.0
+    pwr_i = int(np.argmax(wpower)) if nmoves else 0
     i = load_i
     a_val = worst_load * mat["a_tooth_max_frac"] * dia[i] ** 2 if nmoves else 0
     checks.append(PhysCheck(

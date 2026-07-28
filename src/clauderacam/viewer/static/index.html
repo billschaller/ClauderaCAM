@@ -4,40 +4,138 @@
 <meta charset="utf-8">
 <title>ClauderaCAM viewer</title>
 <style>
-  html, body { margin: 0; height: 100%; background: #14161a; color: #ddd;
-               font: 13px/1.45 system-ui, sans-serif; overflow: hidden; }
-  #panel { position: absolute; top: 12px; left: 12px; background: #1d2026e6;
-           border: 1px solid #333; border-radius: 8px; padding: 12px 14px;
-           min-width: 260px; backdrop-filter: blur(4px); }
-  #panel h1 { font-size: 14px; margin: 0 0 6px; font-weight: 600; }
-  #verdict { font-weight: 700; margin: 4px 0 8px; }
-  .ok   { color: #6fdc8c; }
-  .fail { color: #ff6b6b; }
-  .stale { color: #f0b429; }
+  :root {
+    --bg: #14161a; --card: #1d2026; --card2: #23262d; --line: #32363f;
+    --fg: #d8dce4; --dim: #9aa3b2; --dimmer: #667081;
+    --ok: #6fdc8c; --warn: #f0b429; --bad: #ff6b6b; --accent: #7aa2ff;
+    --brass: #c9a227;
+  }
+  html, body { margin: 0; height: 100%; background: var(--bg);
+               color: var(--fg); font: 13px/1.45 system-ui, sans-serif;
+               overflow: hidden; }
+  #app { display: flex; height: 100%; }
+  #side { width: 340px; min-width: 340px; overflow-y: auto; padding: 12px;
+          box-sizing: border-box; background: #181a1f;
+          border-right: 1px solid var(--line); display: none;
+          flex-direction: column; gap: 10px; }
+  #view { flex: 1; position: relative; }
+  #empty { position: absolute; inset: 0; display: flex; align-items: center;
+           justify-content: center; color: var(--dimmer); font-size: 15px; }
+
+  .card { background: var(--card); border: 1px solid var(--line);
+          border-radius: 8px; padding: 10px 12px; }
+  .card h2 { margin: 0 0 8px; font-size: 11px; font-weight: 600;
+             letter-spacing: .08em; text-transform: uppercase;
+             color: var(--dim); }
+
+  /* header */
+  #head { display: flex; align-items: center; gap: 8px; }
+  #live { width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
+          animation: pulse 2s infinite; flex: none; }
+  @keyframes pulse { 50% { opacity: .3; } }
+  #jobname { font-size: 15px; font-weight: 650; flex: 1; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+  .badge { font-size: 11px; font-weight: 700; padding: 2px 8px;
+           border-radius: 10px; flex: none; }
+  .badge.ok   { color: #10391c; background: var(--ok); }
+  .badge.fail { color: #3d1010; background: var(--bad); }
+  .badge.stale{ color: #3a2c05; background: var(--warn); }
+  #jobfacts { color: var(--dim); margin-top: 6px; }
+  #jobfacts b { color: var(--fg); font-weight: 600; }
+
+  /* stage list */
+  .stage { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+           border-radius: 6px; cursor: pointer; border: 1px solid transparent; }
+  .stage:hover { background: var(--card2); }
+  .stage.sel { background: #263042; border-color: #3d5a99; }
+  .stage .idx { color: var(--dimmer); width: 14px; text-align: right;
+                flex: none; }
+  .stage .slabel { flex: 1; font-weight: 600; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .stage .stime { color: var(--dim); font-variant-numeric: tabular-nums; }
+  .tchip { font-size: 11px; font-weight: 700; padding: 1px 6px;
+           border-radius: 4px; background: #33383f; color: #cfd6e4;
+           flex: none; }
+  .stage.sel .tchip, .tool.active .tchip { background: var(--accent);
+           color: #101828; }
+
+  /* stage detail */
+  #dtool { color: var(--dim); margin-bottom: 8px; }
+  #dtool b { color: var(--fg); }
+  .grid { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; }
+  .grid .k { color: var(--dim); }
+  .grid .v { text-align: right; font-variant-numeric: tabular-nums; }
+  .metric { display: flex; justify-content: space-between; margin-top: 8px; }
+  .metric .mk { color: var(--dim); }
+  .metric .mv { font-variant-numeric: tabular-nums; }
+  .bar { height: 5px; border-radius: 3px; background: #2b2f37;
+         margin-top: 3px; overflow: hidden; }
+  .fill { height: 100%; border-radius: 3px; }
+  .fill.ok { background: var(--ok); }
+  .fill.warn { background: var(--warn); }
+  .fill.bad { background: var(--bad); }
+  .note { color: var(--dimmer); font-size: 11px; margin-top: 8px; }
+
+  /* tools */
+  .tool { display: flex; gap: 8px; padding: 6px 8px; border-radius: 6px;
+          border: 1px solid transparent; align-items: baseline; }
+  .tool.active { background: #263042; border-color: #3d5a99; }
+  .tool .tinfo { flex: 1; }
+  .tool .tmeta { color: var(--dimmer); font-size: 11px; }
+
+  /* checks */
+  #checksHead { cursor: pointer; user-select: none; }
+  #checksHead .n { float: right; color: var(--dim); }
+  .ok-t { color: var(--ok); }
+  .bad-t { color: var(--bad); }
+  #checkList { display: none; margin-top: 6px; }
+  #checkList.open { display: block; }
   .check { display: flex; justify-content: space-between; gap: 12px;
            padding: 1px 0; white-space: nowrap; }
-  .check .v { color: #9aa3b2; }
-  #live { display: inline-block; width: 8px; height: 8px; border-radius: 50%;
-          background: #6fdc8c; margin-right: 6px;
-          animation: pulse 2s infinite; }
-  @keyframes pulse { 50% { opacity: .3; } }
-  #zrow { margin-top: 10px; display: flex; align-items: center; gap: 8px;
-          color: #9aa3b2; }
-  #empty { position: absolute; inset: 0; display: flex; align-items: center;
-           justify-content: center; color: #667; font-size: 15px; }
+  .check .cv { color: var(--dim); overflow: hidden; text-overflow: ellipsis; }
+
+  /* controls */
+  #ctl { display: flex; flex-direction: column; gap: 8px; }
+  #ctl label { display: flex; align-items: center; gap: 8px;
+               color: var(--dim); }
+  #ctl input[type=range] { flex: 1; }
 </style>
 <script type="importmap">
   { "imports": { "three": "/static/three.module.js" } }
 </script>
 </head>
 <body>
-<div id="empty">waiting for a simulation… (run the verify or view tool)</div>
-<div id="panel" style="display:none">
-  <h1><span id="live"></span><span id="jobname">–</span></h1>
-  <div id="verdict"></div>
-  <div id="checks"></div>
-  <div id="zrow">z× <input id="zex" type="range" min="1" max="4" step="0.1"
-       value="1" style="flex:1"> <span id="zexv">1.0</span></div>
+<div id="app">
+  <div id="side">
+    <div class="card">
+      <div id="head"><span id="live"></span><span id="jobname">–</span>
+        <span id="verdict" class="badge"></span></div>
+      <div id="jobfacts"></div>
+    </div>
+    <div class="card"><h2>Stages</h2><div id="stages"></div></div>
+    <div class="card"><h2>Stage detail</h2>
+      <div id="dtool"></div>
+      <div id="dgrid" class="grid"></div>
+      <div id="dbars"></div>
+      <div class="note">times are feed-based estimates and exclude tool
+        changes; contact, volume and engagement are simulation-measured;
+        chip load and power are model verdicts (physics.py)</div>
+    </div>
+    <div class="card"><h2>Tools</h2><div id="tools"></div></div>
+    <div class="card">
+      <div id="checksHead"><span id="checksVerdict"></span>
+        <span class="n">details ▾</span></div>
+      <div id="checkList"></div>
+    </div>
+    <div class="card" id="ctl">
+      <label>z-exaggeration <input id="zex" type="range" min="1" max="4"
+        step="0.1" value="1"> <span id="zexv">1.0</span></label>
+      <label><input id="hl" type="checkbox" checked>
+        highlight material removed by this stage</label>
+    </div>
+  </div>
+  <div id="view"><div id="empty">waiting for a simulation…
+    (run the verify or view tool)</div></div>
 </div>
 <script type="module" src="/static/app.js"></script>
 </body>

@@ -16,6 +16,9 @@ tests/kernel_parity.py enforces it):
     against the LIVE stock (actual removal, no double counting)
   - engagement fraction: removing pixels / footprint pixels, max over samples
   - shank clearance: max over the SHANK footprint of stock - (z + flute_len)
+  - snap_after: sorted move indices; AFTER each listed move completes
+    (including skipped vertical lifts) a copy of the stock is appended to
+    "snapshots" — the per-stage previews of the viewer's stage model
 """
 from __future__ import annotations
 
@@ -37,7 +40,7 @@ def _kit(dia_mm: float, ball: bool, ppm: float):
 
 def measure(*, n, ppm, half, step, check,
             dia, ball, flute_len, shank_d,
-            motion, x0, y0, z0, x1, y1, z1, tool_idx):
+            motion, x0, y0, z0, x1, y1, z1, tool_idx, snap_after=None):
     stock = np.zeros((n, n), np.float32)
     ntools = len(dia)
     kits = [_kit(float(dia[t]), bool(ball[t]), ppm) for t in range(ntools)]
@@ -56,6 +59,18 @@ def measure(*, n, ppm, half, step, check,
     rapid_x = rapid_y = rapid_z = 0.0
     min_cut_z = 0.0
 
+    snap_after = np.asarray(snap_after, dtype=np.int64) \
+        if snap_after is not None else np.empty(0, np.int64)
+    snapshots: list[np.ndarray] = []
+    sp = 0
+
+    def take_snap(k):
+        # AFTER move k, even when the move itself was skipped as a safe lift
+        nonlocal sp
+        if sp < len(snap_after) and snap_after[sp] == k:
+            snapshots.append(stock.copy())
+            sp += 1
+
     for k in range(nm):
         t = int(tool_idx[k])
         r_px, foot, drop = kits[t]
@@ -63,6 +78,7 @@ def measure(*, n, ppm, half, step, check,
         lateral = (x1[k] != x0[k]) or (y1[k] != y0[k])
         dz = z1[k] - z0[k]
         if rapid and not lateral and dz >= -1e-9:
+            take_snap(k)
             continue  # pure vertical lift off the just-cut position: safe
         L = max(np.hypot(x1[k] - x0[k], y1[k] - y0[k]), abs(dz))
         snap = bi0 = bj0 = None
@@ -131,8 +147,10 @@ def measure(*, n, ppm, half, step, check,
                 if z < min_cut_z:
                     min_cut_z = float(z)
                 region[f] = np.minimum(region[f], surf)
+        take_snap(k)
     return {
         "stock": stock, "volume": volume, "contact": contact,
+        "snapshots": snapshots,
         "contact_x": contact_x, "contact_y": contact_y,
         "contact_samples": contact_samples, "efrac": efrac,
         "shank_over": shank_over, "worst_rapid": worst_rapid,

@@ -52,6 +52,13 @@ MAX_OVERCUT = 0.5        # below stock bottom (sacrificial board territory)
 GOUGE_TOL = 0.15         # measured max on validated jobs: 0.102
 
 
+def contact_limit(tool) -> float:
+    """Per-tool footprint-contact limit (derivation above). Single source —
+    used by the gate here and by the per-stage model in stages.py."""
+    return BALL_ENGAGE_FRAC * tool.diameter if tool.type == "ball" \
+        else MAX_ENGAGE_FLAT
+
+
 @dataclass
 class Check:
     name: str
@@ -106,8 +113,7 @@ def verify(job: Job, nc_path=None) -> Report:
 
     for t in sorted(res.contact):
         tool = job.tool(t)
-        limit = BALL_ENGAGE_FRAC * tool.diameter if tool.type == "ball" \
-            else MAX_ENGAGE_FLAT
+        limit = contact_limit(tool)
         c = res.contact[t]
         checks.append(Check(
             f"T{t} {tool.type} contact", c.max, f"< {limit:g}", c.max < limit,

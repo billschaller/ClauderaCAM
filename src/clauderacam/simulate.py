@@ -39,6 +39,10 @@ SAFE_Z = 3.0
 
 WORD = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+))")
 COMMENT = re.compile(r"\([^)]*\)|;.*")
+# Stage markers: emit.assemble() writes one before every operation's moves.
+# The stage model is recovered from these — from the program BYTES, never the
+# job config (Article VI: previews describe the file the machine will run).
+OP_MARK = re.compile(r"\(begin operation: (.+) T(\d+) (\S+) d([0-9.]+)\)")
 # Modeled or provably motion-free words. Everything else is fatal.
 IGNORED_G = {4, 17, 21, 28, 54, 90, 94}   # dwell, XY plane, mm, park, WCS1, abs, feed/min
 IGNORED_M = {0, 1, 2, 3, 5, 7, 8, 9, 30}  # stops, spindle, coolant, end
@@ -142,6 +146,8 @@ class MoveMetrics:
     feed: np.ndarray        # mm/min (rapids: machine rapid rate)
     rpm: np.ndarray
     lineno: np.ndarray
+    stage: np.ndarray = None        # i32: stage index per move
+    stage_labels: list = None       # stage index -> label (from OP_MARK)
     # filled by the kernel:
     volume: np.ndarray = None       # mm³ removed by this move
     contact: np.ndarray = None      # max footprint contact vs move start
@@ -171,6 +177,10 @@ class CarveResult:
     metrics: MoveMetrics | None = None
     shank_worst: float = 0.0
     shank_at: tuple | None = None
+    # per-stage previews: stage_stocks[s] is the stock grid AFTER stage s
+    # finished (same shape/convention as .stock; the last one equals it)
+    stage_labels: list[str] = field(default_factory=list)
+    stage_stocks: list[np.ndarray] = field(default_factory=list)
 
 
 def prep_moves(nc_path, job: Job, rapid_feed: float) -> MoveMetrics:
@@ -180,7 +190,13 @@ def prep_moves(nc_path, job: Job, rapid_feed: float) -> MoveMetrics:
     feed = None
     rpm = 0.0
     rows = []
+    stage_labels: list[str] = []
+    cur_stage = -1
     for lineno, line in enumerate(open(nc_path), 1):
+        mk = OP_MARK.search(line)
+        if mk:
+            stage_labels.append(mk.group(1))
+            cur_stage = len(stage_labels) - 1
         parsed = parse_line(line, lineno)
         if parsed[0] == "tool":
             t = parsed[1]
@@ -218,18 +234,27 @@ def prep_moves(nc_path, job: Job, rapid_feed: float) -> MoveMetrics:
                 f"line {lineno}: cutting move with no feed rate established")
         rows.append((motion, prev["X"], prev["Y"], prev["Z"],
                      cur["X"], cur["Y"], cur["Z"], tool,
-                     rapid_feed if motion == 0 else feed, rpm, lineno))
+                     rapid_feed if motion == 0 else feed, rpm, lineno,
+                     cur_stage))
     if not rows:
         raise GcodeError("file contains no resolvable moves")
     a = np.array(rows, dtype=np.float64)
     col = lambda i: np.ascontiguousarray(a[:, i])  # noqa: E731 — kernels need contiguous
+    stage = col(11).astype(np.int32)
+    if not stage_labels:
+        stage_labels = ["program"]     # hand-written file with no markers
+        stage[:] = 0
+    elif (stage < 0).any():
+        stage_labels = ["setup"] + stage_labels  # moves before the first op
+        stage += 1
     return MoveMetrics(
         motion=col(0).astype(np.uint8),
         x0=col(1), y0=col(2), z0=col(3),
         x1=col(4), y1=col(5), z1=col(6),
         tool_num=col(7).astype(np.int32),
         feed=col(8), rpm=col(9),
-        lineno=col(10).astype(np.uint32))
+        lineno=col(10).astype(np.uint32),
+        stage=stage, stage_labels=stage_labels)
 
 
 def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
@@ -248,11 +273,23 @@ def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
     shank_d = np.array([tools[t].shank_diameter for t in tool_nums])
     tool_idx = np.array([idx_of[int(t)] for t in m.tool_num], dtype=np.uint16)
 
+    # per-stage stock snapshots: after the LAST move of each stage. Stage
+    # last-move indices are strictly increasing (each move has one stage),
+    # so this is already sorted the way the kernels require.
+    nstages = len(m.stage_labels)
+    last = np.full(nstages, -1, dtype=np.int64)
+    for s in range(nstages):
+        idx = np.nonzero(m.stage == s)[0]
+        if idx.size:
+            last[s] = idx[-1]
+    snap_after = np.ascontiguousarray(last[last >= 0])
+
     out = kernel.measure(
         n=n, ppm=ppm, half=half, step=step, check=check,
         dia=dia, ball=ball, flute_len=flute_len, shank_d=shank_d,
         motion=m.motion, x0=m.x0, y0=m.y0, z0=m.z0,
-        x1=m.x1, y1=m.y1, z1=m.z1, tool_idx=tool_idx)
+        x1=m.x1, y1=m.y1, z1=m.z1, tool_idx=tool_idx,
+        snap_after=snap_after)
 
     m.volume = out["volume"]
     m.contact = out["contact"]
@@ -262,10 +299,20 @@ def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
     m.efrac = out["efrac"]
     m.shank_over = out["shank_over"]
 
+    snap_of = dict(zip((int(v) for v in snap_after), out["snapshots"]))
+    stage_stocks = []
+    prev = np.zeros((n, n), np.float32)  # uncut stock (top plane z=0)
+    for s in range(nstages):
+        if last[s] >= 0:
+            prev = snap_of[int(last[s])]
+        stage_stocks.append(prev)        # empty stage: unchanged stock
+
     res = CarveResult(out["stock"], ppm, half,
                       worst_rapid=float(out["worst_rapid"]),
                       min_cut_z=float(out["min_cut_z"]),
-                      metrics=m)
+                      metrics=m,
+                      stage_labels=list(m.stage_labels),
+                      stage_stocks=stage_stocks)
     if out["worst_rapid"] > 0:
         res.rapid_at = (float(round(out["rapid_x"], 2)),
                         float(round(out["rapid_y"], 2)),

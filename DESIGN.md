@@ -194,6 +194,43 @@ segments at terrain changes, so this affects hand-written G-code; the
 per-sample geometric checks still see such cuts); all physics limits are
 PROVISIONAL until more metal — Article II governs every threshold change.
 
+## 2026-07-28 (later still): the stage model & viewer UX
+
+Motivation: Claude runs the show, but the human at the machine may be a CAM
+expert who wants to *inspect* the job before trusting it — per operation,
+per tool, with numbers against limits, not just a global PASS.
+
+**Stage model** (`stages.py`): a stage is one logical operation of the
+PROGRAM, recovered from the `(begin operation: ...)` markers emit.assemble
+already writes — derived from the .nc bytes, never the job config (Article
+VI). A marker-less file is one "program" stage; moves before the first
+marker form a "setup" stage. Each stage carries kernel-measured FACTS
+(moves, cut/rapid path, removed volume, max footprint contact vs its
+tool's limit, max engagement fraction, deepest cut), physics VERDICTS
+(peak 0.25s-windowed chip load and cutting power vs limits — computation
+shared with the gate via `physics.windowed_load_power`), and a feed-based
+time ESTIMATE labeled as such (excludes tool changes/dwells).
+
+**Kernel snapshots** (Article X: both kernels, parity bit-exact): `measure`
+takes `snap_after` (sorted move indices) and returns a stock copy after
+each listed move — including moves skipped as safe vertical lifts, since an
+operation's last move is typically its retract. `simulate.carve` snapshots
+each stage's last move; `CarveResult.stage_stocks[s]` is the stock after
+stage s (the last one bit-equal to the final stock — tests/stage_model.py).
+
+**Viewer app**: sidebar (job card with verdict badge / selectable stage
+list with per-stage time estimates / stage detail with utilization bars
+vs limits / tool card highlighting the active stage's tool / collapsible
+check list) + per-stage 3D preview. Selecting a stage shows the stock as
+it will exist after that operation, with the material THAT stage removes
+tinted fresh-cut silver (client diffs consecutive stage grids; stage 0
+diffs against the uncut plane). Protocol: `/api/stock?v=...&stage=k`
+serves per-stage grids under the same epoch-versioned 409 discipline; the
+client commits a version only after the buffers it needs are fetched.
+
+No emission change: the markers were already in the golden bytes, so the
+golden files stand un-re-blessed.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

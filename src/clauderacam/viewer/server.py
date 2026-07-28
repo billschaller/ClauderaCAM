@@ -32,7 +32,7 @@ MIME = {".js": "text/javascript", ".html": "text/html", ".css": "text/css"}
 _EPOCH = secrets.token_hex(4)
 _state_lock = threading.Lock()
 _counter = 0
-_state = {"version": None, "meta": {"job": None, "checks": []}, "stock": b""}
+_state = {"version": None, "meta": {"job": None, "checks": []}, "stocks": []}
 _server: ThreadingHTTPServer | None = None
 _port: int | None = None
 
@@ -43,17 +43,17 @@ def _bump() -> str:
     return f"{_EPOCH}:{_counter}"
 
 
-def push_state(job_name: str, stock: np.ndarray, ppm: float, half: float,
-               checks: list[dict], verdict: bool | None) -> None:
+def push_state(meta: dict, stocks: list[np.ndarray]) -> None:
+    """meta: the JSON-clean payload built by stages.viewer_payload (job card,
+    stage list, tools, checks). stocks: one grid per stage, cumulative —
+    stocks[s] is the stock AFTER stage s; stocks[-1] is the final part."""
     with _state_lock:
         v = _bump()
         _state["version"] = v
-        _state["meta"] = {
-            "version": v, "job": job_name, "stale": False,
-            "n": int(stock.shape[0]), "ppm": ppm, "half": half,
-            "checks": checks, "ok": verdict,
-        }
-        _state["stock"] = np.ascontiguousarray(stock.astype("<f4")).tobytes()
+        _state["meta"] = {**meta, "version": v, "stale": False,
+                          "nstages": len(stocks)}
+        _state["stocks"] = [
+            np.ascontiguousarray(s.astype("<f4")).tobytes() for s in stocks]
 
 
 def push_invalidate(job_name: str) -> None:
@@ -93,12 +93,20 @@ class Handler(BaseHTTPRequestHandler):
                 body = json.dumps(_state["meta"]).encode()
             self._send(200, "application/json", body)
         elif path == "/api/stock":
-            want = (parse_qs(parsed.query).get("v") or [None])[0]
+            q = parse_qs(parsed.query)
+            want = (q.get("v") or [None])[0]
+            stage = (q.get("stage") or [None])[0]
             with _state_lock:
                 if want != _state["version"]:
                     self._send(409, "text/plain", b"version changed")
                     return
-                body = _state["stock"]
+                stocks = _state["stocks"]
+                try:
+                    idx = len(stocks) - 1 if stage is None else int(stage)
+                    body = stocks[idx]
+                except (ValueError, IndexError):
+                    self._send(404, "text/plain", b"no such stage")
+                    return
             self._send(200, "application/octet-stream", body)
         elif path.startswith("/static/"):
             f = STATIC / Path(path).name

@@ -7,7 +7,7 @@
 use numpy::ndarray;
 use numpy::{IntoPyArray, PyArray1, PyReadonlyArray1};
 use pyo3::prelude::*;
-use pyo3::types::PyDict;
+use pyo3::types::{PyDict, PyList};
 
 const SAFE_Z: f64 = 3.0;
 
@@ -44,7 +44,8 @@ fn make_kit(dia: f64, ball: bool, ppm: f64) -> Kit {
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
 #[pyo3(signature = (n, ppm, half, step, check, dia, ball, flute_len, shank_d,
-                    motion, x0, y0, z0, x1, y1, z1, tool_idx))]
+                    motion, x0, y0, z0, x1, y1, z1, tool_idx,
+                    snap_after=None))]
 fn measure<'py>(
     py: Python<'py>,
     n: usize,
@@ -64,6 +65,7 @@ fn measure<'py>(
     y1: PyReadonlyArray1<f64>,
     z1: PyReadonlyArray1<f64>,
     tool_idx: PyReadonlyArray1<u16>,
+    snap_after: Option<PyReadonlyArray1<i64>>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dia = dia.as_slice()?;
     let ball = ball.as_slice()?;
@@ -77,6 +79,11 @@ fn measure<'py>(
     let y1 = y1.as_slice()?;
     let z1 = z1.as_slice()?;
     let tool_idx = tool_idx.as_slice()?;
+    let empty_snaps: [i64; 0] = [];
+    let snap_after_s: &[i64] = match &snap_after {
+        Some(a) => a.as_slice()?,
+        None => &empty_snaps,
+    };
 
     let ntools = dia.len();
     let kits: Vec<Kit> = (0..ntools)
@@ -100,16 +107,21 @@ fn measure<'py>(
     let (mut rapid_x, mut rapid_y, mut rapid_z) = (0f64, 0f64, 0f64);
     let mut min_cut_z = 0f64;
     let mut snap: Vec<f32> = Vec::new();
+    let mut snapshots: Vec<Vec<f32>> = Vec::new();
+    let mut sp = 0usize;
 
     let ni = n as i64;
     for k in 0..nm {
+        // 'mv breaks skip the move body but still reach the snapshot point
+        // below — snap_after must fire even for skipped vertical lifts
+        'mv: {
         let t = tool_idx[k] as usize;
         let kit = &kits[t];
         let rapid = motion[k] == 0;
         let lateral = x1[k] != x0[k] || y1[k] != y0[k];
         let dz = z1[k] - z0[k];
         if rapid && !lateral && dz >= -1e-9 {
-            continue; // pure vertical lift off the just-cut position: safe
+            break 'mv; // pure vertical lift off the just-cut position: safe
         }
         let lxy = ((x1[k] - x0[k]).powi(2) + (y1[k] - y0[k]).powi(2)).sqrt();
         let ll = lxy.max(dz.abs());
@@ -269,6 +281,11 @@ fn measure<'py>(
                 }
             }
         }
+        } // end 'mv
+        if sp < snap_after_s.len() && snap_after_s[sp] == k as i64 {
+            snapshots.push(stock.clone());
+            sp += 1;
+        }
     }
 
     let out = PyDict::new(py);
@@ -277,6 +294,14 @@ fn measure<'py>(
             pyo3::exceptions::PyValueError::new_err(e.to_string())
         })?;
     out.set_item("stock", stock_arr.into_pyarray(py))?;
+    let snaps = PyList::empty(py);
+    for s in snapshots {
+        let arr = ndarray::Array2::from_shape_vec((n, n), s).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(e.to_string())
+        })?;
+        snaps.append(arr.into_pyarray(py))?;
+    }
+    out.set_item("snapshots", snaps)?;
     out.set_item("volume", PyArray1::from_vec(py, volume))?;
     out.set_item("contact", PyArray1::from_vec(py, contact))?;
     out.set_item("contact_x", PyArray1::from_vec(py, contact_x))?;

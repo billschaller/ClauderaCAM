@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from mcp.server.fastmcp import FastMCP, Image
 
-from . import emit, engine, job as jobmod, preview as previewmod, verify as verifymod
+from . import emit, engine, job as jobmod, preview as previewmod, \
+    stages as stagesmod, verify as verifymod
 from .viewer import server as viewer
 
 mcp = FastMCP("clauderacam")
@@ -20,11 +21,14 @@ def _job(path: str):
 
 def _push_viewer(j, report):
     if viewer.running() and report.carve is not None:
-        viewer.push_state(
-            j.name, report.carve.stock, report.carve.ppm, report.carve.half,
-            [{"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok}
-             for c in report.checks],
-            report.ok)
+        meta, stocks = stagesmod.viewer_payload(j, report)
+        viewer.push_state(meta, stocks)
+
+
+def _stage_text(j, report) -> str:
+    if report.carve is None:
+        return ""
+    return "\n".join(stagesmod.stage_lines(stagesmod.stage_stats(j, report.carve)))
 
 
 @mcp.tool()
@@ -68,7 +72,8 @@ def verify(path: str) -> str:
     j = _job(path)
     report = verifymod.verify(j)
     _push_viewer(j, report)
-    return report.text()
+    st = _stage_text(j, report)
+    return report.text() + (f"\n{st}" if st else "")
 
 
 @mcp.tool()
@@ -89,8 +94,10 @@ def view(path: str, port: int = 8323) -> str:
     _push_viewer(j, report)
     note = "" if viewer.current_port() == port else \
         f" (port {port} unavailable, using {viewer.current_port()})"
-    return (f"viewer: {url}{note}  (orbit with mouse; panel shows the "
-            f"{'PASS' if report.ok else 'FAIL'} verification live)")
+    st = _stage_text(j, report)
+    return (f"viewer: {url}{note}  (stage list is selectable; panel shows "
+            f"the {'PASS' if report.ok else 'FAIL'} verification live)"
+            + (f"\n{st}" if st else ""))
 
 
 def main() -> None:

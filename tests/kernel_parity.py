@@ -44,7 +44,11 @@ kw = dict(
     shank_d=np.array([j.tools[t].shank_diameter for t in tool_nums]),
     motion=m.motion, x0=m.x0, y0=m.y0, z0=m.z0,
     x1=m.x1, y1=m.y1, z1=m.z1,
-    tool_idx=np.array([idx_of[int(t)] for t in m.tool_num], dtype=np.uint16))
+    tool_idx=np.array([idx_of[int(t)] for t in m.tool_num], dtype=np.uint16),
+    # mid-run snapshots (the stage-preview mechanism) must also agree —
+    # including one landing on a possibly-skipped final move
+    snap_after=np.array([len(m.motion) // 3, 2 * len(m.motion) // 3,
+                         len(m.motion) - 1], dtype=np.int64))
 
 t0 = time.time()
 rp = kernel.measure_py(**kw)
@@ -69,6 +73,13 @@ def cmp(name, a, b, tol):
 
 
 cmp("stock", rp["stock"], rr["stock"], 0.0)          # identical f32 op order
+if not (len(rp["snapshots"]) == len(rr["snapshots"]) == 3):
+    print(f"  snapshots: count mismatch {len(rp['snapshots'])} vs "
+          f"{len(rr['snapshots'])} FAIL")
+    fail = True
+else:
+    for si, (a, b) in enumerate(zip(rp["snapshots"], rr["snapshots"])):
+        cmp(f"snapshot[{si}]", a, b, 0.0)            # bit-exact, like stock
 cmp("volume", rp["volume"], rr["volume"], 1e-3)      # float accumulation order
 cmp("contact", rp["contact"], rr["contact"], 1e-5)
 cmp("contact_samples", rp["contact_samples"], rr["contact_samples"], 0.0)

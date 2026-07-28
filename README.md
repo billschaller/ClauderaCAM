@@ -35,6 +35,16 @@ Tools: `load_job`, `generate`, `verify`, `preview`, `view` (starts the
 localhost viewer app and loads the simulated stock into it). There is
 deliberately no upload tool — .nc files reach the machine only by hand.
 
+The viewer is a stage-aware inspection app: the program's logical
+operations (recovered from the .nc bytes themselves) appear as a
+selectable list with per-stage time estimates; selecting one shows the
+simulated stock as it will exist after that operation, with the material
+that stage removes highlighted, plus a stage-detail card (removed volume,
+tool contact, windowed chip load and cutting power — each drawn as a
+utilization bar against its limit), the tool library with the active
+stage's tool marked, and the full check list. Claude runs the job; the
+viewer exists so a human — including a CAM expert — can audit it.
+
 ## CLI
 
 ```sh
@@ -65,7 +75,9 @@ virtual stock, and checks:
 
 `tests/negative_suite.py` proves the gate can fail: 24 distilled hazards —
 slams, stalls, rubbing, gumming, shank crashes, rapid plunges, arcs in
-disguise — that must each be caught.
+disguise — that must each be caught. `tests/stage_model.py` proves the
+per-stage model tells the truth: stage snapshots partition the carve
+bit-exactly and per-stage stats are measured, not inferred.
 
 ## Golden test
 

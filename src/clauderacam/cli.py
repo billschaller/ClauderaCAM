@@ -5,7 +5,8 @@ import argparse
 import sys
 import time
 
-from . import emit, engine, job as jobmod, preview as previewmod, verify as verifymod
+from . import emit, engine, job as jobmod, preview as previewmod, \
+    stages as stagesmod, verify as verifymod
 from .viewer import server as viewer
 
 
@@ -31,6 +32,10 @@ def main(argv=None) -> int:
     if args.cmd in ("verify", "all"):
         report = verifymod.verify(j)
         print(report.text())
+        if report.carve is not None:
+            for line in stagesmod.stage_lines(
+                    stagesmod.stage_stats(j, report.carve)):
+                print(line)
         if not report.ok:
             return 1
     if args.cmd in ("preview", "all"):
@@ -39,11 +44,8 @@ def main(argv=None) -> int:
         url = viewer.start(args.port)
         report = verifymod.verify(j)
         if report.carve is not None:
-            viewer.push_state(
-                j.name, report.carve.stock, report.carve.ppm,
-                report.carve.half,
-                [{"name": c.name, "value": c.value, "limit": c.limit,
-                  "ok": c.ok} for c in report.checks], report.ok)
+            meta, stocks = stagesmod.viewer_payload(j, report)
+            viewer.push_state(meta, stocks)
         else:
             print(report.text())
         print(f"viewer at {url} — ctrl-c to stop")
