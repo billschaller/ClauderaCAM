@@ -231,6 +231,45 @@ client commits a version only after the buffers it needs are fetched.
 No emission change: the markers were already in the golden bytes, so the
 golden files stand un-re-blessed.
 
+## 2026-07-28 (evening): sessions — one server, many jobs, everyone joins
+
+Motivation: one-job-per-process meant "view another job" = another port,
+and Claude's MCP process and a human's CLI could never share a viewer.
+The workflow wanted: human or Claude starts the server; either opens or
+selects a job file; two files open as two sessions without conflict;
+Claude creates/joins sessions and every change lands in the watching
+browser within a poll tick.
+
+**Document = the job TOML.** No new file format: sessions are keyed by
+the resolved job path, so opening a file that is already open JOINS its
+session. That is the collaboration model — Claude regenerates/verifies
+through the MCP while the human watches the same session live.
+
+**Standalone server + discovery** (`viewer/server.py`, `viewer/client.py`):
+`server.start()` records {port, token, epoch, pid} in
+`~/.clauderacam/viewer.json`; `client.discover()` health-checks the
+record against `/api/ping` (epoch must match — a recycled port never
+impersonates a live viewer). Any process pushes over HTTP
+(`POST /api/push`, token-gated) instead of spawning a second server;
+`clauderacam view` joins-and-exits when a server is already running,
+serves in the foreground when not; `clauderacam serve` starts an empty
+server for browser-driven opening.
+
+**Browser is read-only about jobs** (division of labor, per the user:
+"make changes — claude, not human"): its only mutations are opening a
+job file (`POST /api/open`, path-constrained to the jobs dir, verified in
+a background thread — never generates; a missing .nc is reported, not
+fixed) and closing a session. Job edits, generation and verification stay
+with Claude/CLI. Article VII untouched: the viewer renders; nothing
+anywhere talks to the machine.
+
+**Protocol**: `/api/sessions` (list, 1s browser poll), per-session
+`/api/session/<sid>/state` and `/stock?v=&stage=` under the same
+epoch-version/409 discipline as before; `/api/invalidate` marks a session
+STALE on regenerate. tests/viewer_sessions.py drives the whole protocol
+over real HTTP: discovery, token auth, join semantics, 409/404, traversal
+refusal, background open reaching ready, close.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

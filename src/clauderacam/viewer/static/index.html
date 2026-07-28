@@ -99,6 +99,35 @@
   #ctl label { display: flex; align-items: center; gap: 8px;
                color: var(--dim); }
   #ctl input[type=range] { flex: 1; }
+
+  /* sessions */
+  .sess { display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+          border-radius: 6px; cursor: pointer;
+          border: 1px solid transparent; }
+  .sess:hover { background: var(--card2); }
+  .sess.sel { background: #263042; border-color: #3d5a99; }
+  .sess .slbl { flex: 1; font-weight: 600; overflow: hidden;
+                text-overflow: ellipsis; white-space: nowrap; }
+  .sess .sst { font-size: 11px; font-weight: 700; }
+  .sess .x { color: var(--dimmer); padding: 0 4px; border-radius: 4px; }
+  .sess .x:hover { color: var(--bad); background: var(--card2); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .dot.ok { background: var(--ok); }
+  .dot.fail { background: var(--bad); }
+  .dot.stale { background: var(--warn); }
+  .dot.loading { background: var(--dim); animation: pulse 1s infinite; }
+  .dot.error { background: transparent; border: 2px solid var(--bad);
+               box-sizing: border-box; }
+  .serr { color: var(--bad); font-size: 11px; margin: 2px 8px 4px 30px; }
+  #openRow { display: flex; gap: 6px; margin-top: 8px; }
+  #openRow select { flex: 1; background: var(--card2); color: var(--fg);
+                    border: 1px solid var(--line); border-radius: 6px;
+                    padding: 4px 6px; }
+  #openRow button { background: #2c3a55; color: var(--fg);
+                    border: 1px solid #3d5a99; border-radius: 6px;
+                    padding: 4px 12px; cursor: pointer; }
+  #openRow button:hover { background: #34466a; }
+  #status { color: var(--dim); padding: 4px 0 0; }
 </style>
 <script type="importmap">
   { "imports": { "three": "/static/three.module.js" } }
@@ -107,13 +136,19 @@
 <body>
 <div id="app">
   <div id="side">
-    <div class="card">
+    <div class="card"><h2>Sessions</h2>
+      <div id="sessList"></div>
+      <div id="openRow"><select id="fileSel"></select>
+        <button id="openBtn">open</button></div>
+      <div id="status"></div>
+    </div>
+    <div class="card" id="jobCard">
       <div id="head"><span id="live"></span><span id="jobname">–</span>
         <span id="verdict" class="badge"></span></div>
       <div id="jobfacts"></div>
     </div>
-    <div class="card"><h2>Stages</h2><div id="stages"></div></div>
-    <div class="card"><h2>Stage detail</h2>
+    <div class="card" id="stagesCard"><h2>Stages</h2><div id="stages"></div></div>
+    <div class="card" id="detailCard"><h2>Stage detail</h2>
       <div id="dtool"></div>
       <div id="dgrid" class="grid"></div>
       <div id="dbars"></div>
@@ -121,8 +156,8 @@
         changes; contact, volume and engagement are simulation-measured;
         chip load and power are model verdicts (physics.py)</div>
     </div>
-    <div class="card"><h2>Tools</h2><div id="tools"></div></div>
-    <div class="card">
+    <div class="card" id="toolsCard"><h2>Tools</h2><div id="tools"></div></div>
+    <div class="card" id="checksCard">
       <div id="checksHead"><span id="checksVerdict"></span>
         <span class="n">details ▾</span></div>
       <div id="checkList"></div>

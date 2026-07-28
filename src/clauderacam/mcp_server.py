@@ -10,7 +10,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
     stages as stagesmod, verify as verifymod
-from .viewer import server as viewer
+from .viewer import client as viewer
 
 mcp = FastMCP("clauderacam")
 
@@ -19,10 +19,14 @@ def _job(path: str):
     return jobmod.load(path)
 
 
-def _push_viewer(j, report):
-    if viewer.running() and report.carve is not None:
-        meta, stocks = stagesmod.viewer_payload(j, report)
-        viewer.push_state(meta, stocks)
+def _push_viewer(j, report) -> str:
+    """Update the job's viewer session on whichever server is live (this
+    process or a discovered one). Returns a note, or '' if no viewer."""
+    pushed = viewer.push_job(j, report)
+    if not pushed:
+        return ""
+    url, sid = pushed
+    return f"viewer session updated: {url}#{sid}"
 
 
 def _stage_text(j, report) -> str:
@@ -53,8 +57,7 @@ def generate(path: str) -> str:
     j = _job(path)
     ops = engine.generate_ops(j)
     out = emit.write(j, ops)
-    if viewer.running():
-        viewer.push_invalidate(j.name)  # any open tab now shows STALE
+    viewer.invalidate(j)  # any watching session now shows STALE
     total = sum(r.est_min for r in ops)
     lines = [f"{r.label}: T{r.tool} {len(r.lines)} moves, "
              f"{r.path_len_mm/1000:.1f}m, ~{r.est_min:.0f} min"
@@ -71,9 +74,10 @@ def verify(path: str) -> str:
     cleared for metal only if this returns PASS. Updates the viewer if open."""
     j = _job(path)
     report = verifymod.verify(j)
-    _push_viewer(j, report)
+    note = _push_viewer(j, report)
     st = _stage_text(j, report)
-    return report.text() + (f"\n{st}" if st else "")
+    return report.text() + (f"\n{st}" if st else "") \
+        + (f"\n{note}" if note else "")
 
 
 @mcp.tool()
@@ -86,18 +90,39 @@ def preview(path: str):
 
 @mcp.tool()
 def view(path: str, port: int = 8323) -> str:
-    """Start (or update) the live 3D viewer app on localhost and load this
-    job's simulated stock into it. Returns the URL to open in a browser."""
+    """Open (or join) this job's session in the live viewer app: starts a
+    server only if none is running anywhere, verifies the job, and pushes
+    its state. Returns the session URL to open in a browser."""
     j = _job(path)
-    url = viewer.start(port)
+    url, started = viewer.ensure_server(port, jobs_dir=j.path.parent)
     report = verifymod.verify(j)
-    _push_viewer(j, report)
-    note = "" if viewer.current_port() == port else \
-        f" (port {port} unavailable, using {viewer.current_port()})"
+    pushed = viewer.push_job(j, report)
+    if pushed is None:
+        return "viewer: verification is fatal — nothing to show:\n" \
+            + report.text()
+    url, sid = pushed
     st = _stage_text(j, report)
-    return (f"viewer: {url}{note}  (stage list is selectable; panel shows "
-            f"the {'PASS' if report.ok else 'FAIL'} verification live)"
+    return (f"viewer session: {url}#{sid} "
+            f"({'new server' if started else 'joined running server'}; "
+            f"{'PASS' if report.ok else 'FAIL'} verification live)"
             + (f"\n{st}" if st else ""))
+
+
+@mcp.tool()
+def sessions() -> str:
+    """List open viewer sessions (job, status, verdict) on the live
+    viewer server, if any."""
+    rows = viewer.sessions()
+    if not rows:
+        return "no viewer server running (use the view tool to start one)"
+    lines = []
+    for s in rows:
+        verdict = "STALE" if s.get("stale") else \
+            {True: "PASS", False: "FAIL"}.get(s.get("ok"), "…")
+        lines.append(f"{s['sid']}  {s.get('job') or s['label']:<16} "
+                     f"{s['status']:<8} {verdict:<6} {s['path']}"
+                     + (f"  [{s['error']}]" if s.get("error") else ""))
+    return "\n".join(lines)
 
 
 def main() -> None:

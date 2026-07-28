@@ -36,11 +36,14 @@ addEventListener('resize', resize);
 resize();
 
 // ------------------------------------------------------------------- state
-let version = null;   // committed only after buffers for the view are built
-let meta = null;
-let sel = 0;          // selected stage index
-let buffers = new Map();          // stage -> Float32Array, current version
-let lastCur = null, lastPrev = null;   // for recoloring on toggle
+let sessions = [];             // last /api/sessions payload
+let selSid = location.hash.slice(1) || null;
+let meta = null;               // committed state of the selected session
+let committed = { sid: null, version: null };
+let selStage = 0;
+let buffers = new Map();       // stage -> Float32Array for committed version
+let lastCur = null, lastPrev = null;
+let refreshing = false;        // one state/buffer refresh at a time
 
 const BRASS = [0.79, 0.64, 0.15];
 const FRESH = [0.85, 0.87, 0.92];      // fresh-machined: bright, silvery
@@ -100,9 +103,8 @@ function updateMesh(cur, prev, n, ppm, half) {
   mesh.geometry.attributes.position.needsUpdate = true;
   mesh.geometry.attributes.color.needsUpdate = true;
   mesh.geometry.computeVertexNormals();
+  mesh.visible = true;
   $('empty').style.display = 'none';
-  const side = $('side');
-  if (side.style.display !== 'flex') { side.style.display = 'flex'; resize(); }
 }
 
 // --------------------------------------------------------------- utilities
@@ -123,10 +125,15 @@ function fmtLen(mm) {
 function fmtVol(v) {
   return v >= 1000 ? (v / 1000).toFixed(2) + ' cm³' : v.toFixed(1) + ' mm³';
 }
+function showSide() {
+  const side = $('side');
+  if (side.style.display !== 'flex') { side.style.display = 'flex'; resize(); }
+}
 
-async function fetchStage(k, v, n) {
+async function fetchStage(sid, k, v, n) {
   if (buffers.has(k)) return buffers.get(k);
-  const res = await fetch(`/api/stock?v=${encodeURIComponent(v)}&stage=${k}`);
+  const res = await fetch(`/api/session/${encodeURIComponent(sid)}/stock` +
+    `?v=${encodeURIComponent(v)}&stage=${k}`);
   if (!res.ok) throw new Error('version changed');   // 409: next poll retries
   const buf = await res.arrayBuffer();
   if (buf.byteLength !== n * n * 4) throw new Error('bad size');
@@ -136,6 +143,48 @@ async function fetchStage(k, v, n) {
 }
 
 // ------------------------------------------------------------ sidebar bits
+function verdictOf(s) {
+  if (s.status === 'loading') return ['loading', 'verifying…'];
+  if (s.status === 'error') return ['error', 'ERROR'];
+  if (s.stale) return ['stale', 'STALE'];
+  if (s.ok === true) return ['ok', 'PASS'];
+  if (s.ok === false) return ['fail', 'FAIL'];
+  return ['loading', '…'];
+}
+
+function renderSessions() {
+  const box = $('sessList');
+  box.innerHTML = '';
+  for (const s of sessions) {
+    const [cls, txt] = verdictOf(s);
+    const row = document.createElement('div');
+    row.className = 'sess' + (s.sid === selSid ? ' sel' : '');
+    row.innerHTML =
+      `<span class="dot ${cls}"></span>` +
+      `<span class="slbl">${esc(s.job || s.label)}</span>` +
+      `<span class="sst ${cls === 'ok' ? 'ok-t' : cls === 'fail' || cls === 'error' ? 'bad-t' : ''}">${txt}</span>` +
+      `<span class="x" title="close session">×</span>`;
+    row.onclick = () => { selectSession(s.sid); };
+    row.querySelector('.x').onclick = async (e) => {
+      e.stopPropagation();
+      await fetch('/api/close', { method: 'POST',
+        body: JSON.stringify({ sid: s.sid }) });
+      tick();
+    };
+    box.appendChild(row);
+    if (s.status === 'error' && s.error) {
+      const err = document.createElement('div');
+      err.className = 'serr';
+      err.textContent = s.error;
+      box.appendChild(err);
+    }
+  }
+  if (!sessions.length) {
+    box.innerHTML = '<div id="status">no sessions — open a job file below,' +
+      ' or push one with the view tool / CLI</div>';
+  }
+}
+
 function renderHeader() {
   $('jobname').textContent = meta.job ?? '–';
   const v = $('verdict');
@@ -158,7 +207,7 @@ function renderStages() {
   box.innerHTML = '';
   for (const st of meta.stages ?? []) {
     const row = document.createElement('div');
-    row.className = 'stage' + (st.index === sel ? ' sel' : '');
+    row.className = 'stage' + (st.index === selStage ? ' sel' : '');
     row.innerHTML =
       `<span class="idx">${st.index + 1}</span>` +
       `<span class="slabel">${esc(st.label)}</span>` +
@@ -180,7 +229,7 @@ function bar(label, val, limit, unit, digits) {
 }
 
 function renderDetail() {
-  const st = meta.stages[sel];
+  const st = meta.stages[selStage];
   if (!st) return;
   const t = (meta.tools ?? []).find((x) => x.num === st.tool);
   $('dtool').innerHTML = t
@@ -211,7 +260,7 @@ function renderDetail() {
 function renderTools() {
   const box = $('tools');
   box.innerHTML = '';
-  const active = meta.stages[sel]?.tool;
+  const active = meta.stages[selStage]?.tool;
   for (const t of meta.tools ?? []) {
     const usedIn = (t.stages ?? [])
       .map((i) => meta.stages[i]?.label ?? i).join(', ') || 'unused';
@@ -249,50 +298,123 @@ function renderChecks() {
   }
 }
 
+function setCardsVisible(on) {
+  for (const id of ['jobCard', 'stagesCard', 'detailCard', 'toolsCard',
+                    'checksCard']) {
+    $(id).style.display = on ? '' : 'none';
+  }
+  if (mesh) mesh.visible = on;
+  $('empty').style.display = on ? 'none' : 'flex';
+}
+
 function renderAll() {
+  setCardsVisible(true);
   renderHeader(); renderStages(); renderDetail(); renderTools();
   renderChecks();
 }
 
 // ------------------------------------------------------------ interactions
+function selectSession(sid) {
+  selSid = sid;
+  location.hash = sid;
+  renderSessions();
+  tick();
+}
+
 async function showStage(k) {
   if (!meta || !meta.nstages) return;
-  sel = Math.max(0, Math.min(k, meta.nstages - 1));
-  const cur = await fetchStage(sel, meta.version, meta.n);
-  const prev = sel > 0 ? await fetchStage(sel - 1, meta.version, meta.n)
-                       : null;
+  selStage = Math.max(0, Math.min(k, meta.nstages - 1));
+  const cur = await fetchStage(meta.sid, selStage, meta.version, meta.n);
+  const prev = selStage > 0
+    ? await fetchStage(meta.sid, selStage - 1, meta.version, meta.n) : null;
   updateMesh(cur, prev, meta.n, meta.ppm, meta.half);
   renderStages(); renderDetail(); renderTools();
 }
 
-async function poll() {
+async function refreshSelected(s) {
+  // pull the selected session's committed view up to (s.sid, s.version)
+  if (refreshing) return;
+  refreshing = true;
   try {
-    const m = await (await fetch('/api/state')).json();
-    // commit `version` only AFTER the buffers for the current view are
-    // fetched and built — a failure in between must be retried, not
-    // silently skipped forever
-    if (m.version != null && m.version !== version && m.n && m.nstages) {
-      const want = (meta && meta.nstages === m.nstages)
-        ? Math.min(sel, m.nstages - 1) : m.nstages - 1;
-      const fresh = new Map();
-      const saveBuffers = buffers;
-      buffers = fresh;
-      try {
-        const cur = await fetchStage(want, m.version, m.n);
-        const prev = want > 0 ? await fetchStage(want - 1, m.version, m.n)
-                              : null;
-        meta = m; version = m.version; sel = want;
-        updateMesh(cur, prev, m.n, m.ppm, m.half);
-        renderAll();
-      } catch (e) {
-        buffers = saveBuffers;   // keep showing the old state; retry on poll
-      }
+    const res = await fetch(
+      `/api/session/${encodeURIComponent(s.sid)}/state`);
+    if (!res.ok) return;
+    const m = await res.json();
+    if (m.status !== 'ready' || !m.n || !m.nstages) return;
+    const want = (meta && committed.sid === s.sid &&
+                  meta.nstages === m.nstages)
+      ? Math.min(selStage, m.nstages - 1) : m.nstages - 1;
+    const saved = buffers;
+    buffers = new Map();
+    try {
+      const cur = await fetchStage(m.sid, want, m.version, m.n);
+      const prev = want > 0
+        ? await fetchStage(m.sid, want - 1, m.version, m.n) : null;
+      meta = m; selStage = want;
+      committed = { sid: m.sid, version: m.version };
+      updateMesh(cur, prev, m.n, m.ppm, m.half);
+      renderAll();
+    } catch (e) {
+      buffers = saved;   // version raced; the next poll retries
+    }
+  } finally { refreshing = false; }
+}
+
+async function tick() {
+  try {
+    const data = await (await fetch('/api/sessions')).json();
+    sessions = data.sessions ?? [];
+    if (sessions.length) showSide();
+    if (!sessions.find((s) => s.sid === selSid)) {
+      // pick the most recently updated session (list is sorted ascending)
+      selSid = sessions.length ? sessions[sessions.length - 1].sid : null;
+      if (selSid) location.hash = selSid;
+    }
+    renderSessions();
+    const s = sessions.find((x) => x.sid === selSid);
+    if (!s) {
+      setCardsVisible(false);
+      $('empty').textContent = 'no sessions — open a job file, or run ' +
+        'the view tool / `clauderacam view <job>`';
+    } else if (s.status === 'ready' &&
+               (committed.sid !== s.sid || committed.version !== s.version)) {
+      await refreshSelected(s);
+    } else if (s.status !== 'ready' && committed.sid !== s.sid) {
+      setCardsVisible(false);
+      $('empty').textContent = s.status === 'loading'
+        ? `verifying ${s.label}…` : `${s.label}: ${s.error || 'error'}`;
     }
   } catch (e) { /* server restarting; keep polling */ }
-  setTimeout(poll, 1500);
 }
-poll();
 
+async function loadFiles() {
+  try {
+    const data = await (await fetch('/api/files')).json();
+    const sel = $('fileSel');
+    sel.innerHTML = '';
+    for (const f of data.files ?? []) {
+      const o = document.createElement('option');
+      o.value = f; o.textContent = f;
+      sel.appendChild(o);
+    }
+    if (data.files?.length) showSide();
+  } catch (e) { /* ignore */ }
+}
+
+$('openBtn').addEventListener('click', async () => {
+  const f = $('fileSel').value;
+  if (!f) return;
+  const res = await fetch('/api/open', { method: 'POST',
+    body: JSON.stringify({ path: f }) });
+  if (res.ok) {
+    const { sid } = await res.json();
+    selectSession(sid);
+  }
+});
+addEventListener('hashchange', () => {
+  const sid = location.hash.slice(1);
+  if (sid && sid !== selSid) { selSid = sid; tick(); }
+});
 $('zex').addEventListener('input', (e) => {
   $('zexv').textContent = parseFloat(e.target.value).toFixed(1);
   if (mesh) mesh.scale.y = parseFloat(e.target.value);
@@ -303,6 +425,11 @@ $('hl').addEventListener('change', () => {
 $('checksHead').addEventListener('click', () => {
   $('checkList').classList.toggle('open');
 });
+
+loadFiles();
+tick();
+setInterval(tick, 1000);
+setInterval(loadFiles, 10000);
 
 renderer.setAnimationLoop(() => {
   controls.update();

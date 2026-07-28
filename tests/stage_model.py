@@ -7,7 +7,7 @@ Proves, against real programs:
     bit-exact the final stock, consecutive snapshots only ever remove
     material, and per-stage removed volumes sum to the program total
   - stage stats are JSON-clean and the viewer payload round-trips through
-    the server's push_state
+    the server's push_session
   - files without markers become a single "program" stage; moves before the
     first marker become a "setup" stage
 
@@ -84,17 +84,21 @@ try:
     check("meta is JSON-clean", True)
 except TypeError as e:
     check("meta is JSON-clean", False, str(e))
-viewer_server.push_state(meta, stocks)
-state = viewer_server._state
+sid = viewer_server.push_session(
+    meta["path"], meta, viewer_server.encode_stocks(stocks))
+sess = viewer_server._sessions[sid]
 check("server serves one buffer per stage",
-      len(state["stocks"]) == len(res.stage_labels))
+      len(sess.stocks) == len(res.stage_labels))
 check("buffer sizes match n²",
-      all(len(b) == meta["n"] ** 2 * 4 for b in state["stocks"]))
+      all(len(b) == meta["n"] ** 2 * 4 for b in sess.stocks))
 try:
-    json.dumps(state["meta"])
+    json.dumps(sess.meta)
     check("pushed meta is JSON-clean", True)
 except TypeError as e:
     check("pushed meta is JSON-clean", False, str(e))
+check("same path joins the same session",
+      viewer_server.push_session(
+          meta["path"], meta, viewer_server.encode_stocks(stocks)) == sid)
 
 # --- 4. marker-less and pre-marker moves -----------------------------------
 print("degenerate programs")

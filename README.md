@@ -31,25 +31,39 @@ claude mcp add --scope user clauderacam -- \
   <repo>/.venv/bin/python -m clauderacam.mcp_server
 ```
 
-Tools: `load_job`, `generate`, `verify`, `preview`, `view` (starts the
-localhost viewer app and loads the simulated stock into it). There is
-deliberately no upload tool — .nc files reach the machine only by hand.
+Tools: `load_job`, `generate`, `verify`, `preview`, `view` (opens the
+job as a session in the live viewer, starting a server only if none is
+running), `sessions` (lists open sessions). There is deliberately no
+upload tool — .nc files reach the machine only by hand.
 
-The viewer is a stage-aware inspection app: the program's logical
-operations (recovered from the .nc bytes themselves) appear as a
-selectable list with per-stage time estimates; selecting one shows the
-simulated stock as it will exist after that operation, with the material
-that stage removes highlighted, plus a stage-detail card (removed volume,
-tool contact, windowed chip load and cutting power — each drawn as a
-utilization bar against its limit), the tool library with the active
-stage's tool marked, and the full check list. Claude runs the job; the
-viewer exists so a human — including a CAM expert — can audit it.
+The viewer is a stage-aware, multi-session inspection app. One server
+holds many sessions — one per open job file — and every process joins
+it: the MCP, the CLI and any number of browser tabs land on the same
+server via a discovery file, so a change Claude pushes appears in the
+watching browser within a second. Sessions are keyed by job path, so
+opening a file that is already open joins its session (that's the
+collaboration model). In the browser: a session list with verdict
+badges and a job-file picker (opening verifies in the background; the
+browser never generates or edits — job changes are Claude's); per
+session, the program's logical operations (recovered from the .nc bytes
+themselves) as a selectable list with per-stage time estimates —
+selecting one shows the simulated stock as it will exist after that
+operation with the material that stage removes highlighted — plus a
+stage-detail card (removed volume, tool contact, windowed chip load and
+cutting power, each drawn as a utilization bar against its limit), the
+tool library with the active stage's tool marked, and the full check
+list. Claude runs the job; the viewer exists so a human — including a
+CAM expert — can audit it.
 
 ## CLI
 
 ```sh
 .venv/bin/clauderacam all jobs/mango.toml       # generate + verify + preview
-.venv/bin/clauderacam view jobs/mango.toml      # live 3D viewer at :8323
+.venv/bin/clauderacam view jobs/mango.toml      # open in the live viewer at
+                                                # :8323 (joins a running
+                                                # server, else serves)
+.venv/bin/clauderacam serve                     # empty viewer server; open
+                                                # job files from the browser
 ```
 
 ## The rule

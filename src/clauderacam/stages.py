@@ -104,7 +104,8 @@ def viewer_payload(job, report: Report) -> tuple[dict, list[np.ndarray]]:
             "contact_limit": float(contact_limit(tool)),
         })
     meta = {
-        "job": job.name, "nc": job.out.name, "ok": report.ok,
+        "job": job.name, "path": str(job.path),
+        "nc": job.out.name, "ok": report.ok,
         "n": int(res.stock.shape[0]), "ppm": res.ppm, "half": res.half,
         "material": job.material["name"], "machine": job.machine["name"],
         "stock_size": job.stock_size,

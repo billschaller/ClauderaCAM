@@ -7,7 +7,7 @@ import time
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
     stages as stagesmod, verify as verifymod
-from .viewer import server as viewer
+from .viewer import client as viewer
 
 
 def main(argv=None) -> int:
@@ -19,12 +19,29 @@ def main(argv=None) -> int:
     pv = sub.add_parser("view")
     pv.add_argument("job")
     pv.add_argument("--port", type=int, default=8323)
+    sv = sub.add_parser("serve")
+    sv.add_argument("--port", type=int, default=8323)
+    sv.add_argument("--jobs-dir", default="jobs")
     args = ap.parse_args(argv)
+
+    if args.cmd == "serve":
+        from .viewer import server as viewer_server
+        url = viewer_server.start(args.port, jobs_dir=args.jobs_dir)
+        print(f"viewer server at {url} — open job files from the browser "
+              f"or push with `clauderacam view <job>` / the MCP tools; "
+              f"ctrl-c to stop")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+        return 0
 
     j = jobmod.load(args.job)
     if args.cmd in ("generate", "all"):
         ops = engine.generate_ops(j)
         out = emit.write(j, ops)
+        viewer.invalidate(j)  # any watching session now shows STALE
         for r in ops:
             print(f"{r.label}: T{r.tool} {len(r.lines)} moves, "
                   f"{r.path_len_mm/1000:.1f}m, ~{r.est_min:.0f} min")
@@ -36,24 +53,30 @@ def main(argv=None) -> int:
             for line in stagesmod.stage_lines(
                     stagesmod.stage_stats(j, report.carve)):
                 print(line)
+        pushed = viewer.push_job(j, report)
+        if pushed:
+            print(f"viewer session updated: {pushed[0]}#{pushed[1]}")
         if not report.ok:
             return 1
     if args.cmd in ("preview", "all"):
         print("preview:", previewmod.render(j))
     if args.cmd == "view":
-        url = viewer.start(args.port)
+        url, started = viewer.ensure_server(args.port,
+                                            jobs_dir=j.path.parent)
         report = verifymod.verify(j)
-        if report.carve is not None:
-            meta, stocks = stagesmod.viewer_payload(j, report)
-            viewer.push_state(meta, stocks)
-        else:
+        pushed = viewer.push_job(j, report)
+        if pushed is None:
             print(report.text())
-        print(f"viewer at {url} — ctrl-c to stop")
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            pass
+            return 1
+        print(f"viewer session: {pushed[0]}#{pushed[1]}"
+              + ("" if started else "  (joined the running server)"))
+        if started:
+            print("serving — ctrl-c to stop")
+            try:
+                while True:
+                    time.sleep(3600)
+            except KeyboardInterrupt:
+                pass
     return 0
 
 
