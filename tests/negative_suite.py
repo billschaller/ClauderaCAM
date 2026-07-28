@@ -14,6 +14,13 @@ from pathlib import Path
 from clauderacam import emit, engine, job as jobmod, verify
 
 REPO = Path(__file__).resolve().parents[1]
+
+# the synthetic reference STLs are generated artifacts; make sure they exist
+# (CI may run this test before the reference suite, which also builds them)
+if not (REPO / "assets" / "generated" / "dome.stl").exists():
+    import runpy
+    runpy.run_path(str(REPO / "assets" / "generate_references.py"),
+                   run_name="__main__")
 TMP = Path(tempfile.mkdtemp(prefix="clauderacam-neg-"))
 
 # base: a fully valid dome program (generated fresh so it matches the code)

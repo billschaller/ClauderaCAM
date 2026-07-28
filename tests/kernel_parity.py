@@ -20,6 +20,13 @@ if kernel.BACKEND != "rust":
     sys.exit(0)
 
 REPO = Path(__file__).resolve().parents[1]
+
+# the synthetic reference STLs are generated artifacts; make sure they exist
+# (CI may run this test before the reference suite, which also builds them)
+if not (REPO / "assets" / "generated" / "dome.stl").exists():
+    import runpy
+    runpy.run_path(str(REPO / "assets" / "generate_references.py"),
+                   run_name="__main__")
 j = jobmod.load(REPO / "jobs" / "dome.toml")
 ops = engine.generate_ops(j)
 emit.write(j, ops)
