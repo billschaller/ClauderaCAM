@@ -125,6 +125,21 @@ ts_bad = twosided.load(JOB)
 ts_bad.front.tools[9].flute_length = 12.0   # short drill, 12.8 hole
 caught("hole deeper than the drill's reach",
        lambda: engine.check_job_plan(ts_bad.front), "reach")
+# ...but a counterbore at the pin positions (cut at least shank-wide)
+# extends that reach — the real mango2 drill is a 2x12
+ts_ok = twosided.load(JOB)
+ts_ok.front.tools[9].flute_length = 12.0
+ts_ok.front.tools[3].diameter = 3.175   # spot tool must cover the shank
+for op in ts_ok.front.ops:
+    if op["kind"] == "spotface":
+        op["depth"] = 1.0
+try:
+    engine.check_job_plan(ts_ok.front)
+    check("counterbore credit lets the 12mm drill make the 12.8 hole",
+          True)
+except ValueError as e:
+    check("counterbore credit lets the 12mm drill make the 12.8 hole",
+          False, str(e))
 ts_bad = twosided.load(JOB)
 ts_bad.front.spoil_thickness = 0.0
 ts_bad.front.ops[-1]["depth"] = 12.8

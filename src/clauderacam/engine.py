@@ -87,7 +87,7 @@ def check_job_plan(job: Job) -> None:
                 f"op '{op.get('label', op['kind'])}' reaches r={reach:.3f} "
                 f"but fixture keep-out starts at r={job.keepout_radius}")
 
-    for op in job.ops:
+    for oi, op in enumerate(job.ops):
         if op["kind"] != "pindrill":
             continue
         # pin holes go through the stock into a SPOILBOARD, never the bed
@@ -110,12 +110,30 @@ def check_job_plan(job: Job) -> None:
                 f"pindrill depth {op['depth']} comes within 2mm of the "
                 f"machine bed (stock {job.stock_thickness} + spoilboard "
                 f"{job.spoil_thickness})")
-        if op["depth"] > tool.flute_length:
+        # counterbore credit: a preceding spot-face at the SAME positions,
+        # cut at least as wide as the drill's shank, lowers the drill's
+        # entry — its reach extends by the counterbore depth. (The kernel
+        # shank-clearance check remains the physical judge; this rule just
+        # refuses obviously-impossible plans early.)
+        spot = 0.0
+        for prior in job.ops[:oi]:
+            if prior["kind"] != "spotface":
+                continue
+            spot_tool = job.tool(prior["tool"])
+            have = {(round(x, 3), round(y, 3))
+                    for x, y in prior["positions"]}
+            need = {(round(x, 3), round(y, 3)) for x, y in op["positions"]}
+            if need <= have and spot_tool.diameter + 1e-9 >= \
+                    tool.shank_diameter:
+                spot = max(spot, prior["depth"])
+        if op["depth"] > tool.flute_length + spot:
             raise ValueError(
                 f"pindrill depth {op['depth']} exceeds T{tool.num}'s "
-                f"{tool.flute_length}mm reach — the shank would enter the "
-                f"hole (measure the drill's reach-to-shank-step before "
-                f"trusting this number)")
+                f"{tool.flute_length}mm reach"
+                + (f" plus the {spot}mm counterbore" if spot else "")
+                + " — the shank would enter the hole (measure the drill's "
+                "reach-to-shank-step before trusting this number; a deeper "
+                "spot-face counterbore at the pin positions extends reach)")
 
     cleared = max((op["boundary_r"] + job.tool(op["tool"]).radius
                    for op in job.ops if op["kind"] == "rough"))

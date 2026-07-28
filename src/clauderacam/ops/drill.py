@@ -26,13 +26,23 @@ SAFE_Z = 3.0
 REENTRY_GAP = 0.5   # rapid re-entry stops this far above the current floor
 
 
-def spotface(positions, depth: float, feed: float) -> list[str]:
-    """Plunge tool-diameter spots `depth` below the stock top at each pin."""
+def spotface(positions, depth: float, feed: float,
+             step: float = 0.4) -> list[str]:
+    """Counterbore tool-diameter spots `depth` below the stock top at each
+    pin. Plunges are STEPPED (≤ step per move): a single full-depth plunge
+    takes the whole depth as one move-start bite, which the flat contact
+    limit rightly refuses at counterbore depths. Deep spot-faces exist to
+    buy a short drill extra reach — see engine.check_job_plan's
+    counterbore credit."""
     lines: list[str] = []
     for x, y in positions:
         lines.append(f"G0 Z{SAFE_Z:.3f}")
         lines.append(f"G0 X{x:.3f} Y{y:.3f}")
-        lines.append(f"G1 Z{-depth:.3f} F{feed:g}")
+        lines.append("G0 Z0.500")
+        z = 0.0
+        while z > -depth + 1e-9:
+            z = max(z - step, -depth)
+            lines.append(f"G1 Z{z:.3f} F{feed:g}")
         lines.append(f"G0 Z{SAFE_Z:.3f}")
     return lines
 

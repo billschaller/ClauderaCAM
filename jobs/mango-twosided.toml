@@ -7,9 +7,9 @@
 #
 # Physical setup: 63.75mm square brass blank, 3.2mm, on 1/2" MDF
 # spoilboard. Side 1 machines the front art + moat, spot-faces and
-# peck-drills two Ø2 holes at (0, ±27.5) through the brass into the MDF
-# (Ø2.0 twist drill, Spare Tools case — MEASURE its reach-to-shank-step
-# and update flute_length before cutting). Flip LEFT-RIGHT (about the Y
+# counterbores 1.0 then peck-drills two Ø2 holes at (0, ±27.5) through
+# the brass into the MDF (2x12mm twist drill, Spare Tools case — the
+# counterbore buys its 12mm reach the 12.8 hole). Flip LEFT-RIGHT (about the Y
 # axis) onto two Ø2×12 dowel pins. Side 2 machines the back art + moat,
 # then cuts out with tabs. Tabs snap by hand.
 
@@ -47,6 +47,12 @@ length = 12.0
 positions = [[0.0, 27.5], [0.0, -27.5]]
 drill_tool = 5
 spot_tool = 1
+spot_depth = 1.0   # COUNTERBORE: the drill is 2x12 (12mm reach) but the
+                   # hole is 12.8 deep — the Ø3.175 counterbore lowers the
+                   # drill's entry so its flutes bottom the hole with the
+                   # shank step ending 0.2 clear inside the counterbore
+spot_feed = 60     # stepped 0.4 plunges; F100 measured over the brass
+                   # windowed chip/tooth limit, F60 sits at 71% of it
 peck = 0.8
 feed = 120
 
@@ -83,7 +89,8 @@ type = "drill"
 diameter = 2.0
 rpm = 10000
 flutes = 2
-flute_length = 14.0   # reach to shank step — MEASURE before cutting
+flute_length = 12.0   # the operator's actual bit: 2x12mm on 1/8" shank —
+                      # confirm the flutes really run 12mm to the step
 shank_diameter = 3.175
 
 # ---------------------------------------------------------------- side 1

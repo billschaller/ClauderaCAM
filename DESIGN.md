@@ -329,6 +329,16 @@ cutout (its incident lineage is cutout-entry slam). A two-sided front
 legitimately carries art fillets in that band; the back — the side that
 cuts — runs the check on its own field.
 
+Addendum (same day): the operator's actual drill is a 2×12mm (12mm
+reach) — less than the 12.8mm hole. Resolution: the spot-face deepens
+into a 1.0mm COUNTERBORE (Ø3.175 ≥ the drill's shank), the plan rule
+credits counterbore depth at matching pin positions (the kernel
+shank-clearance check remains the physical judge — the shank step ends
+0.2 inside the counterbore), and spotface plunges are STEPPED ≤0.4/move
+at F60: a single 1.0 plunge is a move-start faceplant the flat contact
+limit rightly refuses, and F100 stepped measured over the brass
+windowed chip/tooth limit (0.066 vs 0.0554 mm³) — F60 sits at 71%.
+
 Known limits, stated plainly: the back-side 3D preview starts from flat
 stock (the carved front face is the flipped part's UNDERSIDE — invisible
 to a heightfield); B carries it for the checks, not the picture. The
