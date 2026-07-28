@@ -1,10 +1,18 @@
-# Reference: graduated access — which bit reaches which feature.
-#   big pocket Ø7      rough (2mm flat) enters and clears it
-#   pocket Ø2.2        2mm tools enter, rough footprint barely fits
-#   pocket Ø1.8        only the 1mm ball reaches the floor
-#   slots 1.3 / 1.5mm  only the 1mm ball; depths sized so its first-contact
-#                      engagement stays under the 0.5mm limit
-# Deeper narrow features need depth-stepped clearing — a roadmap op.
+# Reference: graduated access — which TOOL BODY fits into which feature.
+#   big pocket Ø7      rough (2mm flat) enters and clears to allowance
+#   pocket Ø2.2        2mm tool bodies fit; the rough footprint barely does
+#   pocket Ø1.8        no 2mm BODY fits — but measure before you believe a
+#                      stronger claim: these features are so shallow
+#                      (0.22–0.28mm) that the 2mm ball's contact circle
+#                      (Ø1.25 at 0.22mm depth) bottoms them out anyway; the
+#                      1mm finish only removes the last 0.05mm allowance
+#   slots 1.3 / 1.5mm  same story — depths sized so every tool's true
+#                      contact stays under the engagement limit
+# TRUE tool exclusion needs features deeper than a ball's penetration at the
+# feature width, which the 0.5mm engagement limit forbids in a single pass —
+# that demo requires depth-stepped clearing (roadmap op). The 2026-07-28
+# review caught this file overclaiming ("only the 1mm ball reaches the
+# floor"); the simulator itself disproved it.
 
 [job]
 name = "pocketfield"
@@ -20,8 +28,8 @@ radius = 16.0
 skim = 0.15
 floor_z = -0.7
 
-# keep-out must clear every op's reach: rough 16.5+1.0=17.5, ball rasters
-# 16+1.0+1.0=18.0 — the engine refuses to generate ops that cross it
+# keep-out must clear every op's reach incl. grid/2 row overshoot:
+# rough 17.1+1.0+0.05=18.15, ball rasters 16+1+1+0.025=18.025 <= cleared 18.1
 [fixture]
 keepout_radius = 18.2
 
@@ -49,8 +57,8 @@ tool = 3
 stepdown = 0.2
 stepover = 1.2
 allowance = 0.15
-boundary_r = 16.5
-map_half = 17.6
+boundary_r = 17.1
+map_half = 18.2
 grid = 0.1
 simplify = 0.01
 feed = 300

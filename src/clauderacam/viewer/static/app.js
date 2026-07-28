@@ -24,7 +24,7 @@ fill.position.set(50, 30, -30);
 scene.add(fill);
 
 let mesh = null;
-let version = -1;
+let version = null;
 
 function buildMesh(stock, meta) {
   const { n, ppm, half } = meta;
@@ -65,7 +65,11 @@ function buildMesh(stock, meta) {
 function renderPanel(meta) {
   document.getElementById('jobname').textContent = meta.job ?? '–';
   const v = document.getElementById('verdict');
-  if (meta.ok === true) { v.textContent = 'PASS — cleared for metal'; v.className = 'ok'; }
+  if (meta.stale) {
+    v.textContent = 'STALE — toolpaths regenerated; re-run verify';
+    v.className = 'stale';
+  }
+  else if (meta.ok === true) { v.textContent = 'PASS — cleared for metal'; v.className = 'ok'; }
   else if (meta.ok === false) { v.textContent = 'FAIL — do not cut'; v.className = 'fail'; }
   else { v.textContent = ''; }
   const c = document.getElementById('checks');
@@ -82,11 +86,18 @@ function renderPanel(meta) {
 async function poll() {
   try {
     const meta = await (await fetch('/api/state')).json();
-    if (meta.version !== undefined && meta.version !== version && meta.n) {
-      version = meta.version;
-      const buf = await (await fetch('/api/stock')).arrayBuffer();
-      buildMesh(new Float32Array(buf), meta);
-      renderPanel(meta);
+    // commit `version` only AFTER the stock is fetched and built — a failure
+    // between the two fetches must be retried, not silently skipped forever
+    if (meta.version != null && meta.version !== version && meta.n) {
+      const res = await fetch('/api/stock?v=' + encodeURIComponent(meta.version));
+      if (res.ok) {
+        const buf = await res.arrayBuffer();
+        if (buf.byteLength === meta.n * meta.n * 4) {
+          buildMesh(new Float32Array(buf), meta);
+          renderPanel(meta);
+          version = meta.version;
+        }
+      } // 409 = a newer push landed mid-fetch; next poll picks it up
     }
   } catch (e) { /* server restarting; keep polling */ }
   setTimeout(poll, 1500);

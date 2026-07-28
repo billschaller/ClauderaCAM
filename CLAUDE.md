@@ -11,6 +11,12 @@ No G-code file may be described as ready, safe, done, or cuttable unless
 `verify` returns PASS on that exact file. Not the intent, not the config —
 the bytes that would go to the machine.
 
+The gate REFUSES what it cannot fully model, rather than skipping it: an
+unknown tool, an arc in any spelling, a modal G-less line — each is fatal,
+never ignored. An unmodeled move is an unverified move (the 2026-07-28
+review found the previous parser silently dropped all three, letting a cut
+through the fixture keep-out verify PASS).
+
 Never weaken, special-case, or delete a check to make a job pass. Thresholds
 change only with a physical-world justification written into DESIGN.md.
 If verification is inconvenient, the toolpath is wrong, not the verifier.
@@ -34,8 +40,14 @@ An intentional output change requires: (1) an explanation of the numerical
 difference in the commit message, (2) re-verification of the new output,
 (3) explicitly re-blessed reference files. "The diff looks fine" is not one
 of the three. The golden assets live in `assets/` (the coin STL) and
-`tests/golden/` (its cut toolpaths). `tests/reference_suite.py` must also
-pass: four synthetic jobs, each stressing a different hazard.
+`tests/golden/` (its toolpaths AND the fully assembled program — the
+preamble, tool-change and postamble lines are golden too, because the
+geometric simulator is blind to them). `tests/reference_suite.py` must also
+pass (four synthetic jobs, each stressing a different hazard), and
+`tests/negative_suite.py` must catch all of its hazards — the negative
+controls are what prove the gate can fail; without them an always-PASS
+verifier clears the whole suite, which is exactly what the 2026-07-28
+review demonstrated.
 
 ## Article IV — One Coordinate Convention
 

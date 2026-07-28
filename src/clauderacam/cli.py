@@ -38,10 +38,14 @@ def main(argv=None) -> int:
     if args.cmd == "view":
         url = viewer.start(args.port)
         report = verifymod.verify(j)
-        viewer.push_state(
-            j.name, report.carve.stock, report.carve.ppm, report.carve.half,
-            [{"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok}
-             for c in report.checks], report.ok)
+        if report.carve is not None:
+            viewer.push_state(
+                j.name, report.carve.stock, report.carve.ppm,
+                report.carve.half,
+                [{"name": c.name, "value": c.value, "limit": c.limit,
+                  "ok": c.ok} for c in report.checks], report.ok)
+        else:
+            print(report.text())
         print(f"viewer at {url} — ctrl-c to stop")
         try:
             while True:

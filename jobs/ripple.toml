@@ -1,7 +1,8 @@
 # Reference: gentle cosine rings — 1mm ball finishing DIRECTLY after the
 # 3.175 rough (no semi pass). Only legal because every slope stays inside the
 # first-ball engagement budget; the reduced 0.15 rough allowance buys margin.
-# Expect the highest passing engagement numbers in the suite.
+# Measured true contact (2026-07-28 metric): T4 0.217mm vs its 0.65 limit —
+# the highest fraction-of-limit for a 1mm ball in the suite.
 
 [job]
 name = "ripple"

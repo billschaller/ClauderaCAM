@@ -37,6 +37,22 @@ for r in ops:
 out = emit.write(j, ops)
 print(f"assembled {out}")
 
+# the FULL program is golden too: preamble, M05/M6/M3/G4 blocks and postamble
+# had zero coverage before the 2026-07-28 review — every safety line could be
+# dropped with both suites green
+ref_nc = (GOLDEN / "mango-brass.nc").read_text()
+got_nc = Path(out).read_text()
+if got_nc == ref_nc:
+    print("  full program: EXACT MATCH")
+else:
+    fail = True
+    gl, rl = got_nc.splitlines(), ref_nc.splitlines()
+    print(f"  full program: MISMATCH gen={len(gl)} ref={len(rl)} lines")
+    for i, (a, b) in enumerate(zip(gl, rl)):
+        if a != b:
+            print(f"    first diff line {i+1}:\n      gen: {a}\n      ref: {b}")
+            break
+
 report = verify.verify(j)
 print(report.text())
 if not report.ok:

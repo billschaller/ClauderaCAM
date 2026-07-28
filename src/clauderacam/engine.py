@@ -37,29 +37,92 @@ def path_length(lines: list[str]) -> float:
     return float(L)
 
 
+MAX_OVERCUT = 0.5   # deepest legal cut below the stock bottom (sacrificial)
+
+
 def op_reach(job: Job, op: dict) -> float:
-    """Outermost radius this op's tool EDGE can touch."""
+    """Outermost radius this op's tool EDGE can touch, including the up-to-
+    grid/2 row-endpoint overshoot of the sampled serpentine generators
+    (2026-07-28 review: the analytic formula understated the true reach)."""
     tool = job.tool(op["tool"])
     if op["kind"] == "rough":
-        return op["boundary_r"] + tool.radius
+        return op["boundary_r"] + tool.radius + op["grid"] / 2
     if op["kind"] == "raster":
-        return job.model_radius + op["bound_extra"] + tool.radius
+        return job.model_radius + op["bound_extra"] + tool.radius \
+            + op["grid"] / 2
     if op["kind"] == "cutout":
         return job.model_radius + tool.diameter
     raise ValueError(f"unknown op kind: {op['kind']}")
 
 
-def generate_ops(job: Job) -> list[OpResult]:
-    # fixture keep-out constrains GENERATION, not just verification: refuse
-    # any op whose reach crosses it (a reference job's ball footprint once
-    # crossed a keep-out sized only for the rough disc — caught in sim, now
-    # impossible to generate)
+def check_job_plan(job: Job) -> None:
+    """Static guards run before any toolpath exists. Every rule here is a
+    review finding turned law (Article II):
+      - fixture keep-out constrains generation, not just verification
+      - op ORDER: rough first, cutout last (a cutout-first program severs
+        the part onto its tabs and then roughs on top of it — and the
+        geometric simulator, being order-commutative, cannot catch it)
+      - cross-op COVERAGE: every ball raster and the cutout annulus must lie
+        inside the rough-cleared disc (shrinking boundary_r once left the
+        2mm ball slotting 2.1mm-deep virgin stock)
+      - cutout depth semantics: enters above the cleared field, severs the
+        stock, stays out of the machine bed
+    """
+    if not job.ops:
+        raise ValueError("job has no ops")
+    if job.ops[0]["kind"] != "rough":
+        raise ValueError("first op must be a rough pass — every later op "
+                         "assumes roughed stock")
+    for i, op in enumerate(job.ops):
+        if op["kind"] == "cutout" and i != len(job.ops) - 1:
+            raise ValueError("cutout must be the LAST op — after it the part "
+                             "hangs on its tabs")
+
     for op in job.ops:
         reach = op_reach(job, op)
         if reach > job.keepout_radius:
             raise ValueError(
                 f"op '{op.get('label', op['kind'])}' reaches r={reach:.3f} "
                 f"but fixture keep-out starts at r={job.keepout_radius}")
+
+    cleared = max((op["boundary_r"] + job.tool(op["tool"]).radius
+                   for op in job.ops if op["kind"] == "rough"))
+    rough_allow = max(op["allowance"] for op in job.ops
+                      if op["kind"] == "rough")
+    for op in job.ops:
+        label = op.get("label", op["kind"])
+        if op["kind"] == "raster":
+            reach = op_reach(job, op)
+            if reach > cleared + 1e-9:
+                raise ValueError(
+                    f"op '{label}' ball reaches r={reach:.3f} but roughing "
+                    f"only clears r={cleared:.3f} — the ball would meet "
+                    f"full-height stock")
+        elif op["kind"] == "cutout":
+            tool = job.tool(op["tool"])
+            slot_outer = job.model_radius + tool.diameter
+            if slot_outer > cleared + 1e-9:
+                raise ValueError(
+                    f"cutout slot reaches r={slot_outer:.3f} but roughing "
+                    f"only clears r={cleared:.3f}")
+            if op["z_start"] < job.floor_z + rough_allow - 1e-9:
+                raise ValueError(
+                    f"cutout z_start {op['z_start']} is below the "
+                    f"rough-cleared field "
+                    f"({job.floor_z + rough_allow:.3f}) — the entry would "
+                    f"slam full depth")
+            if op["z_final"] > -job.stock_thickness + 1e-9:
+                raise ValueError(
+                    f"cutout z_final {op['z_final']} does not sever "
+                    f"{job.stock_thickness}mm stock")
+            if op["z_final"] < -(job.stock_thickness + MAX_OVERCUT) - 1e-9:
+                raise ValueError(
+                    f"cutout z_final {op['z_final']} cuts more than "
+                    f"{MAX_OVERCUT}mm below the stock bottom")
+
+
+def generate_ops(job: Job) -> list[OpResult]:
+    check_job_plan(job)
 
     tris = heightmap.load_stl(job.stl)
     hmaps: dict[tuple, np.ndarray] = {}

@@ -1,10 +1,19 @@
 """Layered flat-endmill roughing inside a circular boundary.
 
-Faithful port of mango-brass/make_rough.py. Requirement 1 (DESIGN.md):
-the boundary is a DISC of tool-center radius `rb`, never a bounding box —
-FreeCAD's box-bounded rough swept under the corner clamps. Each 0.2mm layer
-serpentines the disc with z clamped to max(layer, flat_offset + allowance),
-so axial engagement never exceeds one stepdown.
+Requirement 1 (DESIGN.md): the boundary is a DISC of tool-center radius
+`rb`, never a bounding box. Each layer serpentines the disc with z clamped
+to max(layer, flat_offset + allowance), then runs a full perimeter ring at
+r = rb, so axial engagement never exceeds one stepdown and the promise
+"cleared to rb + tool_radius" holds over the whole disc.
+
+The 2026-07-28 review found the original row placement started at c = -rb —
+a zero-length chord that was silently skipped, leaving the disc's south pole
+uncovered by a full stepover. In the job that cut the brass coin that gap
+put ~21mm² of full-height stock inside the cutout annulus, and the cutout's
+first revolution took a 1.97mm full-width bite instead of its 0.15mm/rev
+ramp. Rows are now centered (never touching the rim), and the per-layer
+perimeter ring guarantees the boundary annulus regardless of how stepover
+divides the disc.
 """
 from __future__ import annotations
 
@@ -18,6 +27,18 @@ def make_layers(stepdown: float, z_final: float) -> list[float]:
     if not layers or layers[-1] > z_final + 1e-9:
         layers.append(round(z_final, 4))
     return layers
+
+
+def row_coords(rb: float, stepover: float) -> np.ndarray:
+    """Serpentine row positions: spacing `stepover`, centered so no row
+    lands on the rim (a rim row has a zero-length chord and cuts nothing)."""
+    n_rows = int(np.floor(2 * rb / stepover)) + 1
+    span = (n_rows - 1) * stepover
+    if span >= 2 * rb - 1e-9:   # stepover divides 2*rb exactly: inset
+        n_rows -= 1
+        span -= stepover
+    off0 = (2 * rb - span) / 2
+    return -rb + off0 + np.arange(n_rows) * stepover
 
 
 def generate(off: np.ndarray, *, half: float, grid: float, rb: float,
@@ -34,8 +55,8 @@ def generate(off: np.ndarray, *, half: float, grid: float, rb: float,
 
     lines: list[str] = []
     emit = lines.append
-    n_rows = int(np.floor(2 * rb / stepover)) + 1
-    coords = -rb + np.arange(n_rows) * stepover
+    coords = row_coords(rb, stepover)
+    ring_seg = max(96, int(np.ceil(2 * np.pi * rb)))   # ~1mm chords
     fwd = True
     for L in layers:
         first = True
@@ -75,5 +96,15 @@ def generate(off: np.ndarray, *, half: float, grid: float, rb: float,
                 emit(f"G1 X{t:.3f} Y{c:.3f} Z{z:.3f} F{feed}")
             prev_end = (pts[-1][0], c, pts[-1][1])
             fwd = not fwd
+        # perimeter ring: guarantees the boundary annulus at this layer
+        emit(f"G0 Z{safe_z:.3f}")
+        thetas = 2 * np.pi * np.arange(ring_seg + 1) / ring_seg
+        rx = rb * np.cos(thetas)
+        ry = rb * np.sin(thetas)
+        rz = [max(L, sample(x, y)) for x, y in zip(rx, ry)]
+        emit(f"G0 X{rx[0]:.3f} Y{ry[0]:.3f}")
+        emit(f"G1 Z{rz[0]:.3f} F{plunge_feed}")
+        for k in range(1, ring_seg + 1):
+            emit(f"G1 X{rx[k]:.3f} Y{ry[k]:.3f} Z{rz[k]:.3f} F{feed}")
         emit(f"G0 Z{safe_z:.3f}")
     return lines

@@ -89,6 +89,66 @@ capability envelope: the first ball pass after a flat rough engages roughly
 so shapes and allowances must be designed inside the 0.5mm limit. Features
 that exceed it need depth-stepped clearing, which is a roadmap op.
 
+## 2026-07-28: adversarial review & hardening
+
+A 42-agent adversarial review (6 finders + 1 skeptic per finding) confirmed
+35 findings, 21 critical. Everything below was fixed the same day; the
+review's central lessons are now law.
+
+**The engagement metric was structurally broken.** It read one pixel under
+the tool center after the preceding 0.06mm sample had already carved it —
+plunges reported the sampling step (~0.06mm) and buried cuts ~0, so the
+0.5mm limit measured nothing. The metric is now the max over the whole
+footprint of (stock − cutting surface) against a **move-start snapshot**
+(per-sample pre-carve is not enough: a plunge carves its own footprint
+incrementally), for every tool including flats.
+
+**Engagement recalibration.** With a real metric, limits had to be
+re-derived from metal evidence, all measured on the exact bytes involved:
+  - the flawless brass coin's semi pass: T2 (2mm ball) 1.007mm max
+    single-move flank contact — survived
+  - its finish pass: T4 (1mm ball) 0.544mm — survived
+  - the incident that snapped a 1mm ball: ~1.4mm — killed
+Ball limits scale with diameter (flute stiffness ~d⁴): 0.65×d, giving the
+1mm ball 0.65 (0.11 above validated, less than half the kill) and the 2mm
+ball 1.3. Flat tools get a 1.0mm axial cap (validated max 0.40). The old
+fixed 0.5 was calibrated to a metric that could not fail; these numbers are
+calibrated to metal.
+
+**The rough generator under-covered the disc.** Row 0 sat at c = −rb (zero
+chord, silently skipped), leaving the south pole short a full stepover — in
+the shipped coin job that left ~21mm² of virgin stock in the cutout annulus
+and a 1.97mm full-width first-revolution bite (the coin survived; that was
+luck, not correctness). Rows are now centered and every layer ends with a
+perimeter ring at r = rb, making "cleared to rb + tool radius" actually
+true. Goldens were re-blessed for this change per Article III: only the
+rough op changed; semi/finish/cutout remain byte-identical to the bytes
+that cut the coin.
+
+**The gate now refuses instead of skipping** (see simulate.py): unknown
+tools, arcs in any spelling, G-less modal lines, unparseable words — all
+fatal. Descending rapids are checked (only pure vertical *lifts* are
+exempt). New checks: depth floor vs stock bottom + 0.5mm, gouge vs the
+target surface (lower-envelope compare), sever (the cutout ring is actually
+through the stock outside the tab arcs), and a dialect lint (M5 before M6,
+G4 dwell after M3, S>0, G21/G90 before motion) covering the spindle-state
+semantics a geometric simulator cannot see.
+
+**The engine refuses bad plans before generating**: rough must be first,
+cutout last, every ball raster and the cutout annulus must fit inside the
+rough-cleared disc, cutout must enter above the cleared field, sever the
+stock, and stay out of the machine bed.
+
+**The tests can now fail.** The full assembled program is golden (not just
+op bodies), and `tests/negative_suite.py` holds 17 distilled hazards —
+each must be caught, so an always-PASS verifier can no longer clear the
+suite. CI runs all three suites on every push.
+
+Known accepted limits of the gate (documented, not hidden): it simulates
+geometry at 12.5 px/mm with a 0.06mm sample step — sub-0.04mm defects are
+below its floor; it does not model feeds, chip load over time, or heat; the
+dialect lint checks structure, not semantics the firmware might add.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

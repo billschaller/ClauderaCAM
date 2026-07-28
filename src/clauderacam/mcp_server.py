@@ -19,7 +19,7 @@ def _job(path: str):
 
 
 def _push_viewer(j, report):
-    if viewer.running():
+    if viewer.running() and report.carve is not None:
         viewer.push_state(
             j.name, report.carve.stock, report.carve.ppm, report.carve.half,
             [{"name": c.name, "value": c.value, "limit": c.limit, "ok": c.ok}
@@ -49,6 +49,8 @@ def generate(path: str) -> str:
     j = _job(path)
     ops = engine.generate_ops(j)
     out = emit.write(j, ops)
+    if viewer.running():
+        viewer.push_invalidate(j.name)  # any open tab now shows STALE
     total = sum(r.est_min for r in ops)
     lines = [f"{r.label}: T{r.tool} {len(r.lines)} moves, "
              f"{r.path_len_mm/1000:.1f}m, ~{r.est_min:.0f} min"
@@ -85,7 +87,9 @@ def view(path: str, port: int = 8323) -> str:
     url = viewer.start(port)
     report = verifymod.verify(j)
     _push_viewer(j, report)
-    return (f"viewer: {url}  (orbit with mouse; panel shows the "
+    note = "" if viewer.current_port() == port else \
+        f" (port {port} unavailable, using {viewer.current_port()})"
+    return (f"viewer: {url}{note}  (orbit with mouse; panel shows the "
             f"{'PASS' if report.ok else 'FAIL'} verification live)")
 
 

@@ -1,9 +1,13 @@
 # ClauderaCAM
 
+[![ci](https://github.com/billschaller/ClauderaCAM/actions/workflows/ci.yml/badge.svg)](https://github.com/billschaller/ClauderaCAM/actions/workflows/ci.yml)
+
 Claude-drivable 2.5D heightmap CAM for the Makera Carvera Air.
 STL relief → rough / semi / finish / cutout → **physical stock-simulation
 verification** → live 3D viewer → .nc. Built from the exact code that cut
-the brass Mango coin. See DESIGN.md for the incident-traced requirements.
+the brass Mango coin, then hardened by a 42-agent adversarial review whose
+35 confirmed findings are each either fixed or a named check (see DESIGN.md
+"2026-07-28: adversarial review & hardening").
 
 ## Setup
 
@@ -18,7 +22,7 @@ started here. From elsewhere:
 
 ```sh
 claude mcp add --scope user clauderacam -- \
-  /home/dad/scratch/carvera/clauderacam/.venv/bin/python -m clauderacam.mcp_server
+  <repo>/.venv/bin/python -m clauderacam.mcp_server
 ```
 
 Tools: `load_job`, `generate`, `verify`, `preview`, `view` (starts the
@@ -35,8 +39,15 @@ deliberately no upload tool — .nc files reach the machine only by hand.
 ## The rule
 
 **Nothing goes to the machine without `verify` returning PASS.** The verifier
-carves every move into virtual stock and checks rapids, ball engagement,
-surface completeness, and the fixture keep-out zone.
+strictly parses the program (anything it cannot model — unknown tools, arcs,
+modal G-less lines — is fatal, never skipped), carves every move into
+virtual stock, and checks: rapids (lateral and descending), true per-move
+tool contact for every tool (footprint max vs move-start stock, limits
+calibrated to metal evidence), depth vs stock bottom, gouging below the
+target surface, surface completeness, cutout sever-through, the fixture
+keep-out zone, and the spindle-state dialect (M5 before M6, dwell after M3).
+`tests/negative_suite.py` proves the gate can fail: 17 distilled hazards
+that must each be caught.
 
 ## Golden test
 
@@ -64,7 +75,7 @@ paired with a job in `jobs/` that stresses a different hazard:
 | `terraces` | layered-rough terracing on 0.22mm steps, simplify on flats, cutout with tabs |
 | `dome` | 2mm flat rough (smaller tool = relaxed slope budget), two-ball finish chain, no cutout |
 | `ripple` | 1mm ball finishing **directly** after rough — legal only because every slope is inside the engagement budget |
-| `pocketfield` | graduated feature access: Ø7 pocket (rough enters) down to 1.3mm slots (1mm ball only), depths sized to the engagement limit |
+| `pocketfield` | graduated feature access by tool BODY (Ø7 down to 1.3mm slots) — honestly annotated: the shallow features are bottomed by the 2mm ball's contact circle; true tool exclusion awaits depth-stepped clearing |
 
 Together with mango these cover the supported tool set: flat 3.175, flat 2.0,
 ball 2.0, ball 1.0 — the geometries validated by cut metal. V-bits and
