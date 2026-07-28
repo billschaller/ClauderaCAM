@@ -32,6 +32,7 @@ from scipy import ndimage
 from . import heightmap
 from .emit import lint_program
 from .job import Job
+from .physics import physics_checks
 from .simulate import CarveResult, GcodeError, carve_check
 
 # Contact limits on the TRUE per-move footprint metric (see simulate.py),
@@ -111,6 +112,13 @@ def verify(job: Job, nc_path=None) -> Report:
         checks.append(Check(
             f"T{t} {tool.type} contact", c.max, f"< {limit:g}", c.max < limit,
             f"at {c.at}, {c.samples} contact samples" if c.at else ""))
+
+    # shank/holder clearance: geometric FACT — stock standing above the
+    # bottom of the shank anywhere under its footprint is a crash
+    checks.append(Check("shank clearance", res.shank_worst, "must be 0",
+                        res.shank_worst <= 1e-6,
+                        f"at {res.shank_at[:2]}, line {res.shank_at[2]}"
+                        if res.shank_at else ""))
 
     depth_limit = -(job.stock_thickness + MAX_OVERCUT)
     worst_depth = min(res.min_cut_z, float(stock.min()))
@@ -197,5 +205,10 @@ def verify(job: Job, nc_path=None) -> Report:
     problems = lint_program(open(nc_path).read().splitlines())
     checks.append(Check("dialect lint", float(len(problems)), "0 problems",
                         not problems, "; ".join(problems[:3])))
+
+    # cutting-physics checks (model-based verdicts — see physics.py for the
+    # honesty contract and each limit's provenance)
+    for pc in physics_checks(job, res.metrics):
+        checks.append(Check(pc.name, pc.value, pc.limit, pc.ok, pc.detail))
 
     return Report(checks, res)

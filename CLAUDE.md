@@ -82,10 +82,30 @@ ClauderaCAM is 2.5D heightmap CAM. No undercuts, no rest machining, no
 general 3-axis ambitions. Features that require abandoning the heightmap
 representation belong in another project.
 
+## Article IX — Physics Tells the Truth About Itself
+
+Geometric checks are facts about the simulation. Physics checks (chip load,
+power, heat, gumming) are MODEL verdicts: every limit in physics.py states
+its provenance, every proxy says what it does NOT model, and every
+threshold is anchored to metal evidence — the flawless jobs bound the
+limits from below, the incidents bound them from above. A physics limit
+changes only the way Article II changes any threshold: with new
+physical-world evidence written into DESIGN.md. Never present a model
+verdict as a measured fact.
+
+## Article X — Two Kernels, One Truth
+
+The measurement kernel exists twice: kernel_py.py (pure Python, the
+semantic authority) and kernel/ (Rust, the optimization). They must agree
+to the bit on carved stock and to epsilon on measurements —
+tests/kernel_parity.py enforces it. A change to one without the other is a
+broken build, not a divergence to debate.
+
 ## Working rules
 
-- Dependencies stay at numpy, scipy, pillow, mcp. The viewer's three.js is
-  vendored; no CDNs, no build step, no frontend framework.
+- Core dependencies stay at numpy, scipy, pillow, mcp; the Rust kernel uses
+  pyo3 + rust-numpy only. The viewer's three.js is vendored; no CDNs, no
+  build step for the frontend, no framework.
 - Match the existing code style: numpy-first, small modules, docstrings that
   cite the requirement or incident a piece of code serves.
 - The MCP server runs on stdio — nothing in the process may print to stdout

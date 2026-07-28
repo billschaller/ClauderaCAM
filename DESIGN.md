@@ -149,6 +149,51 @@ geometry at 12.5 px/mm with a 0.06mm sample step — sub-0.04mm defects are
 below its floor; it does not model feeds, chip load over time, or heat; the
 dialect lint checks structure, not semantics the firmware might add.
 
+## 2026-07-28 (later): the physics layer
+
+The gate previously verified geometry only. It now also models the CUT:
+materials, feeds, spindle power, chip load, heat and chip evacuation — with
+a strict honesty contract (physics.py): geometric checks are simulation
+facts; physics checks are MODEL verdicts, each limit carrying its
+provenance, and everything anchored to the two metal-validated jobs.
+
+**Measurement kernel.** The carve loop now measures, per move: removed
+volume, engagement fraction, true footprint contact, and shank clearance.
+It exists twice: `kernel_py.py` (pure Python, the SEMANTIC AUTHORITY) and
+`kernel/` (a Rust/pyo3 port, ~10-50x faster). `tests/kernel_parity.py`
+requires bit-exact stock and epsilon-level metric agreement — a change to
+one implementation without the other fails CI. (Matching numpy exactly in
+Rust required round-half-even pixel mapping and mirroring numpy's
+f32-array + f64-scalar promotion, which rounds once, not twice.)
+
+**Schema.** Tools now carry flutes / flute_length / shank_diameter (no
+defaults — safety data doesn't default); jobs name a `[material]` from the
+table in physics.py (brass, aluminum-6061) and may override `[machine]`
+(Carvera Air: 200W spindle, 0-13000 RPM per makera.com; we allow the cut
+100W). Specific cutting energy: ~0.52 J/mm³ measured for Al 2014
+(ScienceDirect / PMC, cited in the web research), raised to 1.0 for 6061
+micro-milling size effect; brass 2.2 (handbook ~2x aluminum). PROVISIONAL.
+
+**New checks** (all gating): sustained chip-per-tooth and cutting power
+over 0.25s prorated windows (validated brass anchor: 0.043 mm³/tooth on
+d=3.175, 19W — the windows exist because validated jobs contain ~40ms
+terrain-descent pulses that would false-fail an instantaneous metric);
+rubbing (feed/tooth under the material floor while removing material);
+plunge feed (axial descents only — steep contour segments are not
+plunges); machine feed cap; sustained-power heat proxy (10s window);
+enclosed-chip gumming proxy (continuous engagement ≥0.4 with real removal;
+6061 limit 600mm³, brass 2500 vs the validated cutout's 326); and SHANK
+CLEARANCE — a geometric fact, not a model: stock standing above the flute
+length within the shank footprint is a crash (the 1×3mm ball's 3.175 shank
+into the 3.35mm cutout slot is the canonical case, and a negative test).
+
+**Known limits, stated plainly:** heat and gumming are proxies (energy and
+chip-volume bounds, not temperature or chip-shape models); per-move metrics
+smear concentration inside a single long uniform move (generator output
+segments at terrain changes, so this affects hand-written G-code; the
+per-sample geometric checks still see such cuts); all physics limits are
+PROVISIONAL until more metal — Article II governs every threshold change.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

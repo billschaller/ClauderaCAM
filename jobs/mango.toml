@@ -11,6 +11,9 @@ out = "../out/mango-brass.nc"
 size = 63.75
 thickness = 3.2
 
+[material]
+name = "brass"   # physics limits from the material table in physics.py
+
 [model]
 radius = 26.0     # STL is pre-positioned: XY-centered, top at -skim
 skim = 0.15
@@ -24,18 +27,27 @@ num = 1
 type = "flat"
 diameter = 3.175
 rpm = 12000
+flutes = 1
+flute_length = 12.0
+shank_diameter = 3.175
 
 [[tool]]
 num = 2
 type = "ball"
 diameter = 2.0
 rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
 
 [[tool]]
 num = 4
 type = "ball"
 diameter = 1.0
 rpm = 12000
+flutes = 2
+flute_length = 3.0
+shank_diameter = 3.175
 
 [[op]]
 kind = "rough"

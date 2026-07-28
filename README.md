@@ -12,8 +12,14 @@ the brass Mango coin, then hardened by a 42-agent adversarial review whose
 ## Setup
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -e .
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .          # pure-python (works everywhere)
+.venv/bin/python -m pip install ./kernel      # optional Rust kernel (~10-50x
+                                              # faster verify; needs cargo)
 ```
+
+The two kernels are parity-locked (`tests/kernel_parity.py`): bit-exact
+stock, epsilon-exact measurements. The Python one is the semantic reference.
 
 ## MCP (primary interface)
 
@@ -41,13 +47,25 @@ deliberately no upload tool — .nc files reach the machine only by hand.
 **Nothing goes to the machine without `verify` returning PASS.** The verifier
 strictly parses the program (anything it cannot model — unknown tools, arcs,
 modal G-less lines — is fatal, never skipped), carves every move into
-virtual stock, and checks: rapids (lateral and descending), true per-move
-tool contact for every tool (footprint max vs move-start stock, limits
-calibrated to metal evidence), depth vs stock bottom, gouging below the
-target surface, surface completeness, cutout sever-through, the fixture
-keep-out zone, and the spindle-state dialect (M5 before M6, dwell after M3).
-`tests/negative_suite.py` proves the gate can fail: 17 distilled hazards
-that must each be caught.
+virtual stock, and checks:
+
+- *geometry (simulation facts):* rapids (lateral and descending), true
+  per-move tool contact for every tool (footprint max vs move-start stock,
+  limits calibrated to metal evidence), shank/holder clearance against
+  standing stock, depth vs stock bottom, gouging below the target surface,
+  surface completeness, cutout sever-through, the fixture keep-out zone,
+  and the spindle-state dialect (M5 before M6, dwell after M3)
+- *cutting physics (model verdicts, provenance-annotated in physics.py):*
+  per-material sustained chip load and spindle power over 0.25s windows,
+  rubbing (starvation feed), plunge rate, machine feed caps, a sustained-
+  power heat proxy, and an enclosed-chip gumming proxy — materials carry
+  specific cutting energy, chip-load floors and evacuation limits; tools
+  carry flutes, flute length and shank geometry; the machine model is the
+  Carvera Air's 200W / 13k RPM spindle
+
+`tests/negative_suite.py` proves the gate can fail: 24 distilled hazards —
+slams, stalls, rubbing, gumming, shank crashes, rapid plunges, arcs in
+disguise — that must each be caught.
 
 ## Golden test
 

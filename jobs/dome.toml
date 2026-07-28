@@ -10,6 +10,9 @@ out = "../out/dome.nc"
 size = 32.0
 thickness = 3.2
 
+[material]
+name = "aluminum-6061"   # physics limits from the material table in physics.py
+
 [model]
 radius = 12.0
 skim = 0.15
@@ -23,18 +26,27 @@ num = 3
 type = "flat"
 diameter = 2.0
 rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
 
 [[tool]]
 num = 2
 type = "ball"
 diameter = 2.0
 rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
 
 [[tool]]
 num = 4
 type = "ball"
 diameter = 1.0
 rpm = 12000
+flutes = 2
+flute_length = 3.0
+shank_diameter = 3.175
 
 [[op]]
 kind = "rough"

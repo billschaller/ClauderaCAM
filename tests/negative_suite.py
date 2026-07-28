@@ -42,8 +42,8 @@ def edited(name: str, transform) -> Path:
 results = []
 
 
-def expect_check_fails(name: str, path: Path, check_substr: str):
-    r = verify.verify(base_job, path)
+def expect_check_fails(name: str, path: Path, check_substr: str, job=None):
+    r = verify.verify(job or base_job, path)
     hit = [c for c in r.checks if check_substr in c.name and not c.ok]
     ok = (not r.ok) and bool(hit)
     results.append((name, ok,
@@ -117,6 +117,63 @@ expect_check_fails("dropped G4 spin-up dwells",
 expect_check_fails("dropped M05 before tool changes",
                    edited("no_m05", lambda s: s.replace("M05\n", "")),
                    "dialect lint")
+
+# --- physics hazards the gate must catch (see physics.py) ------------------
+expect_check_fails("full-width slam through the model (sustained chip load)",
+                   spliced("slam",
+                           block(3, "G0 Z3.000", "G0 X-13.000 Y0.000",
+                                 "G1 Z-1.550 F150", "G1 X13.000 Y0.000 F600",
+                                 "G0 Z3.000")),
+                   "sustained chip per tooth")
+# segmented like real generator output — per-move windowing cannot see
+# concentration INSIDE one long uniform move (documented limit, physics.py)
+stall_moves = ["G0 Z3.000", "G0 X-13.000 Y0.000", "G1 Z-1.900 F150"]
+stall_moves += [f"G1 X{x/10:.3f} Y0.000 F3000" for x in range(-110, 131, 20)]
+stall_moves += ["G0 Z3.000"]
+expect_check_fails("spindle stall (MRR beyond available cutting power)",
+                   spliced("stall", block(3, *stall_moves)),
+                   "cutting power")
+expect_check_fails("rubbing (cutting at starvation feed)",
+                   spliced("rubbing",
+                           block(4, "G0 Z3.000", "G0 X-3.000 Y0.500",
+                                 "G1 Z-0.500 F100", "G1 X3.000 Y0.500 F30",
+                                 "G0 Z3.000")),
+                   "rubbing")
+expect_check_fails("plunging at cutting feed",
+                   spliced("fast_plunge",
+                           block(3, "G0 Z3.000", "G0 X0.000 Y6.000",
+                                 "G1 Z-1.500 F800", "G0 Z3.000")),
+                   "plunge feed")
+expect_check_fails("feed beyond the machine cap",
+                   spliced("feed_cap",
+                           block(3, "G0 Z3.000", "G0 X-13.000 Y2.000",
+                                 "G1 Z-1.700 F150",
+                                 "G1 X-12.000 Y2.000 F4000", "G0 Z3.000")),
+                   "max commanded feed")
+
+# gumming: prove the enclosed-chip check fires — the mechanism is tested by
+# forcing a low limit onto the base job's own enclosed first-layer rough run
+gum_job = jobmod.load(REPO / "jobs" / "dome.toml")
+gum_job.material = {**gum_job.material, "enclosed_chip_mm3": 10.0}
+gum_path = TMP / "gumming.nc"
+gum_path.write_text("\n".join(base_lines) + "\n")
+expect_check_fails("gumming (enclosed chip volume over the material limit)",
+                   gum_path, "enclosed chip", job=gum_job)
+
+# shank crash: 1mm ball (3mm flute, 3.175 shank) reaching into the mango
+# cutout slot — the tool would clear, the SHANK would not
+mango_job = jobmod.load(REPO / "jobs" / "mango.toml")
+mango_ops = engine.generate_ops(mango_job)
+mango_lines = emit.assemble(mango_job, mango_ops).splitlines()
+mpost = mango_lines.index("(begin postamble)")
+shank_path = TMP / "shank.nc"
+shank_path.write_text("\n".join(
+    mango_lines[:mpost]
+    + block(4, "G0 Z3.000", "G0 X28.200 Y0.000", "G1 Z-3.300 F100",
+            "G1 X28.200 Y0.500 F300", "G0 Z3.000")
+    + mango_lines[mpost:]) + "\n")
+expect_check_fails("shank/holder driven into slot walls",
+                   shank_path, "shank clearance", job=mango_job)
 
 # --- job plans the engine must refuse --------------------------------------
 expect_plan_refusal("raster before rough (op order)",

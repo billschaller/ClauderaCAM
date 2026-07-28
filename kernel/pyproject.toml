@@ -1,0 +1,13 @@
+[build-system]
+requires = ["maturin>=1.5"]
+build-backend = "maturin"
+
+[project]
+name = "clauderacam-kernel"
+version = "0.1.0"
+description = "Rust measurement kernel for ClauderaCAM (see kernel_py.py for the semantic reference)"
+requires-python = ">=3.11"
+
+[tool.maturin]
+manifest-path = "Cargo.toml"
+module-name = "clauderacam_kernel"

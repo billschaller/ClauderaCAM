@@ -1,22 +1,24 @@
 """Sequential stock simulation — the physical ground truth for verification
 and previews.
 
-Rewritten after the 2026-07-28 adversarial review. Two principles:
+Structure (since the physics layer):
+  parse_line()  strict G-code parsing — Article I: the gate refuses what it
+                cannot model (unknown tools, arcs in any spelling, G-less
+                modal lines, junk words are all fatal)
+  prep_moves()  resolves modal state (position, tool, feed, rpm) into flat
+                per-move arrays
+  kernel        the measurement loop (kernel.py dispatches to the Rust
+                extension when built, else the pure-Python reference in
+                kernel_py.py — both must agree, see tests/kernel_parity.py):
+                carves the stock and measures, per move: removed volume,
+                max footprint contact vs the MOVE-START snapshot, engagement
+                fraction, shank clearance; plus rapid-vs-stock and depth.
 
-1. STRICT PARSING (Article I): the gate refuses G-code it cannot fully model
-   instead of skipping it. Unknown tools, arcs (any spelling), G-less modal
-   coordinate lines, machine-coordinate moves, and unrecognized words are all
-   fatal. The previous parser silently dropped compact arcs ('G2X...'),
-   moves under undefined tools, and no-space words — each of which let a
-   file that cuts through the fixture keep-out verify PASS.
-
-2. TRUE ENGAGEMENT: contact is measured as the max over the tool footprint
-   of (stock − tool cutting surface) BEFORE each sample is carved, for every
-   tool. The previous metric read one pixel under the tool center after the
-   preceding sample had already carved it, so it reported its own ~0.06mm
-   sampling step on plunges and ~0 on buried cuts — it could essentially
-   never fail. Measured on the incident class that snapped a 1mm ball, the
-   old metric said 0.06mm; this one says the full burial depth.
+TRUE ENGAGEMENT: contact is the max over the tool footprint of
+(stock − cutting surface) against a move-start snapshot — per-sample
+pre-carve measurement is not enough because a plunge carves its own
+footprint incrementally. The pre-2026-07-28 center-column metric reported
+its own ~0.06mm sampling step on plunges and could essentially never fail.
 
 Coordinate convention (requirement 4): carve maps world->pixel via
 i = round((half - y) * ppm), j = round((x + half) * ppm). Any analysis mask
@@ -30,6 +32,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+from . import kernel
 from .job import Job
 
 SAFE_Z = 3.0
@@ -47,7 +50,8 @@ class GcodeError(ValueError):
 
 
 def parse_line(line: str, lineno: int):
-    """-> ('none',) | ('tool', n) | ('move', 0|1, {axis: value})"""
+    """-> ('none',) | ('spindle', rpm) | ('tool', n)
+        | ('move', 0|1, {axis: value}, feed|None, rpm|None)"""
     body = COMMENT.sub(" ", line).strip()
     if not body:
         return ("none",)
@@ -60,6 +64,8 @@ def parse_line(line: str, lineno: int):
     coords: dict[str, float] = {}
     m6 = False
     tsel = None
+    fword = None
+    sword = None
     for L, V in words:
         L = L.upper()
         v = float(V)
@@ -86,9 +92,13 @@ def parse_line(line: str, lineno: int):
                 raise GcodeError(f"line {lineno}: unsupported M{m}")
         elif L == "T":
             tsel = int(round(v))
+        elif L == "F":
+            fword = v
+        elif L == "S":
+            sword = v
         elif L in "XYZ":
             coords[L] = v
-        elif L in "FSP":
+        elif L == "P":
             pass
         else:
             raise GcodeError(
@@ -105,19 +115,10 @@ def parse_line(line: str, lineno: int):
             f"line {lineno}: coordinates without G0/G1 in {line.strip()!r} — "
             f"modal G-less lines are rejected by the Carvera and by this gate")
     if motion is not None:
-        return ("move", motion, coords)
+        return ("move", motion, coords, fword, sword)
+    if sword is not None:
+        return ("spindle", sword)
     return ("none",)
-
-
-def kit(dia_mm: float, ball: bool, ppm: float):
-    r_px = int(np.ceil(dia_mm / 2 * ppm))
-    dy, dx = np.mgrid[-r_px:r_px + 1, -r_px:r_px + 1]
-    rr = np.hypot(dx, dy) / ppm
-    f = rr <= dia_mm / 2 + 1e-9
-    R = dia_mm / 2
-    drop = (R - np.sqrt(np.maximum(R * R - rr * rr, 0))) if ball \
-        else np.zeros_like(rr)
-    return r_px, f, drop.astype(np.float32)
 
 
 @dataclass
@@ -125,6 +126,37 @@ class Contact:
     max: float = 0.0
     at: tuple | None = None
     samples: int = 0
+
+
+@dataclass
+class MoveMetrics:
+    """Flat per-move arrays from prep + kernel. Index = move order."""
+    motion: np.ndarray      # u8: 0 rapid / 1 cut
+    x0: np.ndarray
+    y0: np.ndarray
+    z0: np.ndarray
+    x1: np.ndarray
+    y1: np.ndarray
+    z1: np.ndarray
+    tool_num: np.ndarray    # actual tool numbers
+    feed: np.ndarray        # mm/min (rapids: machine rapid rate)
+    rpm: np.ndarray
+    lineno: np.ndarray
+    # filled by the kernel:
+    volume: np.ndarray = None       # mm³ removed by this move
+    contact: np.ndarray = None      # max footprint contact vs move start
+    contact_x: np.ndarray = None
+    contact_y: np.ndarray = None
+    contact_samples: np.ndarray = None
+    efrac: np.ndarray = None        # max engagement fraction over samples
+    shank_over: np.ndarray = None   # max stock above the shank bottom
+
+    @property
+    def time_s(self) -> np.ndarray:
+        L = np.maximum(np.hypot(np.hypot(self.x1 - self.x0,
+                                         self.y1 - self.y0),
+                                self.z1 - self.z0), 0.0)
+        return L / np.maximum(self.feed, 1.0) * 60.0
 
 
 @dataclass
@@ -136,33 +168,38 @@ class CarveResult:
     rapid_at: tuple | None = None
     contact: dict[int, Contact] = field(default_factory=dict)  # ALL tools
     min_cut_z: float = 0.0
+    metrics: MoveMetrics | None = None
+    shank_worst: float = 0.0
+    shank_at: tuple | None = None
 
 
-def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
-          step: float = 0.06, check: bool = True) -> CarveResult:
-    half = job.stock_half + extra_half
-    n = int(half * 2 * ppm)
-    stock = np.zeros((n, n), np.float32)
-    kits = {t.num: kit(t.diameter, t.type == "ball", ppm)
-            for t in job.tools.values()}
-    res = CarveResult(stock, ppm, half,
-                      contact={t: Contact() for t in kits})
-
+def prep_moves(nc_path, job: Job, rapid_feed: float) -> MoveMetrics:
+    """Strict-parse the file and resolve all modal state into flat arrays."""
     cur = {"X": None, "Y": None, "Z": None}
     tool = None
+    feed = None
+    rpm = 0.0
+    rows = []
     for lineno, line in enumerate(open(nc_path), 1):
         parsed = parse_line(line, lineno)
         if parsed[0] == "tool":
             t = parsed[1]
-            if t not in kits:
+            if t not in job.tools:
                 raise GcodeError(
                     f"line {lineno}: M6 T{t} but tool {t} is not defined in "
                     f"the job — refusing to simulate moves blind")
             tool = t
             continue
+        if parsed[0] == "spindle":
+            rpm = parsed[1]
+            continue
         if parsed[0] != "move":
             continue
-        motion, coords = parsed[1], parsed[2]
+        motion, coords, fword, sword = parsed[1], parsed[2], parsed[3], parsed[4]
+        if sword is not None:
+            rpm = sword
+        if fword is not None:
+            feed = fword
         if tool is None:
             raise GcodeError(
                 f"line {lineno}: motion before any tool change — cannot "
@@ -176,65 +213,81 @@ def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
                 f"established")
         if unknown:
             continue  # G0 accumulating the initial position
-        r_px, foot, drop = kits[tool]
-        rapid = motion == 0
-        lateral = (cur["X"] != prev["X"]) or (cur["Y"] != prev["Y"])
-        dz = cur["Z"] - prev["Z"]
-        if rapid and not lateral and dz >= -1e-9:
-            continue  # pure vertical lift off the just-cut position: safe
-        L = max(np.hypot(cur["X"] - prev["X"], cur["Y"] - prev["Y"]), abs(dz))
-        snap = bi0 = bj0 = None
-        if check and not rapid:
-            # contact is measured against the stock AS OF MOVE START: a
-            # plunge carves its own footprint 0.06mm at a time, so per-sample
-            # pre-carve measurement still only sees the sampling step — the
-            # physical quantity is how much material THIS move's pass removes
-            ii = [int(round((half - p["Y"]) * ppm)) for p in (prev, cur)]
-            jj = [int(round((p["X"] + half) * ppm)) for p in (prev, cur)]
-            bi0 = max(0, min(ii) - r_px - 2)
-            bi1 = min(n, max(ii) + r_px + 3)
-            bj0 = max(0, min(jj) - r_px - 2)
-            bj1 = min(n, max(jj) + r_px + 3)
-            snap = stock[bi0:bi1, bj0:bj1].copy()
-        for t_ in np.linspace(0, 1, max(2, int(L / step) + 1)):
-            x = prev["X"] + (cur["X"] - prev["X"]) * t_
-            y = prev["Y"] + (cur["Y"] - prev["Y"]) * t_
-            z = prev["Z"] + (cur["Z"] - prev["Z"]) * t_
-            i, j = int(round((half - y) * ppm)), int(round((x + half) * ppm))
-            if not (0 <= i < n and 0 <= j < n):
-                continue
-            i0, i1b = max(0, i - r_px), min(n, i + r_px + 1)
-            j0, j1b = max(0, j - r_px), min(n, j + r_px + 1)
-            fs = (slice(i0 - (i - r_px), i1b - (i - r_px)),
-                  slice(j0 - (j - r_px), j1b - (j - r_px)))
-            f, d = foot[fs], drop[fs]
-            region = stock[i0:i1b, j0:j1b]
-            if not f.any():
-                continue
-            if rapid:
-                # lateral rapids at safe height are exempt; lateral rapids
-                # below it and ALL descending rapids are checked
-                if check and (not lateral or z < SAFE_Z - 0.1):
-                    v = float(region[f].max() - z)
-                    if v > res.worst_rapid:
-                        res.worst_rapid = v
-                        res.rapid_at = (float(round(x, 2)), float(round(y, 2)),
-                                        float(round(z, 2)))
-            else:
-                if check:
-                    # TRUE engagement: stock above the tool's cutting surface
-                    # anywhere in the footprint, vs the move-start snapshot
-                    sregion = snap[i0 - bi0:i1b - bi0, j0 - bj0:j1b - bj0]
-                    over = float((sregion[f] - (z + d[f])).max())
-                    if over > 1e-6:
-                        rec = res.contact[tool]
-                        rec.samples += 1
-                        if over > rec.max:
-                            rec.max = over
-                            rec.at = (float(round(x, 1)), float(round(y, 1)))
-                if z < res.min_cut_z:
-                    res.min_cut_z = float(z)
-                region[f] = np.minimum(region[f], z + d[f])
+        if motion == 1 and feed is None:
+            raise GcodeError(
+                f"line {lineno}: cutting move with no feed rate established")
+        rows.append((motion, prev["X"], prev["Y"], prev["Z"],
+                     cur["X"], cur["Y"], cur["Z"], tool,
+                     rapid_feed if motion == 0 else feed, rpm, lineno))
+    if not rows:
+        raise GcodeError("file contains no resolvable moves")
+    a = np.array(rows, dtype=np.float64)
+    col = lambda i: np.ascontiguousarray(a[:, i])  # noqa: E731 — kernels need contiguous
+    return MoveMetrics(
+        motion=col(0).astype(np.uint8),
+        x0=col(1), y0=col(2), z0=col(3),
+        x1=col(4), y1=col(5), z1=col(6),
+        tool_num=col(7).astype(np.int32),
+        feed=col(8), rpm=col(9),
+        lineno=col(10).astype(np.uint32))
+
+
+def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
+          step: float = 0.06, check: bool = True) -> CarveResult:
+    half = job.stock_half + extra_half
+    n = int(half * 2 * ppm)
+    m = prep_moves(nc_path, job, job.machine["rapid_feed"])
+
+    tool_nums = sorted(job.tools)
+    idx_of = {t: i for i, t in enumerate(tool_nums)}
+    tools = job.tools
+    dia = np.array([tools[t].diameter for t in tool_nums])
+    ball = np.array([1 if tools[t].type == "ball" else 0 for t in tool_nums],
+                    dtype=np.uint8)
+    flute_len = np.array([tools[t].flute_length for t in tool_nums])
+    shank_d = np.array([tools[t].shank_diameter for t in tool_nums])
+    tool_idx = np.array([idx_of[int(t)] for t in m.tool_num], dtype=np.uint16)
+
+    out = kernel.measure(
+        n=n, ppm=ppm, half=half, step=step, check=check,
+        dia=dia, ball=ball, flute_len=flute_len, shank_d=shank_d,
+        motion=m.motion, x0=m.x0, y0=m.y0, z0=m.z0,
+        x1=m.x1, y1=m.y1, z1=m.z1, tool_idx=tool_idx)
+
+    m.volume = out["volume"]
+    m.contact = out["contact"]
+    m.contact_x = out["contact_x"]
+    m.contact_y = out["contact_y"]
+    m.contact_samples = out["contact_samples"]
+    m.efrac = out["efrac"]
+    m.shank_over = out["shank_over"]
+
+    res = CarveResult(out["stock"], ppm, half,
+                      worst_rapid=float(out["worst_rapid"]),
+                      min_cut_z=float(out["min_cut_z"]),
+                      metrics=m)
+    if out["worst_rapid"] > 0:
+        res.rapid_at = (float(round(out["rapid_x"], 2)),
+                        float(round(out["rapid_y"], 2)),
+                        float(round(out["rapid_z"], 2)))
+    for t in tool_nums:
+        sel = m.tool_num == t
+        c = Contact()
+        if sel.any():
+            c.samples = int(m.contact_samples[sel].sum())
+            k = int(np.argmax(np.where(sel, m.contact, -1)))
+            if m.contact[k] > 1e-6:
+                c.max = float(m.contact[k])
+                c.at = (float(round(m.contact_x[k], 1)),
+                        float(round(m.contact_y[k], 1)))
+        res.contact[t] = c
+    if check:
+        k = int(np.argmax(m.shank_over))
+        if m.shank_over[k] > 1e-6:
+            res.shank_worst = float(m.shank_over[k])
+            res.shank_at = (float(round((m.x0[k] + m.x1[k]) / 2, 1)),
+                            float(round((m.y0[k] + m.y1[k]) / 2, 1)),
+                            int(m.lineno[k]))
     return res
 
 

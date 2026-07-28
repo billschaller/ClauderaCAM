@@ -1,7 +1,24 @@
 name: ci
 on: [push, pull_request]
 jobs:
-  test:
+  test-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python -m pip install -e . ./kernel
+      - name: kernel parity (rust vs python reference)
+        run: python tests/kernel_parity.py
+      - name: golden (byte-identical toolpaths + full program + verify)
+        run: python tests/golden_mango.py
+      - name: reference suite (4 synthetic jobs end-to-end)
+        run: python tests/reference_suite.py
+      - name: negative controls (24 hazards must be caught)
+        run: python tests/negative_suite.py
+  test-python-fallback:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -9,9 +26,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install -e .
-      - name: golden (byte-identical toolpaths + full program + verify)
+      - name: golden on the pure-python kernel (no rust required)
         run: python tests/golden_mango.py
-      - name: reference suite (4 synthetic jobs end-to-end)
-        run: python tests/reference_suite.py
-      - name: negative controls (17 hazards must be caught)
+      - name: negative controls on the pure-python kernel
         run: python tests/negative_suite.py
