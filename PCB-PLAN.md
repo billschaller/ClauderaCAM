@@ -159,18 +159,25 @@ sim of the sheet, per-stage stats, downloads. Additions:
 
 ## Workstream 7 — Board A: "coupon" (single-sided, the full chain)
 
-Concept: **process ladder + functional blinky in ~50×35mm.** One board,
-two jobs:
+Concept: **process ladder + functional blinky + component zoo in
+~55×40mm.** One board, three jobs:
 - A corner block of characterization ladders: trace/gap pairs at
   0.4/0.5/0.6mm, pad sizes stepping 1206→0603, silk text at 1.2/1.5/2mm,
   a scrub-margin ring — read the board with a loupe, learn the process
   window, keep it as the reference artifact.
-- A 555 heartbeat: NE555 (DIP, BOJACK kit) astable → SOT-23 driver
-  (KOKISO) → LED pair; slide switch, tactile button (rate kick), wire-
-  pad power (2×AA or 14430). Deliberately one resistor each in 0603,
-  0805, 1206 (the three EGSCST books) — the BOM is itself a process
-  test. SMD on copper side for stencil+hotplate practice; THT from the
-  front.
+- A 555 heartbeat: NE555 (DIP, BOJACK kit) astable → SOT-23 driver →
+  LED pair; slide switch, tactile button (rate kick), wire-pad power
+  (2×AA or 14430). SMD on copper side for stencil+hotplate practice;
+  THT from the front.
+- The zoo: the EGSCST books are FULL assortment books per package size
+  (operator-confirmed: resistors 0Ω–10MΩ PLUS capacitors, diodes,
+  transistors, ICs, inductors, LEDs in each of 0603/0805/1206) — so
+  every species earns a working seat, not a bare test pad: LC pi filter
+  on the rail (SMD inductor + caps), SMD diode reverse guard, SMD LED
+  power indicator beside the THT blink LEDs, decoupling and timing caps
+  in mixed sizes, resistors deliberately spread across all three books.
+  The BOM is itself the process test: every reflowed species at every
+  size the stencil must render.
 Design in KiCad via the konnect flow (schematic build agent, mill
 design rules from the guide as `.kicad_dru`: 0.4 clearance / 0.5 track
 / B.Cu only for the single-sided board, design-review agent before
@@ -185,7 +192,10 @@ programmer on hand), 4 charlieplex lines — which HAVE to cross sides:
 the vias are load-bearing, not decorative.
 - Front: LED ring, 2 buttons, piezo, power switch, battery pads.
 - Back: ATtiny85 + SOT-23 P-FET reverse protection (the zigbee circuit)
-  + 0805 passives — stencil, paste, hotplate reflow.
+  + piezo driver cell (SOT-23 + base R + flyback diode) + mixed-size
+  SMD passives from the books — stencil, paste, hotplate reflow. The
+  back is the second stencil exercise: different species mix than
+  Board A, same three package sizes.
 - Wire vias: a `WireVia` footprint (0.8mm hole, ~2.0 annular both
   sides) — KiCad plated vias can't model hand-soldered wire; THT-pad
   footprints can. Drilled from side A with everything else.
@@ -197,13 +207,18 @@ vias (solder both faces), then THT, then flash, then play.
 
 ## The parts gate (Article XI for components)
 
-The three EGSCST books are confirmed 0603/0805/1206 RESISTOR kits —
-everything else on their labels ("capacitors, diodes, ICs…") is Amazon
-boilerplate until verified. Before layout freezes, each board's BOM is
-checked line-by-line against the physical kits (KOKISO SOT-23 contents,
+The three EGSCST books are full assortment books, one per package size
+(0603/0805/1206): resistors 0Ω–10MΩ plus capacitors, diodes,
+transistors, ICs, inductors and LEDs in that size class —
+OPERATOR-CONFIRMED 2026-07-29, after a truncated Amazon fetch had
+wrongly demoted them to resistor-only books. The lesson cuts both ways
+from the 14mm-drill incident: never invent inventory, and never DELETE
+inventory the bench actually holds on weak web evidence — the owner of
+the kit outranks the scrape. The gate's job at layout freeze is exact
+VALUES and part numbers: each board's BOM checked line-by-line against
+the physical books (EGSCST values on hand, KOKISO SOT-23 contents,
 BOJACK DIP list, 74HC inventory, piezo, switches, LED colors); a part
-the bench does not hold does not enter the schematic. Same law as the
-tool crib, same reason: the 14mm drill that never existed.
+the bench does not hold does not enter the schematic.
 
 ## Stencil + reflow (off-machine, in the run-sheet)
 
