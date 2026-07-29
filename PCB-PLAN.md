@@ -207,18 +207,26 @@ vias (solder both faces), then THT, then flash, then play.
 
 ## The parts gate (Article XI for components)
 
-The three EGSCST books are full assortment books, one per package size
-(0603/0805/1206): resistors 0Ω–10MΩ plus capacitors, diodes,
-transistors, ICs, inductors and LEDs in that size class —
-OPERATOR-CONFIRMED 2026-07-29, after a truncated Amazon fetch had
-wrongly demoted them to resistor-only books. The lesson cuts both ways
-from the 14mm-drill incident: never invent inventory, and never DELETE
-inventory the bench actually holds on weak web evidence — the owner of
-the kit outranks the scrape. The gate's job at layout freeze is exact
-VALUES and part numbers: each board's BOM checked line-by-line against
-the physical books (EGSCST values on hand, KOKISO SOT-23 contents,
-BOJACK DIP list, 74HC inventory, piezo, switches, LED colors); a part
-the bench does not hold does not enter the schematic.
+The EGSCST books' full value tables are TRANSCRIBED and committed:
+`parts/egscst-{0603,0805,1206}.toml` (+ `parts/README.md` for the
+fetch method and the seller discrepancies). Headlines that shape the
+designs: all three books share the roster (170 E24 resistors, 9
+diodes incl. Schottkys and a 15V TVS, 16 SOT-23 BJTs, six SMD ICs —
+NE555/LM358/LM386 SOP-8, LM339 SOP-16, 78L05 SOT-89, PC817 — 15
+inductors, 5 LED colors) but the CAP lists differ: the 0805 book is
+the only source of 100nF-and-up (decoupling/bulk to 10µF); 0603 tops
+at 1µF; 1206 at 10nF. The SOP-8 555 means Board A's blinky can go
+full-SMD if the layout wants it.
+
+Files carry `status = "listing-transcribed"` — good enough to design
+against, bench-verified at BOM time. The gate's job at layout freeze:
+each BOM line checked against the parts files (and the physical book
+for anything load-bearing); KOKISO SOT-23 contents, BOJACK DIP list,
+74HC inventory, and the THT bins still need bench cataloging before
+their first BOM. A part the bench does not hold does not enter the
+schematic — the lesson cuts both ways from the 14mm-drill incident:
+never invent inventory, and never DELETE inventory the bench holds on
+weak web evidence.
 
 ## Stencil + reflow (off-machine, in the run-sheet)
 

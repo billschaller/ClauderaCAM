@@ -1,0 +1,337 @@
+# EGSCST 0603 SMD assortment book — 5600 pcs, 236 values.
+# Transcribed 2026-07-29 from Amazon listing B0F43WGTCR gallery images
+# (master table 81pWtdUk5pL.jpg, cross-checked against pouch-label photos).
+# See parts/README.md for method and status semantics.
+
+[book]
+brand = "EGSCST"
+package = "0603"                # 1.6 x 0.8 mm
+pieces = 5600
+values = 236
+status = "listing-transcribed"  # verify pulled values against the
+                                # physical book at BOM time
+extras = ["soldering tip x1", "tweezers x1", "solder wire x2",
+          "rubber band x1"]
+
+[resistors]
+tolerance = "1%"
+series = "E24"                  # full E24, 7 decades
+range = ["0", "10M"]            # 0R + 1R..9.1R .. 1M..9.1M + 10M
+values_count = 170
+per_value = 25                  # derived: 4250/170 (not printed)
+
+# capacitors: 120pF-1uF — mid values; all rows printed 50V X7R.
+[[cap]]
+value = "120pF"
+code = "121K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "150pF"
+code = "151K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "180pF"
+code = "181K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "200pF"
+code = "201K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "220pF"
+code = "221K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "330pF"
+code = "331K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "470pF"
+code = "471K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "560pF"
+code = "561K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "680pF"
+code = "681K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "750pF"
+code = "751K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "820pF"
+code = "821K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "1nF"
+code = "102K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "1.5nF"
+code = "152K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "2.2nF"
+code = "222K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "6.8nF"
+code = "682K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "8.2nF"
+code = "822K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "10nF"
+code = "103K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "20nF"
+code = "203K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "47nF"
+code = "473K"
+voltage = "50V"
+dielectric = "X7R"
+
+[[cap]]
+value = "1uF"
+code = "105K"
+voltage = "50V"
+dielectric = "X7R"
+
+# diodes — identical roster in all three books
+[[diode]]
+part = "1N4148"
+marking = "T4"                  # pouch label prints T7; table says T4
+package = "SOD-123"
+kind = "switching"
+
+[[diode]]
+part = "SMF15CA"
+marking = "HM"
+package = "SOD-123"
+kind = "TVS 15V bidirectional"
+
+[[diode]]
+part = "1N4007"
+marking = "A7"
+package = "SOD-123"
+kind = "rectifier 1A 1000V"
+
+[[diode]]
+part = "1N4007"
+marking = "M7"
+package = "SMA"
+kind = "rectifier 1A 1000V"
+
+[[diode]]
+part = "1N5819"
+marking = "SS14"
+package = "SMA"
+kind = "schottky 1A 40V"
+
+[[diode]]
+part = "1N5822"
+marking = "SS34"
+package = "SMA"
+kind = "schottky 3A 40V"
+
+[[diode]]
+part = "1N5408"
+marking = "S3M"
+package = "SMA"
+kind = "rectifier 3A 1000V"
+
+[[diode]]
+part = "RL207"
+marking = "S2M"
+package = "SMA"
+kind = "rectifier 2A 1000V"
+
+[[diode]]
+part = "SR240"
+marking = "SS24"                # pouch label prints S324; table SS24
+package = "SMA"
+kind = "schottky 2A 40V"
+
+# transistors — SOT-23, identical roster in all three books
+[[bjt]]
+part = "S9012"
+marking = "2T1"
+polarity = "PNP"
+
+[[bjt]]
+part = "S9013"
+marking = "J3"
+polarity = "NPN"
+
+[[bjt]]
+part = "S9014"
+marking = "J6"
+polarity = "NPN"
+
+[[bjt]]
+part = "S9015"
+marking = "M6"
+polarity = "PNP"
+
+[[bjt]]
+part = "S8050"
+marking = "J3Y"
+polarity = "NPN"
+
+[[bjt]]
+part = "S8550"
+marking = "2TY"                 # one pouch misprinted "S8050(2TY)"
+polarity = "PNP"
+
+[[bjt]]
+part = "2N5401"
+marking = "2L"
+polarity = "PNP"
+
+[[bjt]]
+part = "2N5551"
+marking = "G1"
+polarity = "NPN"
+
+[[bjt]]
+part = "2N3904"
+marking = "1AM"
+polarity = "NPN"
+
+[[bjt]]
+part = "2N3906"
+marking = "2A"
+polarity = "PNP"
+
+[[bjt]]
+part = "2N2222"
+marking = "1P"                  # pouch label prints 1F
+polarity = "NPN"
+
+[[bjt]]
+part = "C1815"
+marking = "HF"
+polarity = "NPN"
+
+[[bjt]]
+part = "A42"
+marking = "1D"
+polarity = "NPN"                # high-voltage (MPSA42 class)
+
+[[bjt]]
+part = "A92"
+marking = "2D"
+polarity = "PNP"                # high-voltage (MPSA92 class)
+
+[[bjt]]
+part = "C945"
+marking = "CR"
+polarity = "NPN"
+
+[[bjt]]
+part = "A733"
+marking = "CS"
+polarity = "PNP"
+
+# ICs — six part numbers listed (covers claim "5 values / 55 pcs";
+# per-part quantity unknown — CONFIRM ON THE BENCH before relying on
+# any one of these existing in the physical book)
+[[ic]]
+part = "78L05"
+function = "5V linear regulator"
+package = "SOT-89"
+
+[[ic]]
+part = "LM358"
+function = "dual opamp"
+package = "SOP-8"
+
+[[ic]]
+part = "NE555"
+function = "timer"
+package = "SOP-8"
+
+[[ic]]
+part = "LM386"
+function = "audio amplifier"
+package = "SOP-8"
+
+[[ic]]
+part = "LM339"
+function = "quad comparator"
+package = "SOP-16"
+
+[[ic]]
+part = "PC817"
+function = "optocoupler"
+package = "SSOP-4"              # as printed on the pouch
+
+[inductors]
+values = ["10nH", "47nH", "68nH", "100nH", "220nH", "330nH", "470nH",
+          "680nH", "820nH", "1uH", "2.2uH", "3.3uH", "4.7uH", "6.8uH",
+          "10uH"]
+per_value = 20                  # derived: 300/15
+
+[[led]]
+color = "red"
+vf = "2-2.3V"
+
+[[led]]
+color = "green"
+vf = "2-2.1V"                   # as printed (low for green — verify)
+
+[[led]]
+color = "blue"
+vf = "2.8-2.9V"
+
+[[led]]
+color = "yellow"
+vf = "1.9-2.1V"
+
+[[led]]
+color = "white"
+vf = "2.7-2.8V"
