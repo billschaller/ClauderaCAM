@@ -362,6 +362,31 @@ usable, open sheets wind arbitrarily). Relief maps are also clipped to
 floor outside the model radius (coin semantic: everything past the rim
 is cut away; square-export frame junk never reaches the generators).
 
+## 2026-07-28 (late): Article XI — the tool crib
+
+Operator's directive after the invented-14mm incident: "the software
+shouldn't even accept a tool that's not in inventory." Encoded as
+constitutional law: every job tool must match an entry in the machine's
+inventory file (jobs/inventory.toml, overridable per job via [machine]
+inventory) on type, diameter, shank and flute count; may claim at most
+the entry's recorded reach (claiming less is conservative in both
+directions — the shank-crash bound tightens and the simulated shank
+sits lower than the real one); and the entry must have qty ≥ 1.
+Refusal happens at LOAD, before any toolpath exists. No inventory
+file, no job.
+
+The shipped inventory.toml mirrors the operator's counted crib
+(inventory app, 2026-07-19): geometry sourced from bit descriptions
+and the metal-validated jobs. Entries with unknown reach (TiN drills,
+PCB micro bits) are deliberately absent — measure, then add. The
+twoside-ref drill dropped from the invented 14 to the real 12 and
+gained the same counterbore the mango job uses; negative controls:
+phantom Ø5 tool, 14mm reach over-claim, and missing inventory file
+all refused at load (negative_suite 27/27).
+
+Roadmap: auto-import from the operator's inventory app / Makera .fctb
+so the crib file stops being hand-mirrored.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

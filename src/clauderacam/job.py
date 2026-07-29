@@ -88,17 +88,22 @@ def resolve_machine(d: dict) -> dict:
     return {**MACHINE_DEFAULTS, **d.get("machine", {})}
 
 
-def parse_tools(d: dict, machine: dict) -> dict[int, Tool]:
+def parse_tools(d: dict, machine: dict, job_dir: Path) -> dict[int, Tool]:
+    from . import inventory
+    inv_path = inventory.resolve_path(d, job_dir)
+    inv = inventory.load(inv_path)
     tools: dict[int, Tool] = {}
     for t in d["tool"]:
         if t["type"] not in ("flat", "ball", "drill"):
             raise ValueError(
                 f"tool T{t['num']}: unknown type {t['type']!r} — the "
                 f"simulator models flat, ball and drill only")
-        tools[t["num"]] = Tool(
+        tool = Tool(
             t["num"], t["type"], t["diameter"], t["rpm"],
             t["flutes"], t["flute_length"],
             t.get("shank_diameter", max(t["diameter"], 3.175)))
+        inventory.match(tool, inv, inv_path)  # Article XI: refuse phantoms
+        tools[t["num"]] = tool
         if t["rpm"] > machine["spindle_max_rpm"]:
             raise ValueError(
                 f"tool T{t['num']} rpm {t['rpm']} exceeds machine max "
@@ -182,7 +187,7 @@ def load(path: str | Path) -> Job:
         material=material,
         machine=machine,
     )
-    job.tools = parse_tools(d, machine)
+    job.tools = parse_tools(d, machine, base)
     job.ops = list(d["op"])
     for op in job.ops:
         if op["tool"] not in job.tools:

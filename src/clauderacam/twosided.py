@@ -84,7 +84,7 @@ def load(path: str | Path) -> TwoSided:
 
     material = resolve_material(d)
     machine = resolve_machine(d)
-    tools = parse_tools(d, machine)
+    tools = parse_tools(d, machine, base)
     spoil = d.get("spoilboard", {}).get("thickness", 0.0)
 
     # pins must be symmetric under the flip, or the flipped stock cannot

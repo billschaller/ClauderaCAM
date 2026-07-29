@@ -121,25 +121,22 @@ check("pin keep-out catches side-2 machining over the 'pins'",
       "pin keep-out (side 2)" in bad_back, str(bad_back))
 
 print("negative: plan refusals")
+# the job's own drill is the shop's 2x12 (12 reach) making a 12.8 hole —
+# legal ONLY through the 1.0 counterbore credit. Remove the counterbore
+# and the same plan must be refused; the credit must also refuse a spot
+# tool narrower than the drill's shank.
 ts_bad = twosided.load(JOB)
-ts_bad.front.tools[9].flute_length = 12.0   # short drill, 12.8 hole
-caught("hole deeper than the drill's reach",
-       lambda: engine.check_job_plan(ts_bad.front), "reach")
-# ...but a counterbore at the pin positions (cut at least shank-wide)
-# extends that reach — the real mango2 drill is a 2x12
-ts_ok = twosided.load(JOB)
-ts_ok.front.tools[9].flute_length = 12.0
-ts_ok.front.tools[3].diameter = 3.175   # spot tool must cover the shank
-for op in ts_ok.front.ops:
+for op in ts_bad.front.ops:
     if op["kind"] == "spotface":
-        op["depth"] = 1.0
-try:
-    engine.check_job_plan(ts_ok.front)
-    check("counterbore credit lets the 12mm drill make the 12.8 hole",
-          True)
-except ValueError as e:
-    check("counterbore credit lets the 12mm drill make the 12.8 hole",
-          False, str(e))
+        op["depth"] = 0.1
+caught("hole deeper than the drill's reach (counterbore removed)",
+       lambda: engine.check_job_plan(ts_bad.front), "reach")
+ts_bad = twosided.load(JOB)
+for op in ts_bad.front.ops:
+    if op["kind"] == "spotface":
+        op["tool"] = 3          # Ø2 flat: narrower than the 3.175 shank
+caught("counterbore narrower than the drill shank",
+       lambda: engine.check_job_plan(ts_bad.front), "reach")
 ts_bad = twosided.load(JOB)
 ts_bad.front.spoil_thickness = 0.0
 ts_bad.front.ops[-1]["depth"] = 12.8
@@ -148,6 +145,8 @@ caught("pindrill without a spoilboard",
 
 text = JOB.read_text()
 tmp = REPO / "out" / "twoside_bad.toml"
+tmp_inv = REPO / "out" / "inventory.toml"   # the crib gate runs at load;
+tmp_inv.write_text((REPO / "jobs" / "inventory.toml").read_text())
 tmp.write_text(text.replace("[[0.0, 13.5], [0.0, -13.5]]",
                             "[[3.0, 13.5], [0.0, -13.5]]"))
 caught("pins asymmetric under the flip",
@@ -157,6 +156,7 @@ tmp.write_text(text.replace("[[side.back.op]]\nkind = \"cutout\"",
 caught("cutout on the front side",
        lambda: twosided.load(tmp), "front side must not cut out")
 tmp.unlink()
+tmp_inv.unlink()
 
 print("TWOSIDED " + ("FAIL: " + ", ".join(fails) if fails else "PASS"))
 sys.exit(1 if fails else 0)

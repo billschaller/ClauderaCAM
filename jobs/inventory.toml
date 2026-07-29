@@ -1,0 +1,141 @@
+# The tool crib — the machine's PHYSICAL tool inventory (Article XI).
+#
+# A job may only use tools that match an entry here: same type, diameter,
+# shank and flute count, claimed reach no longer than the entry's, quantity
+# on hand. A tool the shop does not hold refuses to LOAD — born from the
+# 2026-07-28 incident where a config carried an invented 14mm drill reach
+# and sent the operator hunting for a bit that does not exist.
+#
+# Provenance: hand-mirrored from the operator's inventory app
+# (~/scratch/carvera/inventory, counted 2026-07-19), geometry from the
+# bit descriptions and the metal-validated job set. Entries whose reach is
+# NOT known are deliberately absent (TiN drills 2.5/3.0, PCB micro drills,
+# sub-2mm corn bits): measure, then add — never guess. Conical bits
+# (chamfer/engraving V-tips) are unsupported by the simulator and have no
+# place here yet.
+
+[[tool]]
+type = "flat"
+diameter = 3.175
+shank_diameter = 3.175
+flutes = 1
+flute_length = 12.0
+label = "12mm Flute End Mill Metal (1/8)"   # cut the mango coin
+qty = 5
+
+[[tool]]
+type = "flat"
+diameter = 3.175
+shank_diameter = 3.175
+flutes = 1
+flute_length = 25.0
+label = "25mm Flute End Mill (1/8)"
+qty = 5
+
+[[tool]]
+type = "flat"
+diameter = 3.175
+shank_diameter = 3.175
+flutes = 1
+flute_length = 42.0
+label = "Spiral O Single Flute 3.175x42"
+qty = 3
+
+[[tool]]
+type = "flat"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 6.0
+label = "6mm Flute Corn 2.0"
+qty = 5
+
+[[tool]]
+type = "flat"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 1
+flute_length = 12.0
+label = "12mm Flute End Mill 2.0"
+qty = 2
+
+[[tool]]
+type = "flat"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 1
+flute_length = 8.0
+label = "Spiral O Single Flute Metal 2x8"
+qty = 3
+
+[[tool]]
+type = "flat"
+diameter = 1.0
+shank_diameter = 3.175
+flutes = 1
+flute_length = 3.0
+label = "Spiral O Single Flute Metal 1x3"
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 6.0
+label = "Ball Nose 2F Metal 2x6"           # cut the mango coin
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 12.0
+label = "Ball Nose 2F 2x12"
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 1.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 3.0
+label = "Ball Nose 2F Metal 1x3"           # cut the mango coin
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 1.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 4.0
+label = "Ball Nose 2F 1x4"
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 3.175
+shank_diameter = 3.175
+flutes = 2
+flute_length = 10.0
+label = "Ball Nose 2F Metal 3.175x10"
+qty = 3
+
+[[tool]]
+type = "ball"
+diameter = 3.175
+shank_diameter = 3.175
+flutes = 2
+flute_length = 22.0
+label = "Ball Nose 2F 3.175x22"
+qty = 3
+
+[[tool]]
+type = "drill"
+diameter = 2.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 12.0
+label = "Twist Drill 2x12 (Spare Tools)"   # reach reported at the bench
+qty = 5

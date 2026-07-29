@@ -196,6 +196,42 @@ expect_plan_refusal("cutout that does not sever the stock",
 expect_plan_refusal("cutout entering below the cleared field",
                     lambda j: j.ops.append(dict(CUTOUT_OP, z_start=-1.9)))
 
+# --- tools the shop does not hold (Article XI, the invented-14mm law) -------
+import re as _re  # noqa: E402
+
+
+def expect_load_refusal(name: str, transform, needle: str,
+                        drop_inventory: bool = False):
+    src = (REPO / "jobs" / "dome.toml").read_text()
+    tmpdir = Path(tempfile.mkdtemp(prefix="clauderacam-neg-"))
+    # keep relative asset/out paths working from the moved job file
+    src = src.replace('"../assets/', f'"{REPO}/assets/')
+    src = src.replace('"../out/', f'"{REPO}/out/')
+    if not drop_inventory:
+        (tmpdir / "inventory.toml").write_text(
+            (REPO / "jobs" / "inventory.toml").read_text())
+    p = tmpdir / "job.toml"
+    p.write_text(transform(src))
+    try:
+        jobmod.load(p)
+        results.append((name, False, "NOT refused"))
+    except ValueError as e:
+        ok = needle in str(e)
+        results.append((name, ok, str(e)[:70]))
+
+
+expect_load_refusal(
+    "tool the shop does not hold (phantom Ø5)",
+    lambda s: s.replace("diameter = 2.0", "diameter = 5.0", 1),
+    "not in the inventory")
+expect_load_refusal(
+    "reach beyond the physical bit (the invented-14mm incident)",
+    lambda s: _re.sub(r"flute_length = 6\.0", "flute_length = 14.0", s, 1),
+    "not in the inventory")
+expect_load_refusal(
+    "no inventory file at all",
+    lambda s: s, "no tool inventory", drop_inventory=True)
+
 # ---------------------------------------------------------------------------
 fail = False
 for name, ok, note in results:

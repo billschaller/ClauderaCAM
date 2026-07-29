@@ -101,6 +101,18 @@ to the bit on carved stock and to epsilon on measurements —
 tests/kernel_parity.py enforces it. A change to one without the other is a
 broken build, not a divergence to debate.
 
+## Article XI — The Tool Crib
+
+A job may only use tools the shop physically holds: every job tool must
+match an entry in the machine's inventory file (jobs/inventory.toml, or
+[machine] inventory) on type, diameter, shank and flute count, claim no
+more reach than the entry records, and the entry must have quantity on
+hand. No inventory file, no job. Inventory geometry is MEASURED or
+catalog-sourced — never guessed: this article exists because a config
+once carried an invented 14mm drill reach and sent the operator hunting
+for a bit that does not exist. When a dimension is unknown, the entry is
+absent and the job refuses to load — that refusal is the feature.
+
 ## Working rules
 
 - Core dependencies stay at numpy, scipy, pillow, mcp; the Rust kernel uses

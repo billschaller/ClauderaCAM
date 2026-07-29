@@ -147,6 +147,15 @@ against the actual material bottom, a continuous tab bridge from coin to
 skeleton, and pin keep-out. `jobs/twoside-ref.toml` +
 `tests/twosided_suite.py` are the executable spec, negatives included.
 
+## The tool crib
+
+`jobs/inventory.toml` is the machine's physical tool inventory. A job may
+only use tools that match an entry — type, diameter, shank, flutes,
+reach, quantity on hand — and refuses to **load** otherwise (Article XI).
+Geometry in the crib is measured or catalog-sourced, never guessed; a
+tool with an unknown dimension is absent, and the resulting refusal is
+the feature.
+
 ## Project law
 
 `CLAUDE.md` is the constitution: the verification gate, the golden-test
