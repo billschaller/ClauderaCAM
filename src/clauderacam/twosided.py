@@ -25,8 +25,10 @@ simulated stock — enabling the checks that make this mode trustworthy:
 punch-through (back never cuts into front art), sever against the ACTUAL
 material bottom, the TAB BRIDGE (each tab is a continuous ledge of
 material from coin to skeleton — the front moat overrun thins the slot
-band, and a tab_top chosen blind can leave tabs floating in air), and
-pin keep-out (the pins are steel and flush; no tool crosses them).
+band, so tab_top is DERIVED from the carried front floor for a target
+tab_bridge, never hand-picked; the first cut coin's hand-picked value
+made 0.24mm tabs), and pin keep-out (the pins are steel and flush; no
+tool crosses them).
 """
 from __future__ import annotations
 
@@ -43,7 +45,14 @@ from .job import Job, parse_tools, resolve_machine, resolve_material, \
 from .verify import Check, Report
 
 PIN_CLEAR = 1.0        # no side-2 machining within pin_r + this (steel!)
-BRIDGE_MIN = 0.10      # a tab must carry at least this material thickness
+# Tab thickness law (bench 2026-07-29, the first cut coin): a hand-picked
+# tab_top left 0.241mm bridges — verified PASS at the old 0.10 floor and
+# snapped "a hair too thin" in the operator's hands. 0.10 was a survival
+# threshold, not a robustness one. tab_top is now DERIVED from the carried
+# front floor for a target bridge; the floor below backs it up.
+BRIDGE_MIN = 0.45      # verify floor: generated 0.5 minus scallop/resample
+TAB_BRIDGE_DEFAULT = 0.6
+TAB_BRIDGE_CONFIG_MIN = 0.5   # keeps >= 0.05 over the verify floor
 PUNCH_TOL = 0.05       # resample/quantization allowance for punch-through
 SEVER_TOL = 0.05
 
@@ -167,6 +176,7 @@ def load(path: str | Path) -> TwoSided:
                   front=side_job("front", "front_stl", "out_front",
                                  front_ops),
                   back=side_job("back", "back_stl", "out_back", back_ops))
+    _derive_tab_top(ts)
 
     # pins must clear both sides' machining (the hole walls survive side 1;
     # the steel pins survive side 2)
@@ -182,6 +192,56 @@ def load(path: str | Path) -> TwoSided:
                     f"pin at ({x},{y}) r={rp:.2f} is within {PIN_CLEAR}mm "
                     f"of {j.name}'s machining reach {worst:.2f}")
     return ts
+
+
+def _derive_tab_top(ts: TwoSided) -> None:
+    """Derive the back cutout's tab_top from the carried front floor.
+
+    In relief mode the surfaces at the tab necks are known in closed form:
+    the front leaves its moat floor (front.floor_z) across the inner slot
+    band the flip carries under the tabs, so the bottom there is
+    B = -thickness - front.floor_z; the back's pre-cutout surface there is
+    its own moat floor. Hence
+
+        coin edge thickness = thickness + front.floor_z + back.floor_z
+        tab_top             = -thickness - front.floor_z + tab_bridge
+
+    (exact where the finish rasters polished the band, conservative by the
+    rough allowance beyond them — the verifier's radial walk over the
+    simulated stock remains the judge). Bench 2026-07-29: the first coin's
+    hand-picked tab_top -1.55 vs carried bottom -1.79 made 0.241mm tabs —
+    "a hair too thin" — so a raw tab_top is refused the same way
+    hand-written pin ops are.
+    """
+    cut = ts.back.ops[-1]
+    if "tab_top" in cut:
+        raise ValueError(
+            "tab_top is derived from the carried front floor — set "
+            "tab_bridge (target tab thickness, default "
+            f"{TAB_BRIDGE_DEFAULT}) instead; a hand-picked tab_top made "
+            "the first coin's tabs 0.24mm thin (bench 2026-07-29)")
+    bridge = cut.get("tab_bridge", TAB_BRIDGE_DEFAULT)
+    if bridge < TAB_BRIDGE_CONFIG_MIN:
+        raise ValueError(
+            f"tab_bridge {bridge} is below the minimum "
+            f"{TAB_BRIDGE_CONFIG_MIN} — 0.241 already proved too thin to "
+            "handle; the verify floor sits at " + str(BRIDGE_MIN))
+    if not ts.back.clip_disc:
+        raise ValueError(
+            "two-sided tab derivation needs z=\"relief\" — only the "
+            "disc-clipped transform pins both moat floors to floor_z, "
+            "which is what the closed-form bridge stands on")
+    t = ts.back.stock_thickness
+    edge = t + ts.front.floor_z + ts.back.floor_z
+    if edge < bridge - 1e-9:
+        raise ValueError(
+            f"tab_bridge {bridge} is unreachable: the coin edge is only "
+            f"{edge:.3f} thick ({t} stock minus {-ts.front.floor_z:.3f} "
+            f"front moat minus {-ts.back.floor_z:.3f} back moat). The art "
+            f"fades to floor before r={ts.back.model_radius} — thicken "
+            "the relief at the rim, shrink the coin radius to the art, "
+            f"or lower tab_bridge (>= {TAB_BRIDGE_CONFIG_MIN})")
+    cut["tab_top"] = round(-t - ts.front.floor_z + bridge, 3)
 
 
 def generate(ts: TwoSided) -> dict[str, list]:

@@ -18,6 +18,10 @@ Negatives — each a real failure mode of the mode, each must be CAUGHT:
                   flip (load-time refusal)
   front cutout    a cutout on side 1 (load-time refusal: the coin must
                   stay attached until the back's tabs exist)
+  tab law         hand-written tab_top, tab_bridge below the minimum, and
+                  tab_bridge thicker than the coin's actual edge — all
+                  load-time refusals (bench 2026-07-29: a hand-picked
+                  tab_top made 0.241mm tabs that snapped too thin)
 
 Run: .venv/bin/python tests/twosided_suite.py
 """
@@ -80,6 +84,16 @@ check("back has the cross-side checks",
       {"punch-through into front side", "sever vs actual bottom",
        "tab bridge (coin held to skeleton)",
        "pin keep-out (side 2)"} <= back_names)
+# tab_top is DERIVED (bench 2026-07-29: hand-picked -1.6 here would make
+# 0.45 tabs; the first cut coin's 0.241 snapped too thin): -t - front
+# floor + default 0.6 target = -3.2 + 1.15 + 0.6
+check("tab_top derived from the carried front floor",
+      ts.back.ops[-1]["tab_top"] == -1.45,
+      f"tab_top {ts.back.ops[-1]['tab_top']}")
+tb = next(c for c in reports["back"].checks
+          if c.name == "tab bridge (coin held to skeleton)")
+check("measured bridge meets the derived target",
+      0.55 <= tb.value <= 0.65, f"bridge {tb.value:.3f}")
 
 print("negative: floating tabs (tab_top below the carried floor)")
 ts_bad = twosided.load(JOB)
@@ -155,6 +169,21 @@ tmp.write_text(text.replace("[[side.back.op]]\nkind = \"cutout\"",
                             "[[side.front.op]]\nkind = \"cutout\""))
 caught("cutout on the front side",
        lambda: twosided.load(tmp), "front side must not cut out")
+# the tab law (bench 2026-07-29): tab_top is derived, never hand-written;
+# targets below the floor-backed minimum or above the coin's actual edge
+# thickness (t - front moat - back moat = 1.2 here) refuse at load
+tmp.write_text(text.replace("tab_width = 2.0",
+                            "tab_width = 2.0\ntab_top = -1.6"))
+caught("hand-written tab_top on a two-sided back",
+       lambda: twosided.load(tmp), "derived")
+tmp.write_text(text.replace("tab_width = 2.0",
+                            "tab_width = 2.0\ntab_bridge = 0.3"))
+caught("tab_bridge below the minimum",
+       lambda: twosided.load(tmp), "below the minimum")
+tmp.write_text(text.replace("tab_width = 2.0",
+                            "tab_width = 2.0\ntab_bridge = 1.4"))
+caught("tab_bridge thicker than the coin edge",
+       lambda: twosided.load(tmp), "unreachable")
 tmp.unlink()
 tmp_inv.unlink()
 

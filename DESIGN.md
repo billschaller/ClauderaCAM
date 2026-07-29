@@ -303,8 +303,9 @@ IV). Checks: punch-through (back never cuts into front art; lower
 envelope for the wall-pixel class), sever vs ACTUAL bottom (the front
 moat thins the inner slot band; -thickness alone is not the truth
 there), TAB BRIDGE (walk each tab radially: continuous material ledge
-coin→skeleton ≥ 0.10 — found on paper: the front moat's overrun band
-plus a blind tab_top leaves tabs floating in air), and pin keep-out
+coin→skeleton — found on paper: the front moat's overrun band plus a
+blind tab_top leaves tabs floating in air; since the 2026-07-29 bench
+incident tab_top is derived and the floor is 0.45), and pin keep-out
 (pins are steel and flush-recessed; nothing machined over them).
 
 **Incident — the tangential wall kiss (contact metric, fixed same day):**
@@ -393,6 +394,47 @@ all refused at load (negative_suite 27/27).
 
 Roadmap: auto-import from the operator's inventory app / Makera .fctb
 so the crib file stops being hand-mirrored.
+
+## 2026-07-29: the first coin off the machine — tab thickness becomes law
+
+The Ø44 mango2 coin CUT. Pin-and-flip registration held ("printed
+beautifully" — the operator). Two defects came back from the bench, and
+per Article II each is now law or has its law scheduled:
+
+**Tabs "a hair too thin."** The hand-picked tab_top −1.55 against the
+carried front-moat floor (−1.79 in the back frame) made 0.241mm
+bridges. That number was KNOWN — the tab-bridge check measured it and
+passed it against its 0.10 floor, a coin-stays-attached threshold, not
+a survives-real-hands one. Stock tolerance and post-flip touch-off eat
+into a quarter millimeter fast. The law (twosided.py):
+
+- tab_top is DERIVED, never hand-written (refused at load, same as
+  hand-written pin ops): in relief mode both moat floors are pinned to
+  floor_z, so the surfaces at the tab necks are closed-form —
+  `tab_top = -t - front.floor_z + tab_bridge`, exact where the finish
+  rasters polished the band, conservative by the rough allowance beyond
+  them. The verifier's radial walk over simulated stock stays the judge.
+- `tab_bridge` targets the thickness (default 0.6, config minimum 0.5);
+  the verify floor rose 0.10 → 0.45 (generated 0.5 minus scallop and
+  resample loss). Provenance: one bench point — 0.241 too thin to
+  handle; the floor sits at ~2× it pending more cut coins.
+- the same closed form yields the COIN EDGE THICKNESS
+  `t + front.floor_z + back.floor_z`, and an unreachable tab_bridge now
+  refuses with it spelled out — which is exactly the second defect:
+
+**A rim flange, hand-sanded off.** The relief art fades to floor by
+r≈21.6 while the declared (and cut) radius is 22.0; with moat floors
+1.403 + 1.270 of 3.2 stock, the coin edge was a 0.53mm-thick,
+~0.4mm-wide floor-level skirt all around. The sim showed it (Article
+VI) — nobody looked at edge thickness. Model-side fix: regenerate STLs
+with relief running to the rim (unlocks the 0.6 tab default too, via
+the same formula). mango-twosided.toml carries tab_bridge = 0.5 — this
+coin's ceiling minus margin — until then. Roadmap: a named
+edge-thickness check so eyes never have to catch it.
+
+Still unmeasured from the bench: front-to-back art registration on the
+finished coin — the number that turns the pin-slop estimate into
+calibration fact.
 
 ## Roadmap
 

@@ -215,7 +215,14 @@ z_final = -3.35
 ramp = 0.15
 tabs = [45, 135, 225, 315]
 tab_width = 2.0
-tab_top = -1.55     # neck rides above the carried front-moat floor
+tab_bridge = 0.5    # bench 2026-07-29: the hand-picked tab_top -1.55 left
+                    # 0.241 bridges — "a hair too thin". tab_top is now
+                    # derived (-t - front floor + bridge = -1.297). 0.5 is
+                    # this coin's ceiling minus margin: the edge is only
+                    # 0.527 thick (moats 1.403 + 1.270 of 3.2 stock — the
+                    # art fades before r=22, the rim flange Bill sanded
+                    # off). Regenerate STLs with relief to the rim to
+                    # unlock the 0.6 default.
 seg = 128
 feed = 300
 plunge = 150

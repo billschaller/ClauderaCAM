@@ -144,7 +144,10 @@ and the tabbed cutout. Two .nc programs come out; each verifies through
 the same gate, and the back side is additionally checked against the
 carried, flipped front stock: punch-through into the front art, sever
 against the actual material bottom, a continuous tab bridge from coin to
-skeleton, and pin keep-out. `jobs/twoside-ref.toml` +
+skeleton, and pin keep-out. The cutout's `tab_top` is derived from the
+carried front floor to hit a target `tab_bridge` thickness (hand-written
+values are refused — the first cut coin's hand-picked tab_top made
+0.24mm tabs that snapped too thin). `jobs/twoside-ref.toml` +
 `tests/twosided_suite.py` are the executable spec, negatives included.
 
 ## The tool crib
