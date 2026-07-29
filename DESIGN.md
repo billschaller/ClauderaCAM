@@ -330,14 +330,21 @@ legitimately carries art fillets in that band; the back — the side that
 cuts — runs the check on its own field.
 
 Addendum (same day): the operator's actual drill is a 2×12mm (12mm
-reach) — less than the 12.8mm hole. Resolution: the spot-face deepens
-into a 1.0mm COUNTERBORE (Ø3.175 ≥ the drill's shank), the plan rule
-credits counterbore depth at matching pin positions (the kernel
-shank-clearance check remains the physical judge — the shank step ends
-0.2 inside the counterbore), and spotface plunges are STEPPED ≤0.4/move
-at F60: a single 1.0 plunge is a move-start faceplant the flat contact
-limit rightly refuses, and F100 stepped measured over the brass
-windowed chip/tooth limit (0.066 vs 0.0554 mm³) — F60 sits at 71%.
+reach) — less than a flush-seated pin's 12.8mm hole. Two resolutions
+exist, both shipped:
+- COUNTERBORE (twoside-ref, proving the machinery): the spot-face
+  deepens to 1.0 (Ø3.175 ≥ the drill's shank) and the plan rule credits
+  counterbore depth at matching pin positions — kernel shank clearance
+  remains the physical judge (shank step ends 0.2 inside). Spotface
+  plunges are STEPPED ≤0.4/move at F60: a single 1.0 plunge is a
+  move-start faceplant the flat contact limit rightly refuses, and F100
+  stepped measured over the brass chip/tooth window (0.066 vs 0.0554).
+- PROUD PINS (mango2, operator's call: "It's OK for the pins to sit
+  slightly proud of the face of the stock after the flip"): seat_extra
+  −0.6 → hole depth 12.0 inside native reach, pin stands ~0.6 above the
+  side-2 face. Safe by construction: rapids pass 2.4 above it, nearest
+  side-2 cutting is 1.2mm away laterally, and the pin keep-out check
+  enforces the gap. The spot-face reverts to a 0.1 burr skim.
 
 Known limits, stated plainly: the back-side 3D preview starts from flat
 stock (the carved front face is the flipped part's UNDERSIDE — invisible
