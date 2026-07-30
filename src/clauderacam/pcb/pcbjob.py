@@ -54,6 +54,7 @@ ops are generated from [pins]").
 """
 from __future__ import annotations
 
+import math
 import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -187,6 +188,33 @@ def program_stem(job: PcbJob, name: str) -> str:
     `f"{name}-{side}"`), so the same rule yields `orbit-front-mill` — one
     convention, and the sides sort next to each other."""
     return f"{job.name}-{name}"
+
+
+def iso_pass_plan(job: PcbJob) -> tuple[int, float, float]:
+    """(passes, overlap_percent, top_offset_mm) of the multi-pass isolation —
+    ONE definition, two readers: engine.render_tcl emits it, checks.iso_checks
+    judges against it (the bridging-sliver incident, 2026-07-30: single-pass
+    isolation clears a gap only up to ~2*(tip/2 + kerf/2) ≈ 0.46mm with the
+    0.2 vee, the clearing tool cannot enter anything narrower than itself
+    plus margin, and the copper in between belonged to no phase).
+
+    The ladder: FlatCAM's GerberObject.isolate puts pass n's centerline at
+    dia*(0.5 + n*(1 - overlap)) off the copper edge. Counting only the TIP
+    width as cut (the vee cone's flare with depth is margin, not a
+    dependency), 50% overlap steps the rungs by tip/2 — the widest spacing
+    at which consecutive rungs' cuts stay contiguous — and a gap g is fully
+    cleared when some rung sits within tip/2 below g/2, i.e. when
+    tip*(passes + 1) >= g. The ladder must reach G, the narrowest channel
+    the CLEARING phase guarantees (its tool + its own offset each side +
+    the castellation real margin), so passes = ceil(G/tip - 1). In gaps too
+    narrow for a rung the opposing buffers merge and FlatCAM emits no pass
+    there — multi-pass never gouges the far side.
+    """
+    tip = job.phase_tool("iso").tip_diameter
+    clear_t = job.phase_tool("clear")
+    G = clear_t.diameter + 2 * float(job.phases["clear"]["offset"]) + 0.2
+    passes = max(1, math.ceil(G / tip - 1 - 1e-9))
+    return passes, 50.0, tip * (0.5 + 0.5 * (passes - 1))
 
 
 def side_view(job: PcbJob, side: str) -> PcbJob:

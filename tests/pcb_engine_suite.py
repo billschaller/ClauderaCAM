@@ -244,6 +244,17 @@ tcl = engine.render_tcl(j, win, TD / "work")
 check("derived offset in the tcl (ax+x1, ay-y0)",
       "offset cu -x 30 -y 5" in tcl)
 check("iso cuts with the TIP diameter", "isolate cu -dia 0.2" in tcl)
+# multi-pass isolation (the bridging-sliver incident): the ladder comes from
+# pcbjob.iso_pass_plan — engine emits it, checks judge it, ONE definition
+_np, _ov, _top = pcbjob.iso_pass_plan(j)
+check("iso is multi-pass per the shared ladder plan",
+      f"-passes {_np} -overlap {_ov:.6g} -combine 0" in tcl,
+      f"plan: {_np} passes, top rung {_top}")
+check("the passes are JOINED, not combined (FlatCAM's combine keeps only "
+      "the last pass)",
+      "join_geometry cu_iso " in tcl and "-outname iso_geo" in tcl)
+check("clearing uses -method seed (standard silently skips complex "
+      "polygons)", "-method seed" in tcl and "-method standard" not in tcl)
 # ... and the iso CNCJOB carries the tip too, not the cone's 3.175 shank:
 # the -dia the cncjob gets is only a header annotation (re-emission drops
 # it), but fc-1-iso.nc printing "TOOL DIAMETER: 3.175" is a lie in a file

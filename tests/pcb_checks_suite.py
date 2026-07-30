@@ -174,7 +174,39 @@ EDGE = HDR + "%ADD10C,0.100000*%\nG01*\nD10*\n" + "".join(
     f"X{gnum(x1)}Y{gnum(y1)}D02*\nX{gnum(x2)}Y{gnum(y2)}D01*\n"
     for x1, y1, x2, y2 in [(0, BH, BW, BH), (0, 0, 0, BH),
                            (BW, BH, BW, 0), (BW, 0, 0, 0)]) + "M02*\n"
-CU = (HDR + "%ADD10C,1.200000*%\n%ADD11C,0.300000*%\nG01*\n"
+# Designed copper: two pads, one trace, AND a ground pour — the pour is what
+# makes the residual-copper law testable (the bridging-sliver incident): a
+# board whose designed copper is sparse would leave the whole blank as
+# "undesigned copper" and no honest mill program could pass. The pour floods
+# the board inset 0.4 (the copper-to-edge law), with clear-polarity moats of
+# MOAT=0.4 around the pads/trace and a full-width band where the clear
+# serpentine runs. That leaves exactly three copper-free classes: moats (the
+# iso rings' job, both sides), the band (iso edges + the serpentine), and the
+# rim strip (the cutout's territory, inside RESIDUAL_EDGE_EXCL).
+MOAT = 0.4
+BAND_Y0, BAND_Y1 = 5.9, 8.1
+POUR_IN = 0.4                       # pour inset from the outline
+
+
+def _region(pts):
+    body = f"X{gnum(pts[0][0])}Y{gnum(pts[0][1])}D02*\n" + "".join(
+        f"X{gnum(x)}Y{gnum(y)}D01*\n" for x, y in pts[1:] + [pts[0]])
+    return "G36*\n" + body + "G37*\n"
+
+
+CU = (HDR + "%ADD10C,1.200000*%\n%ADD11C,0.300000*%\n"
+      f"%ADD12C,{2 * (PAD_R + MOAT):.6f}*%\n"
+      f"%ADD13C,{2 * (TRACE_R + MOAT):.6f}*%\nG01*\n"
+      + _region([(POUR_IN, POUR_IN), (BW - POUR_IN, POUR_IN),
+                 (BW - POUR_IN, BH - POUR_IN), (POUR_IN, BH - POUR_IN)])
+      + "%LPC*%\n"
+      f"D12*\nX{gnum(PAD_A[0])}Y{gnum(PAD_A[1])}D03*\n"
+      f"X{gnum(PAD_B[0])}Y{gnum(PAD_B[1])}D03*\n"
+      f"D13*\nX{gnum(TRACE[0][0])}Y{gnum(TRACE[0][1])}D02*\n"
+      f"X{gnum(TRACE[1][0])}Y{gnum(TRACE[1][1])}D01*\n"
+      + _region([(0.0, BAND_Y0), (BW, BAND_Y0), (BW, BAND_Y1),
+                 (0.0, BAND_Y1)])
+      + "%LPD*%\n"
       f"D10*\nX{gnum(PAD_A[0])}Y{gnum(PAD_A[1])}D03*\n"
       f"X{gnum(PAD_B[0])}Y{gnum(PAD_B[1])}D03*\n"
       f"D11*\nX{gnum(TRACE[0][0])}Y{gnum(TRACE[0][1])}D02*\n"
@@ -313,26 +345,49 @@ def mach(p):
 
 
 # ------------------------------------------------------------ the programs
+def rect_loop(x0, y0, x1, y1, step=0.05):
+    pts = ([(x, y0) for x in np.arange(x0, x1, step)]
+           + [(x1, y) for y in np.arange(y0, y1, step)]
+           + [(x, y1) for x in np.arange(x1, x0, -step)]
+           + [(x0, y) for y in np.arange(y1, y0, -step)])
+    return [mach(p) for p in pts]
+
+
 def build_iso(skip_pad_b=False):
+    """Every copper boundary ridden at tip_r — the pads/trace on their side
+    of each moat, the POUR on its side, and both pour islands' exteriors
+    (a rect loop each: rim sides + its band edge). With the pour in the
+    designed copper, this is what a complete isolation actually is; the
+    moats are MOAT wide so two rings at tip_r offsets cover them fully."""
     tip_r = job.phase_tool("iso").tip_diameter / 2
     p = job.phases["iso"]
     lines = []
-    chains = [ring(mach(PAD_A), PAD_R + tip_r)]
+    chains = [ring(mach(PAD_A), PAD_R + tip_r),
+              ring(mach(PAD_A), PAD_R + MOAT - tip_r)]
     if not skip_pad_b:
         chains.append(ring(mach(PAD_B), PAD_R + tip_r))
+    chains.append(ring(mach(PAD_B), PAD_R + MOAT - tip_r))
     chains.append(stadium(mach(TRACE[0]), mach(TRACE[1]), TRACE_R + tip_r))
+    chains.append(stadium(mach(TRACE[0]), mach(TRACE[1]),
+                          TRACE_R + MOAT - tip_r))
+    chains.append(rect_loop(POUR_IN - tip_r, POUR_IN - tip_r,
+                            BW - POUR_IN + tip_r, BAND_Y0 + tip_r))
+    chains.append(rect_loop(POUR_IN - tip_r, BAND_Y1 - tip_r,
+                            BW - POUR_IN + tip_r, BH - POUR_IN + tip_r))
     for ch in chains:
         lines += cut_chain(ch + [ch[0]], p["depth"], p["feed"], p["plunge"])
     return op("iso", p["tool"], lines, p["feed"])
 
 
-def build_clear(into_copper=False):
+def build_clear(into_copper=False, skip_middle=False):
     p = job.phases["clear"]
     # a serpentine in the copper-free band between the pad row and the trace
-    ys = [6.5, 7.0, 7.5]
+    ys = [6.5, 7.5] if skip_middle else [6.5, 7.0, 7.5]
     pts = []
     for n, y in enumerate(ys):
-        xs = (1.0, 19.0) if n % 2 == 0 else (19.0, 1.0)
+        # rows run past the pour's inset so the round end caps cover the
+        # band's corners (four cells at d_cu 0.305 taught this)
+        xs = (0.7, 19.3) if n % 2 == 0 else (19.3, 0.7)
         pts += [(xs[0], y), (xs[1], y)]
     lines = cut_chain(pts, p["depth"], p["feed"], p["plunge"])
     if into_copper:
@@ -594,7 +649,8 @@ check("one padded window, transform derived from the TIGHT extents",
       and maps.win.x0 < maps.tight.x0 and maps.win.x1 > maps.tight.x1,
       f"window {maps.win.shape} offset {maps.offset} eps {maps.eps:.4f}")
 islands = ndimage.label(maps.layers["cu"])[1]
-check("three copper islands rasterized", islands == 3, f"{islands} islands")
+check("five copper islands rasterized (pads, trace, and the pour split "
+      "in two by the band)", islands == 5, f"{islands} islands")
 
 print("\nsilk program (through the real reemit chain):")
 mask_t = bm.rasterize(job.files["mask"], maps.tight)
@@ -628,17 +684,38 @@ catches("an iso pass that skips a copper island",
         "iso coverage", must_pass=("iso containment",))
 maps.release()
 
-# radially outward by 0.12 at pad A's angle-0 vertex (a tangential nudge
-# would barely move the distance — the point is to leave the offset curve)
+# radially INWARD by 0.12 at pad A's angle-0 vertex: the GOUGE side of the
+# containment band. (The old outward-0.12 negative died with the multi-pass
+# ladder — 0.22 off the boundary is now a legal rung's territory — but a cut
+# nearer than tip_r eats designed copper no matter how many passes exist,
+# and a mis-derived transform always gouges somewhere.)
 ISO_V = f"X{MX - PAD_A[0] + PAD_R + 0.1:.4f}"
-mill_off = mutate(MILL, "mill_iso_off",
+mill_off = mutate(MILL, "mill_iso_gouge",
                   lambda t: t.replace(ISO_V,
-                                      f"X{MX - PAD_A[0] + PAD_R + 0.22:.4f}"))
-check("the iso-off mutation actually landed", ISO_V in MILL.read_text())
+                                      f"X{MX - PAD_A[0] + PAD_R - 0.02:.4f}"))
+check("the iso-gouge mutation actually landed", ISO_V in MILL.read_text())
 mm, _ = checks.program_moves(job, mill_off)
-catches("an iso pass 0.12 off the copper boundary",
+catches("an iso pass cutting 0.12 INTO the copper boundary",
         checks.iso_checks(job, maps, checks.phase_samples(mm, maps, "iso")),
         "iso containment")
+maps.release()
+
+# the incident itself, synthesized: the serpentine loses its middle row, so
+# a 0.2mm ridge of blank copper survives mid-band — every per-phase law
+# still holds (keep-out, opening, containment, coverage), which is exactly
+# how the real board's slivers shipped
+mill_sliver = write("mill_sliver", [build_iso(),
+                                    build_clear(skip_middle=True)])
+_sheet = checks.sheet_stock(job)
+_sj = checks.sheet_job(job, _sheet)
+_res = checks.carve_program(_sj, _sheet, mill_sliver)
+mm, _ = checks.program_moves(job, mill_sliver)
+catches("a mill program that leaves a mid-gap copper ridge (bridging "
+        "sliver)",
+        checks.residual_checks(job, maps, _sheet, _res)
+        + checks.clear_checks(job, maps,
+                              checks.phase_samples(mm, maps, "clear")),
+        "residual copper", must_pass=("clear keep-out", "clear opening"))
 maps.release()
 
 mill_cu = write("mill_into_copper", [build_iso(), build_clear(True)])
@@ -841,7 +918,7 @@ if all((ZPH / f).is_file() for f in ZNC.values()) and \
     zprogs["silk"] = zout / "silk.nc"
     zprogs["silk"].write_text(ztext)
     zreps = checks.verify_pcb(zjob, zprogs, maps=zmaps)
-    for name in ("mill", "scrub", "holes"):
+    for name in ("scrub", "holes"):
         rep = zreps[name]
         check(f"field program {name} PASSES the new check set", rep.ok,
               ", ".join(f"{c.name}={c.value:.4f}" for c in rep.checks
@@ -849,6 +926,22 @@ if all((ZPH / f).is_file() for f in ZNC.values()) and \
         for c in rep.checks:
             print(f"      {c.name}: {c.value:.4f} ({c.limit}) "
                   f"{'PASS' if c.ok else 'FAIL'}")
+    # the field MILL program is a FINDING, not a pass: the board that shipped
+    # carries the slivers the bridging-sliver incident is named for (55 of
+    # them, 3.49mm2 — single-pass isolation + standard NCC, nobody measured
+    # what remained). The mask squeegee sealed them, which is why the button
+    # works; the check reads the bytes and says what is there (Article I).
+    mrep = zreps["mill"]
+    mbad = [c.name for c in mrep.checks if not c.ok]
+    check("field program mill passes every check EXCEPT residual copper",
+          mbad == ["residual copper"], f"failing: {mbad}")
+    for c in mrep.checks:
+        print(f"      {c.name}: {c.value:.4f} ({c.limit}) "
+              f"{'PASS' if c.ok else 'FAIL'}")
+    zres = by_name(mrep.checks)["residual copper"]
+    check("residual copper CATCHES the field board's slivers (a FINDING)",
+          (not zres.ok) and zres.value > 0.3,
+          f"{zres.value:.4f} worst — {zres.detail}")
 
     # --- the 2026-07-19 pcbnew cross-check ---
     print("\n  cross-check vs the 2026-07-19 pcbnew numbers:")

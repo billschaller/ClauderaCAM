@@ -137,16 +137,55 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
                 f"-pp default -outname {out}")
 
     p = ph["iso"]
-    L += [f"isolate cu -dia {iso_t.tip_diameter:.6g} -passes 1 -overlap 0 "
-          f"-combine 1 -outname iso_geo",
-          cnc("iso_geo", iso_t, p["depth"], p["feed"], p["plunge"],
+    # MULTI-PASS isolation (2026-07-30, the bridging-sliver incident): the
+    # pass count comes from pcbjob.iso_pass_plan — the one place the ladder
+    # arithmetic lives, because checks.iso_checks judges the same ladder.
+    # Single-pass left copper ridges in every gap wider than the vee's reach
+    # and narrower than the clearing tool's (measured on Board A: 19.78mm2
+    # over 149 slivers), and gaps too narrow for a rung merge in FlatCAM's
+    # buffer union so extra passes never gouge the far side.
+    iso_passes, iso_ov, _ = pcbjob.iso_pass_plan(job)
+    if iso_passes == 1:
+        L.append(f"isolate cu -dia {iso_t.tip_diameter:.6g} -passes 1 "
+                 f"-overlap 0 -combine 1 -outname iso_geo")
+    else:
+        # `-combine 0` + join_geometry, NOT `-combine 1`: the pinned
+        # FlatCAM's combine loop OVERWRITES solid_geometry each pass, so a
+        # combined multi-pass object holds only the LAST rung (measured:
+        # 5-pass combine emitted 810mm of path where the joined passes emit
+        # the full ladder). Non-combined passes all try to claim `cu_iso`
+        # and the app's duplicate-rename machinery yields cu_iso,
+        # cu_iso_1 .. cu_iso_{N-1} — deterministic because every run is a
+        # fresh headless process.
+        names = "cu_iso " + " ".join(f"cu_iso_{n}"
+                                     for n in range(1, iso_passes))
+        L += [f"isolate cu -dia {iso_t.tip_diameter:.6g} "
+              f"-passes {iso_passes} -overlap {iso_ov:.6g} -combine 0",
+              f"join_geometry {names} -outname iso_geo"]
+    L += [cnc("iso_geo", iso_t, p["depth"], p["feed"], p["plunge"],
               "iso_cnc", dia=iso_t.tip_diameter),
           f"write_gcode iso_cnc $OUT/{PHASE_NC['iso']}"]
     p = ph["clear"]
+    # `-method seed`, not `standard` (same incident): FlatCAM's standard
+    # method silently SKIPS any polygon whose shrink-generation throws —
+    # the failure goes to a GUI channel a headless run never sees (the
+    # sentinel lesson again) — and on Board A it dropped whole open regions,
+    # leaving cells 3.44mm from any designed copper. Measured side by side
+    # on the same board: standard worst 3.440, seed worst 0.484 (the rest
+    # is the multi-pass ladder's territory). The residual-copper check now
+    # measures whatever any method leaves.
+    #
+    # `-box edge`, not `-all` (same incident, second half): -all bounds the
+    # clearing region to the COPPER's bounding box + margin, so a sparse
+    # board keeps a field of blank copper the job's own grammar says the
+    # clear phase owns — the [pcb] margin has always meant "reach past the
+    # BOARD edge" (window_pad models exactly that). The Edge.Cuts object is
+    # the reference that makes FlatCAM's region and the grammar's region
+    # the same rectangle on every layout.
     L += [f"ncc cu -tooldia {clear_t.diameter:.6g} "
           f"-overlap {p['overlap']:.6g} -margin {p['margin']:.6g} "
-          f"-offset {p['offset']:.6g} -method standard -connect 1 "
-          f"-contour 1 -all -outname clear_geo",
+          f"-offset {p['offset']:.6g} -method seed -connect 1 "
+          f"-contour 1 -box edge -outname clear_geo",
           cnc("clear_geo", clear_t, p["depth"], p["feed"], p["plunge"],
               "clear_cnc"),
           f"write_gcode clear_cnc $OUT/{PHASE_NC['clear']}"]
@@ -174,8 +213,12 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
               cnc("cut_geo", cut_t, p["depth"], p["feed"], p["plunge"],
                   "cut_cnc", dpp=p["dpp"]),
               f"write_gcode cut_cnc $OUT/{PHASE_NC['cutout']}"]
-    # the sentinel, written LAST and only if every write_gcode above
-    # returned — see the module docstring for why it is a file
+    # the sentinel, written LAST — but the restricted Tcl shell CONTINUES
+    # past a failed command (observed 2026-07-30: a bad join_geometry left
+    # write_gcode nothing to write and the sentinel still appeared), so the
+    # sentinel only means "the script reached its end"; the missing-outputs
+    # check in run() is what verifies the phases actually landed. See the
+    # module docstring for why it is a file
     L += [f"set fh [open $OUT/{SENTINEL_FILE} w]",
           f'puts $fh "{SENTINEL}"',
           "close $fh"]

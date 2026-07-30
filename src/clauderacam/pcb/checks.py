@@ -48,6 +48,11 @@ The checks, each with its threshold's provenance:
   rapid depth          no rapid below the work surface (the whole blank is
                        stock, so this needs no stock model)
   dialect lint         emit.lint_program / lint_laser on the assembled bytes
+  residual copper      carve the mill program; copper that remains farther
+                       than RESIDUAL_TOL from DESIGNED copper is a sliver no
+                       phase removed (the bridging-sliver incident — the gap
+                       between the iso reach and the clearing floor was
+                       invisible to per-phase checks)
 
 MEASUREMENT HONESTY (Article IX applies to geometry too — a raster proxy must
 say what it does not model):
@@ -125,6 +130,7 @@ from .pcbjob import (PIN_PHASES, PROGRAM_PHASES,  # noqa: F401 (re-exported:
                      PcbJob, programs_of)         # the split moved to the
 #                                             grammar, checks.PROGRAM_PHASES
 #                                             stays a valid name for readers)
+from .pcbjob import iso_pass_plan as pcbjob_iso_plan
 from .reemit import _stroke_chains
 
 # ---------------------------------------------------------------- thresholds
@@ -189,6 +195,48 @@ PIN_POS_TOL = 0.2           # coin lane's own bar (verify.py "drill only at pin
 #                             positions", <= 0.2): the pin hole is a
 #                             registration datum, and 0.2 is already a tenth of
 #                             a Ø2 dowel's diameter
+
+# Residual copper (2026-07-30, the bridging-sliver incident: the operator's
+# loupe found copper ridges in the coupon's 0.5/0.6mm serpentine gaps on the
+# simulated-stock render. Single-pass isolation covers a gap only up to
+# ~2*(tip/2 + kerf/2) ≈ 0.46mm with the 0.2 vee, the clearing phase refuses
+# regions narrower than its tool + margin, and NO check measured the copper
+# that neither phase removed — the gap between the two generators was
+# invisible to a gate that only checked each phase against its own contract).
+RESIDUAL_CUT_MIN = 0.05     # a carve cell counts copper-REMOVED only where the
+#                             mill program cut at least this deep: below the
+#                             35um foil with margin, and below the vee's
+#                             cone-wall grazing band, while far above any
+#                             engrave depth the grammar accepts
+RESIDUAL_TOL = 0.13         # remaining copper farther than this from DESIGNED
+#                             copper is UNDESIGNED. Budget at the sheet sim's
+#                             12.5px/mm: half a cell diagonal of carve
+#                             quantization (0.057) + half a cell of footprint
+#                             rounding (0.040) + the raster's half-pixel ink
+#                             bias (0.005) + 0.028 spare. The real specimens
+#                             sit at >=0.19 (a mid-gap sliver in a 0.5 gap is
+#                             ~0.21 from either copper edge), so the band
+#                             separates noise from hazard with margin both ways
+RESIDUAL_EDGE_EXCL = 0.6    # the rim strip the cutout consumes: copper within
+#                             this of the outline is the edge cut's territory
+#                             (1.0 corn half-kerf + 0.1), not the mill's
+RESIDUAL_MAX_WIDTH = 0.6    # an undesigned cluster narrower than this (max
+#                             inscribed disc) is a SLIVER: thinner than the
+#                             lane's own 0.5 track minimum + one sim cell, so
+#                             no design could own it — it is a ridge that
+#                             flakes, lifts with the mask, and bridges. The
+#                             entire measured incident population (149
+#                             clusters on Board A, 55 on the field board)
+#                             sits at width <= 0.506
+RESIDUAL_MIN_AREA = 3.0     # ... and one smaller than this (mm2) is a crumb
+#                             whatever its shape (largest measured incident
+#                             fragment: 2.45mm2). What the fragment law
+#                             deliberately does NOT flag: a LARGE floating
+#                             plane far from designed copper — that is
+#                             isolation-milling practice, mechanically
+#                             stable, and on this lane the generator clears
+#                             it anyway (`ncc -box edge`); the check hunts
+#                             fragments because fragments are what bridge
 
 
 # ----------------------------------------------------------------- board maps
@@ -473,11 +521,21 @@ def iso_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     slop = SAMPLE_STEP / 2
     d_cu = maps.dist("cu")
     d = maps.sample(d_cu, s.bx, s.by) - maps.eps
-    err = np.abs(d - tip_r) + slop
+    # The legal band is [tip_r, top rung] of the multi-pass ladder
+    # (pcbjob.iso_pass_plan — the bridging-sliver incident): pass n rides
+    # dia*(0.5 + n/2) off the copper, and where opposing features' pass
+    # contours merge FlatCAM rides the medial line, so any distance INSIDE
+    # the band is by-construction legitimate. The gouge side keeps the
+    # original field bar unchanged — a cut nearer than tip_r is cutting
+    # designed copper no matter how many passes exist — and the far side
+    # keeps the same bar beyond the last rung. A single-pass job has
+    # top == tip_r and this is bit-for-bit the old exact-offset law.
+    _, _, top = pcbjob_iso_plan(job)
+    err = np.maximum.reduce([tip_r - d, d - top, np.zeros_like(d)]) + slop
     k = int(err.argmax())
     out = [Check("iso containment", err.max(),
                  f"<= {ISO_CENTERLINE_TOL}", err.max() <= ISO_CENTERLINE_TOL,
-                 f"tip {tip_r:g} offset, worst at {s.at(k)}")]
+                 f"band [{tip_r:g}, {top:g}] off copper, worst at {s.at(k)}")]
 
     # Coverage: the ring of every point that stands exactly tip_r outside
     # copper IS the required centerline set (interior boundaries of a pour
@@ -1344,6 +1402,114 @@ def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
     return out
 
 
+def residual_checks(job: PcbJob, maps: BoardMaps, sheet: SheetStock,
+                    res: simulate.CarveResult) -> list[Check]:
+    """Remaining copper vs DESIGNED copper — the bridging-sliver incident
+    (2026-07-30). Carve the mill program, keep every cell the cut left
+    shallower than RESIDUAL_CUT_MIN, take the cells farther than
+    RESIDUAL_TOL from designed copper ink (UNDESIGNED copper), cluster them,
+    and apply the FRAGMENT law: a cluster narrower than RESIDUAL_MAX_WIDTH
+    or smaller than RESIDUAL_MIN_AREA is a sliver — copper no design could
+    own, that flakes, lifts with the mask, and bridges.
+
+    Division of labour: designed copper that is MISSING is `iso coverage`'s
+    territory (a skipped island); copper that ENCROACHES on a gap while
+    still hugging designed ink is `iso containment`'s; a LARGE floating
+    plane is stated scope (see RESIDUAL_MIN_AREA) — the generator clears it
+    with `ncc -box edge`, and where a job deliberately keeps a field, a
+    plane is not a fragment. This check hunts what everything else is blind
+    to: the ridges single-pass isolation left in every gap wider than its
+    reach and narrower than the clearing tool's.
+
+    Evaluated INSIDE the outline (edge ink flood-filled) and outside the
+    cutout's rim band (RESIDUAL_EDGE_EXCL): the sheet padding is raw blank,
+    and the rim strip is removed by the edge cut, not the mill program.
+    """
+    if "cu" not in maps.layers or "edge" not in maps.layers:
+        return [Check("residual copper", 0.0, "unmeasurable", False,
+                      "no cu/edge raster — these board maps were built "
+                      "without gerbv")]
+    stock = sheet.crop(res.stock)
+    remaining = stock > -RESIDUAL_CUT_MIN
+    # cell centers, machine frame (Article IV's mapping, never re-derived)
+    ii, jj = np.nonzero(remaining)
+    x = (jj + sheet.j_off) / sheet.ppm - sheet.half
+    y = sheet.half - (ii + sheet.i_off) / sheet.ppm
+    # prefilter to the board rectangle: the raster window holds it, and
+    # everything outside is sheet-padding blank by construction
+    eps = 0.5 / sheet.ppm
+    inb = ((x > sheet.bx0 + eps) & (x < sheet.bx1 - eps)
+           & (y > sheet.by0 + eps) & (y < sheet.by1 - eps))
+    if not inb.any():
+        return [Check("residual copper", 0.0, f"<= {RESIDUAL_TOL}", True,
+                      "no remaining copper inside the board rectangle")]
+    bx, by = maps.to_board(x[inb], y[inb])
+    inside = maps.sample(_outline_fill(maps).astype(np.float32), bx, by) > 0.5
+    d_edge = maps.sample(maps.dist("edge"), bx, by)
+    d_cu = maps.sample(maps.dist("cu"), bx, by)
+    keep = inside & (d_edge > RESIDUAL_EDGE_EXCL)
+    if not keep.any():
+        return [Check("residual copper", 0.0, f"<= {RESIDUAL_TOL}", True,
+                      "no remaining copper inside the outline past the rim "
+                      "band")]
+    d = d_cu[keep]
+    und = d > RESIDUAL_TOL
+    if not und.any():
+        worst = float(d.max())
+        return [Check("residual copper", worst, f"<= {RESIDUAL_TOL}", True,
+                      f"every remaining cell within {worst:.3f} of designed "
+                      f"copper ({int(keep.sum())} cells judged)")]
+    # cluster the undesigned cells and apply the FRAGMENT law: a cluster is
+    # a sliver when it is too narrow or too small for any design to own it
+    # (the loupe finds ridges, not pixels). Width = twice the largest
+    # inscribed-disc radius, from an EDT inside the cluster mask.
+    grid = np.zeros(stock.shape, bool)
+    sel = np.nonzero(inb)[0][np.nonzero(keep)[0][und]]
+    grid[ii[sel], jj[sel]] = True
+    lab, n = ndimage.label(grid)
+    idx = np.arange(1, n + 1)
+    widths = 2 * ndimage.maximum(
+        ndimage.distance_transform_edt(grid) / sheet.ppm, lab, idx)
+    areas = ndimage.sum(grid, lab, idx) / sheet.ppm ** 2
+    frag = (widths < RESIDUAL_MAX_WIDTH) | (areas < RESIDUAL_MIN_AREA)
+    n_slivers = int(frag.sum())
+    if n_slivers == 0:
+        return [Check(
+            "residual copper", 0.0, f"<= {RESIDUAL_TOL}", True,
+            f"{n} undesigned region(s) totalling "
+            f"{float(areas.sum()):.2f}mm2 remain, all wider than "
+            f"{RESIDUAL_MAX_WIDTH} and larger than {RESIDUAL_MIN_AREA}mm2 "
+            f"— floating planes, not fragments (stated scope)")]
+    # worst = the sliver cell farthest from designed copper, for the report
+    cell_lab = lab[ii[sel], jj[sel]]
+    cell_is_sliver = np.isin(cell_lab, idx[frag])
+    dd = d[und][cell_is_sliver]
+    k = int(dd.argmax())
+    worst = float(dd.max())
+    wx = bx[keep][und][cell_is_sliver][k]
+    wy = by[keep][und][cell_is_sliver][k]
+    area = float(areas[frag].sum())
+    detail = (f"{n_slivers} sliver(s) ({area:.2f}mm2) survive the mill "
+              f"program — fragments narrower than {RESIDUAL_MAX_WIDTH} or "
+              f"under {RESIDUAL_MIN_AREA}mm2; worst cell {worst:.3f} from "
+              f"designed copper at board ({wx:.2f},{wy:.2f})")
+    if n_slivers < n:
+        detail += (f"; {n - n_slivers} wide floating region(s) "
+                   f"({float(areas[~frag].sum()):.2f}mm2) not counted")
+    return [Check("residual copper", worst, f"<= {RESIDUAL_TOL}",
+                  False, detail)]
+
+
+def _outline_fill(maps: BoardMaps) -> np.ndarray:
+    """Interior of the Edge.Cuts loop (ink included), cached like the
+    distance fields. binary_fill_holes is exact for any closed outline —
+    rounded corners included — where a rectangle test is not."""
+    if "outline_fill" not in maps._cache:
+        maps._cache["outline_fill"] = ndimage.binary_fill_holes(
+            maps.layers["edge"])
+    return maps._cache["outline_fill"]
+
+
 # ------------------------------------------------------------------ the gate
 def verify_program(job: PcbJob, name: str, path, maps: BoardMaps,
                    flip=None) -> Report:
@@ -1422,8 +1588,13 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                 sj = sheet_job(job, sheet)
             try:
                 res = carve_program(sj, sheet, programs[name])
-                rep = Report(rep.checks + sheet_checks(job, sheet, sj, res),
-                             res, program=rep.program)
+                extra = sheet_checks(job, sheet, sj, res)
+                if name == "mill":
+                    # the program responsible for ALL copper removal answers
+                    # for the copper that remains (the bridging-sliver
+                    # incident, 2026-07-30)
+                    extra += residual_checks(job, maps, sheet, res)
+                rep = Report(rep.checks + extra, res, program=rep.program)
             except GcodeError as e:
                 rep = Report(rep.checks + [Check(
                     "sheet simulation", 0.0, "must simulate", False,

@@ -1730,6 +1730,72 @@ the copper edge.
 13 suites green on both kernels; `golden_mango` 5/5 EXACT MATCH; nothing
 re-blessed.
 
+## 2026-07-31: the bridging-sliver incident — what neither phase owned
+
+The operator's loupe on a simulated-stock render found copper ridges in the
+coupon's 0.5/0.6mm serpentine gaps. The mechanism was arithmetic nobody had
+done: single-pass isolation with the 0.2 vee clears a gap only up to
+~2·(tip/2) + kerf ≈ 0.46mm, the clearing tool cannot enter anything
+narrower than itself plus its margin, and NO check measured the copper
+that remained between those two reaches. Measured on the blessed mill
+program: **149 slivers, 19.78mm², worst cell 3.44mm from any designed
+copper**. The field zigbee board carries the same class — 55 slivers,
+3.49mm² — sealed under its mask, which is why the button works. Three
+defects, three fixes, no check weakened:
+
+- **Multi-pass isolation** (`pcbjob.iso_pass_plan` — ONE definition,
+  emitted by `engine.render_tcl`, judged by `checks.iso_checks`): pass n
+  rides `tip·(0.5 + n/2)` off the copper at 50% overlap — rung spacing
+  tip/2, the widest that stays contiguous counting only the TIP as cut
+  (the vee cone's flare is margin, not a dependency) — and the ladder
+  reaches G = clear tool + 2·offset + 0.2, where the clearing phase takes
+  over. Coupon: 5 passes. Two FlatCAM traps found live: `-combine 1`
+  OVERWRITES the accumulated geometry each pass (only the last rung
+  survives — 810mm of path instead of 6,011), so the engine emits
+  `-combine 0` + `join_geometry`; and the restricted Tcl shell CONTINUES
+  past a failed command, so the sentinel only means "script ended" — the
+  missing-outputs check is the real gate (docstring corrected).
+- **`ncc -method seed -box edge`**, not `-method standard -all`: standard
+  silently SKIPS any polygon whose shrink throws (the skip goes to a GUI
+  channel a headless run never sees — the sentinel lesson again); measured
+  side by side, standard leaves worst 3.440, seed 0.484. And `-all` bounds
+  clearing to the COPPER bbox + margin, so a sparse board keeps a field of
+  blank copper the grammar's own margin semantics ("reach past the BOARD
+  edge", window_pad's model) say the clear phase owns — `-box edge` makes
+  FlatCAM's region and the grammar's region the same rectangle on every
+  layout.
+- **The `residual copper` check** (checks.py, mill program): carve the
+  bytes, take every cell left shallower than RESIDUAL_CUT_MIN, keep those
+  farther than RESIDUAL_TOL from designed copper ink, cluster, and apply
+  the FRAGMENT law — width < RESIDUAL_MAX_WIDTH (0.6, thinner than the
+  lane's own track minimum + one sim cell) or area < RESIDUAL_MIN_AREA
+  (3.0mm²) is a sliver. The bars are incident-calibrated: the entire
+  measured population (149 + 55 clusters) sits at width ≤ 0.506, largest
+  fragment 2.45mm². Stated scope: a LARGE floating plane far from designed
+  copper is isolation-milling practice and passes — the generator clears
+  it anyway; fragments are what bridge. The iso containment law becomes a
+  BAND [tip_r, top rung] — the gouge side keeps the field bar unchanged,
+  and a single-pass job reads bit-for-bit the old exact-offset law.
+
+Board A re-blessed: `coupon-mill.nc` only (silk/scrub/holes byte-identical,
+`coupon.toml` untouched — the pass count is derived, not configured). The
+mill program now measures **zero undesigned cells** (every remaining cell
+within 0.045 of designed copper, 201,929 cells judged) and regenerates
+byte-identically. The price of a board with no slivers: iso 4,948→55,278
+lines / 2,056→6,011mm, clear 3,783→4,184 / 2,443→3,101mm (the rim strip is
+cleared now too); the mill program's like-for-like estimate 6.5→17.9min.
+Negatives moved with the law: the outward-0.12 containment negative died
+with the ladder (0.22 off the boundary is a legal rung now) and was
+re-aimed at the GOUGE side; the incident itself is synthesized (a
+serpentine missing its middle row leaves a 0.2mm ridge that every
+per-phase law still passes); the field zigbee mill is asserted as a
+FINDING — every check passes EXCEPT residual copper, which catches the
+slivers that board shipped with. The checks-suite fixture grew the pour
+that makes the law testable (a sparse synthetic board would flunk any
+honest mill program), split into five islands the suite now counts.
+
+13 suites green on both kernels; `golden_mango` 5/5 EXACT MATCH.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
