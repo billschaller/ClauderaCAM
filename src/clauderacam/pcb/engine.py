@@ -44,7 +44,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import boardmaps
+from . import boardmaps, pcbjob
 from .pcbjob import PcbJob
 
 PINNED_COMMIT = "16e635abd411d49f69012c0d63317c53b0e39724"
@@ -61,27 +61,53 @@ PHASE_NC = {"iso": "fc-1-iso.nc", "clear": "fc-2-clear.nc",
             "cutout": "fc-6b-cutout.nc"}
 
 
+def engine_phases(job: PcbJob) -> tuple[str, ...]:
+    """The phases FlatCAM generates for THIS job (or side view): the chain's
+    machine phases minus mask (the operator) and silk (the laser, straight
+    from the gerber). A single-sided job has all five; side A of a flipped
+    board has no cutout and side B no drills, because the grammar says so —
+    the engine reads the phase table rather than being told twice."""
+    return tuple(ph for ph in PHASE_NC if job.has_phase(ph))
+
+
 def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
                work_dir: Path) -> str:
-    """The one Tcl this lane ever runs: templated, transform DERIVED."""
-    dx, dy = boardmaps.machine_offset(win, job.anchor)
+    """The one Tcl this lane ever runs: templated, transform DERIVED.
+
+    A double-sided document runs this TWICE — once per side view, each with
+    its own work dir. The two differ in exactly three derived ways: which
+    copper/mask artwork is opened, whether the `mirror` line is emitted at
+    all (side A is machined front-up and needs none), and the offset the
+    transform derives from that mirror. The drills are bored in SIDE A's
+    setup only, so the Excellon is opened only where a `drills` phase exists.
+    """
+    dx, dy = boardmaps.machine_offset(win, job.anchor, job.mirror)
     ph = job.phases
+    gen = engine_phases(job)
     iso_t, clear_t = job.phase_tool("iso"), job.phase_tool("clear")
     scrub_t = job.phase_tool("scrub")
-    drill_t, cut_t = job.phase_tool("drills"), job.phase_tool("cutout")
+    side = f" side {job.side}" if job.side else ""
     L: list[str] = [
-        f"# clauderacam pcb engine — templated from {job.path.name}; DO "
-        f"NOT hand-edit",
+        f"# clauderacam pcb engine — templated from {job.path.name}{side}; "
+        f"DO NOT hand-edit",
         f"# board window {win.x0:.3f},{win.y0:.3f} .. "
-        f"{win.x1:.3f},{win.y1:.3f}; derived offset {dx:.3f},{dy:.3f}",
+        f"{win.x1:.3f},{win.y1:.3f}; derived offset {dx:.3f},{dy:.3f}"
+        + (f"; mirror {job.mirror}" if job.side else ""),
         f"set OUT {work_dir}",
     ]
-    for name in ("cu", "mask", "edge"):
+    objs = ["cu", "mask", "edge"]
+    for name in objs:
         L.append(f"open_gerber {job.files[name]} -outname {name}")
-    L.append(f"open_excellon {job.files['drl']} -outname drl")
-    for name in ("cu", "mask", "edge", "drl"):
-        L.append(f"mirror {name} -axis X -origin 0,0")
-    for name in ("cu", "mask", "edge", "drl"):
+    if "drills" in gen:
+        L.append(f"open_excellon {job.files['drl']} -outname drl")
+        objs.append("drl")
+    if job.mirror == "x":
+        # `mirror -axis X -origin 0,0` NEGATES X — the WS2 law, falsified and
+        # fixed; boardmaps.machine_offset's offset is the other half of it and
+        # boardmaps.flip_line asserts the pair closes.
+        for name in objs:
+            L.append(f"mirror {name} -axis X -origin 0,0")
+    for name in objs:
         L.append(f"offset {name} -x {dx:.6g} -y {dy:.6g}")
 
     def cnc(geo, tool, z, feed, plunge, out, dpp=None, dia=None):
@@ -121,19 +147,23 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
           cnc("scrub_geo", scrub_t, p["depth"], p["feed"], p["plunge"],
               "scrub_cnc"),
           f"write_gcode scrub_cnc $OUT/{PHASE_NC['scrub']}"]
-    p = ph["drills"]
-    L += [f"milldrills drl -milled_dias all "
-          f"-tooldia {drill_t.diameter:.6g} -diatol 5 -outname drl_geo",
-          cnc("drl_geo", drill_t, p["depth"], p["feed"], p["plunge"],
-              "drl_cnc", dpp=p["dpp"]),
-          f"write_gcode drl_cnc $OUT/{PHASE_NC['drills']}"]
-    p = ph["cutout"]
-    L += [f"geocutout edge -dia {cut_t.diameter:.6g} -margin 0 "
-          f"-gapsize {p['gapsize']:.6g} -gaps {p['gaps']} "
-          f"-outname cut_geo",
-          cnc("cut_geo", cut_t, p["depth"], p["feed"], p["plunge"],
-              "cut_cnc", dpp=p["dpp"]),
-          f"write_gcode cut_cnc $OUT/{PHASE_NC['cutout']}"]
+    if "drills" in gen:
+        drill_t = job.phase_tool("drills")
+        p = ph["drills"]
+        L += [f"milldrills drl -milled_dias all "
+              f"-tooldia {drill_t.diameter:.6g} -diatol 5 -outname drl_geo",
+              cnc("drl_geo", drill_t, p["depth"], p["feed"], p["plunge"],
+                  "drl_cnc", dpp=p["dpp"]),
+              f"write_gcode drl_cnc $OUT/{PHASE_NC['drills']}"]
+    if "cutout" in gen:
+        cut_t = job.phase_tool("cutout")
+        p = ph["cutout"]
+        L += [f"geocutout edge -dia {cut_t.diameter:.6g} -margin 0 "
+              f"-gapsize {p['gapsize']:.6g} -gaps {p['gaps']} "
+              f"-outname cut_geo",
+              cnc("cut_geo", cut_t, p["depth"], p["feed"], p["plunge"],
+                  "cut_cnc", dpp=p["dpp"]),
+              f"write_gcode cut_cnc $OUT/{PHASE_NC['cutout']}"]
     # the sentinel, written LAST and only if every write_gcode above
     # returned — see the module docstring for why it is a file
     L += [f"set fh [open $OUT/{SENTINEL_FILE} w]",
@@ -179,15 +209,24 @@ def preflight(job: PcbJob) -> dict:
 
 
 def run(job: PcbJob, work_dir: Path) -> dict[str, Path]:
-    """Template, run, sentinel-poll, kill. -> {phase: nc_path}."""
+    """Template, run, sentinel-poll, kill. -> {phase: nc_path}.
+
+    `work_dir` is resolved to an ABSOLUTE path here, not left to the caller:
+    the subprocess runs with cwd = the FlatCAM checkout (that is how its
+    `flatcam.py` finds its own package), so a relative `set OUT` in the
+    templated Tcl would write every phase file beside flatcam.py and the
+    sentinel poll would then time out looking in the caller's directory. The
+    first live-run driver worked around this by resolving before the call;
+    the resolution belongs to the function that knows about the cwd switch.
+    """
     pf = preflight(job)
-    work_dir = Path(work_dir)
+    work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     win = boardmaps.extents(job.files["edge"])
     tcl = work_dir / "engine.tcl"
     tcl.write_text(render_tcl(job, win, work_dir))
     log = work_dir / "engine.log"
-    expected = {ph: work_dir / nc for ph, nc in PHASE_NC.items()}
+    expected = {ph: work_dir / PHASE_NC[ph] for ph in engine_phases(job)}
     done = work_dir / SENTINEL_FILE
     for stale in (done, *expected.values()):
         # a previous run's artifact must never be mistaken for this one's
@@ -223,3 +262,15 @@ def run(job: PcbJob, work_dir: Path) -> dict[str, Path]:
         raise RuntimeError(
             f"sentinel reached but outputs missing: {missing} — see {log}")
     return expected
+
+
+def run_sides(job: PcbJob, work_dir: Path) -> dict[str, dict[str, Path]]:
+    """A double-sided document is TWO engine runs, one per setup, each in its
+    own subdirectory — same phase file names, different frames, no chance of
+    one side's interchange being read as the other's. -> {side: {phase: nc}}.
+    """
+    if not job.twosided:
+        raise ValueError(f"{job.name} is a single-sided document — run() it")
+    work_dir = Path(work_dir).resolve()
+    return {side: run(pcbjob.side_view(job, side), work_dir / side)
+            for side in job.sides}

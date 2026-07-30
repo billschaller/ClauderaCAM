@@ -325,16 +325,19 @@ def _aperture_poly(kind: str, ps: list[float], x: float, y: float):
 
 
 def _gerber_layer(offset: tuple[float, float], path: Path, key: str,
-                  label: str, color: str, on: bool = False) -> dict | None:
+                  label: str, color: str, on: bool = False,
+                  mirror: str = "x") -> dict | None:
     """One aperture layer, transformed into machine frame with the SAME
     derived mirror+offset every other layer gets."""
     if not path.is_file():
         return None
     flashes, draws, skipped = apertures(path)
-    dx, dy = offset
 
     def frame(pts):
-        return [[dx - p[0], p[1] + dy] for p in pts]
+        xs, ys = boardmaps.machine_xy(offset, mirror,
+                                      [p[0] for p in pts],
+                                      [p[1] for p in pts])
+        return [[float(a), float(b)] for a, b in zip(xs, ys)]
 
     polys = [frame(f["poly"]) for f in flashes] + [frame(c) for c in draws]
     note = f"{len(flashes)} flashes from {path.name} (gerber, not a toolpath)"
@@ -382,9 +385,11 @@ def overlay_for(job: PcbJob, name: str, text: str, nc_path,
                      "and removes nothing (Article IX exemption, stated in "
                      "kernel_py.py)")
     offset = boardmaps.machine_offset(
-        boardmaps.extents(job.files["edge"], cross_check=False), job.anchor)
+        boardmaps.extents(job.files["edge"], cross_check=False), job.anchor,
+        job.mirror)
     mask = _gerber_layer(offset, job.files["mask"], "mask_ap",
-                         "B.Mask apertures (gerber)", "#6fdc8c")
+                         "B.Mask apertures (gerber)", "#6fdc8c",
+                         mirror=job.mirror)
     if mask:
         mask["note"] += " — the solderable openings: silk strokes must " \
                         "clear them and the scrub is meant to cover them. " \
@@ -393,7 +398,8 @@ def overlay_for(job: PcbJob, name: str, text: str, nc_path,
         layers.append(mask)
     paste_p = job.gerber_dir / f"{job.stem}-B_Paste.gbr"
     paste = _gerber_layer(offset, paste_p, "paste_ap",
-                          "B.Paste apertures (gerber)", "#7aa2ff")
+                          "B.Paste apertures (gerber)", "#7aa2ff",
+                          mirror=job.mirror)
     if paste:
         paste["note"] += " — the stencil source for the run sheet's " \
                          "off-machine paste/reflow steps."
@@ -585,7 +591,20 @@ def build(job: PcbJob, programs: dict[str, Path] | None = None,
     — the sessions still show the sheet sim, the overlays and the run sheet,
     with `ok = None` and a stated reason: a session that cannot verify says
     so instead of showing a green badge (Article I).
+
+    A DOUBLE-SIDED document refuses here rather than half-working: the viewer
+    has one session list per document, and a flipped board has two setups,
+    nine programs and an artwork report (flip.verify_twosided). Hand it one
+    SIDE (pcbjob.side_view) and it behaves exactly as it does for a
+    single-sided job; the per-document view is WS8's remaining viewer work,
+    and a confusing KeyError is not a substitute for saying so.
     """
+    if job.twosided:
+        raise ValueError(
+            f"{job.name} is a double-sided [pcb] document — the viewer does "
+            f"not compose two setups into one session list yet. Verify it "
+            f"with pcb.flip.verify_twosided, or build sessions one side at a "
+            f"time via pcbjob.side_view(job, 'front'|'back')")
     sheet = sheet_stock(job, ppm=ppm)
     sj = sheet_job(job, sheet)
     progs = programs if programs is not None else program_paths(job)

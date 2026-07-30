@@ -35,9 +35,10 @@ from scipy import ndimage
 
 from ..emit import assemble, assemble_laser
 from ..engine import OpResult, path_length
+from ..ops import drill
 from ..simulate import parse_line
 from . import boardmaps
-from .pcbjob import PROGRAM_PHASES, PcbJob
+from .pcbjob import PIN_PHASES, PcbJob, programs_of
 
 _DROP = re.compile(r"^\s*$|^\(")
 _COMMENT = re.compile(r"\([^)]*\)|;.*")
@@ -164,6 +165,62 @@ _PROGRAM_STEPS = {
               "stencil/paste/reflow happens off-machine"),
 }
 
+# The same steps for a board that FLIPS (orbit SPEC.md "Assembly / run-sheet
+# order"). Only the entries that differ are listed; the rest fall back to the
+# single-sided text above. The FLIP itself is the `after` of side A's last
+# program and the `before` of side B's first — an operator step between two
+# programs, which is exactly what this header block was built to carry.
+#
+# A step may be a TUPLE of lines: the flip is genuinely a paragraph of
+# instructions and the dialect's 128-char law is not negotiable, so it gets
+# continuation comment lines rather than a truncated one.
+_SIDE_STEPS = {
+    ("front", "mill"): (
+        ("FULL-coverage tape is mandatory - a bowed blank makes every depth "
+         "number fiction",
+         "FRONT copper up, auto-level over the board, Z0 = front copper, "
+         "G54 = board SW corner"),
+        None),
+    ("front", "holes"): (
+        "same setup; ALL through-holes bored from side A, so both artworks "
+        "reference the same physical holes",
+        "program E pins - no operator step between"),
+    ("front", "pins"): (
+        "same setup, still; fit the pin drill - the registration holes are "
+        "the LAST thing cut on side A",
+        ("FLIP: set the {pins} dowels, turn the blank about {axis} onto them, "
+         "re-tape FULL coverage",
+         "deburr the BACK by hand first - the drill's exit burr lives there",
+         "re-level and re-touch Z0 on the back copper; NEVER re-zero XY - it "
+         "is the registration the holes bought")),
+    ("back", "mill"): (
+        ("blank FLIPPED onto the pins, re-taped, re-leveled, Z0 = BACK "
+         "copper, XY untouched",
+         "confirm no auto-level probe point sat in a drilled hole - one that "
+         "did wrote a false low into the height map"),
+        ("READ THE FLIP GAUGES with a loupe and write the numbers down - an "
+         "even ring means a perfect flip",
+         "THEN squeegee + UV-cure this side's mask and coat white")),
+    ("back", "scrub"): (
+        "legend wiped, spring tool fitted; the holes are all there now - "
+        "hole-centred pads get ANNULAR laps, never a disc",
+        "program D holes - the cutout, no operator step between"),
+    ("back", "holes"): (
+        "same setup; the outline cut with tabs - side 2 only, and last",
+        ("snap the {gaps} tabs of {gapsize}mm, file the stubs, deburr",
+         "off-machine: stencil + paste + hotplate reflow the BACK, THEN the "
+         "wire vias, THEN the THT parts from the front")),
+}
+
+
+def _step_lines(tag: str, step, **fmt) -> list[str]:
+    """One operator step as header comment lines. A tuple becomes a first
+    line plus indented continuations, because the 128-char dialect law is not
+    negotiable and a truncated instruction is worse than none."""
+    parts = (step,) if isinstance(step, str) else tuple(step)
+    parts = [p.format(**fmt) if "{" in p else p for p in parts]
+    return [f"({tag}: {parts[0]})"] + [f"(  {p})" for p in parts[1:]]
+
 
 def program_header(job: PcbJob, name: str,
                    ops: list[OpResult] | None = None) -> list[str]:
@@ -172,16 +229,28 @@ def program_header(job: PcbJob, name: str,
     echo — all COMMENT lines, all inside emit's own lint (the 128-char law
     included). Exists because the M6-pause instructions used to live only in
     the viewer's card and the laser banner (the 2026-07-30 WS6 review):
-    the bytes the operator posts must carry their own bench context."""
-    letter = "ABCDEFGH"[list(PROGRAM_PHASES).index(name)]
-    phases = PROGRAM_PHASES[name]
-    lines = [f"(program {letter} of {len(PROGRAM_PHASES)} - {name}: "
+    the bytes the operator posts must carry their own bench context.
+
+    On a side of a flipped board the header also names the SIDE and carries
+    the flip as the operator step between the two setups' programs."""
+    split = programs_of(job)
+    letter = "ABCDEFGH"[list(split).index(name)]
+    phases = split[name]
+    side = f" [side {job.side.upper()}]" if job.side else ""
+    lines = [f"(program {letter} of {len(split)} - {name}{side}: "
              + " + ".join(f"pcb-{p}" for p in phases) + ")"]
-    before, after = _PROGRAM_STEPS[name]
-    if name == "holes":
+    before, after = _PROGRAM_STEPS.get(name, ("", ""))
+    if job.side:
+        sb, sa = _SIDE_STEPS.get((job.side, name), (None, None))
+        before, after = sb or before, sa or after
+    fmt = {}
+    if job.has_phase("cutout"):
         c = job.phases["cutout"]
-        after = after.format(gaps=int(c["gaps"]), gapsize=f"{c['gapsize']:g}")
-    lines.append(f"(before: {before})")
+        fmt.update(gaps=int(c["gaps"]), gapsize=f"{c['gapsize']:g}")
+    if job.pins:
+        fmt.update(pins=len(job.pins["positions"]),
+                   axis=job.flip_axis.upper())
+    lines += _step_lines("before", before, **fmt)
     if name == "silk":
         lines.append("(laser: 455nm module - the head stays at the Z0 "
                      "focal plane; the only Z word is the focus move)")
@@ -208,7 +277,7 @@ def program_header(job: PcbJob, name: str,
             f"pcb-{p} Z{job.phases[p]['depth']:g}" for p in phases)
         note = " - spring PRELOAD, not cut depth" if name == "scrub" else ""
         lines.append(f"(floors: {floors}{note})")
-    lines.append(f"(after: {after})")
+    lines += _step_lines("after", after, **fmt)
     return lines
 
 
@@ -218,13 +287,47 @@ def assemble_program(job: PcbJob, name: str, ops: list[OpResult]) -> str:
     The ops must BE the split's phases for that program, in order: a
     program carrying some other phase set is a different process and
     refuses here before the gate ever has to catch it."""
-    want = PROGRAM_PHASES.get(name)
+    want = programs_of(job).get(name)
     got = tuple(r.kind for r in ops)
     if want is None or got != want:
         raise ValueError(
             f"program {name!r} must carry phases {want}, got {got} — the "
-            f"split is the job (pcbjob.PROGRAM_PHASES)")
+            f"split is the job (pcbjob.PROGRAM_PHASES / SIDE_PROGRAMS)")
     return assemble(job, ops, header=program_header(job, name, ops))
+
+
+def pin_ops(job: PcbJob) -> list[OpResult]:
+    """The pin block's two ops, from the SHIPPED coin-lane generators
+    (ops/drill.py — spot-face then full-retract peck, emitted as plain G0/G1
+    so the gate models every move). Nothing is re-derived here: the positions,
+    depths and feeds are pcbjob's derived pin phase tables, and the only
+    translation is the sign (a pcb phase carries a Z FLOOR, the coin
+    generators take a positive depth below the surface).
+
+    Why these ops and not FlatCAM's: a registration hole is not board artwork.
+    It is not in any gerber, it goes 12mm into the spoilboard, and the burr it
+    must not leave is the reason the spot-face exists at all — the coin lane
+    already got all three right, and the flip accuracy of this board rests on
+    that code being the same code.
+    """
+    if not job.has_phase("pindrill"):
+        raise ValueError(f"{job.name} has no pin block — the pins live on "
+                         f"side A of a [twosided] document")
+    out: list[OpResult] = []
+    for phase in PIN_PHASES:
+        p = job.phases[phase]
+        tool = job.phase_tool(phase)
+        depth = -float(p["depth"])          # floor Z -> depth below the top
+        if phase == "pinspot":
+            lines = drill.spotface(p["positions"], depth, float(p["feed"]))
+        else:
+            lines = drill.pindrill(p["positions"], depth, float(p["peck"]),
+                                   float(p["feed"]))
+        plen = path_length(lines)
+        out.append(OpResult(label=f"pcb-{phase}", kind=phase, tool=tool.num,
+                            lines=lines, path_len_mm=plen,
+                            est_min=plen / max(float(p["feed"]), 1.0)))
+    return out
 
 
 # ----------------------------------------------------------- the silk clip
@@ -437,7 +540,7 @@ def silk_strokes(job: PcbJob, win: boardmaps.BoardWindow,
     need = clearance + SILK_EPS_PX / win.ppmm + SILK_EPS_MM
     step = min(0.5 / win.ppmm, SILK_BACKOFF)   # the bracket <= backoff law
     probe = _mask_probe(win, boardmaps.dist_mm(mask_map, win))
-    dx, dy = boardmaps.machine_offset(win, job.anchor)
+    off = boardmaps.machine_offset(win, job.anchor, job.mirror)
     rep = SilkClip(chains=len(chains), asked=clearance,
                    clearance=need - 0.5 / win.ppmm)
     for ch in chains:
@@ -451,7 +554,12 @@ def silk_strokes(job: PcbJob, win: boardmaps.BoardWindow,
         for pc in pieces:
             rep.kept_mm += sum(float(np.hypot(q[0] - p[0], q[1] - p[1]))
                                for p, q in zip(pc[:-1], pc[1:]))
-            rep.strokes.append([(-x + dx, y + dy) for x, y in pc])
+            # the derived frame from the one place that owns its sign: side A's
+            # legend is NOT mirrored (it is lasered front-up), side B's is
+            mx, my = boardmaps.machine_xy(off, job.mirror,
+                                          [p[0] for p in pc],
+                                          [p[1] for p in pc])
+            rep.strokes.append([(float(a), float(b)) for a, b in zip(mx, my)])
     return rep
 
 

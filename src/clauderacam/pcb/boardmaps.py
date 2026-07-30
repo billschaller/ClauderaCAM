@@ -320,10 +320,69 @@ def machine_offset(win: BoardWindow, anchor_xy: tuple[float, float],
     the board extents, landing the SW corner on G54 (0,0)). The
     mirrored x-span [-x1, -x0] plus (ax + x1, ay - y0) puts the board
     at [ax, ax+w] x [ay, ay+h]. mirror "none" places the unmirrored
-    board. Anything else refuses."""
+    board. Anything else refuses.
+
+    Which side gets which: a KiCad gerber is drawn as seen from the TOP,
+    so a layer whose copper faces the spindle needs no mirror and one
+    whose copper faces away needs one. F.Cu machined front-up -> "none";
+    B.Cu machined back-up (the single-sided default, and side 2 of a
+    pin-and-flip board) -> "x"."""
     ax, ay = anchor_xy
     if mirror == "x":
         return ax + win.x1, ay - win.y0
     if mirror == "none":
         return ax - win.x0, ay - win.y0
     raise ValueError(f"unsupported mirror {mirror!r}")
+
+
+def machine_xy(offset: tuple[float, float], mirror: str, bx, by):
+    """gerber frame -> machine frame under a derived (offset, mirror). The
+    ONE place the sign of the mirror is spelled out for consumers: the Tcl
+    template, the raster checks, the silk strokes and the sheet model all
+    come here instead of each writing `dx - x` and hoping."""
+    dx, dy = offset
+    x = np.asarray(bx, dtype=float)
+    return (dx - x if mirror == "x" else dx + x), np.asarray(by,
+                                                             dtype=float) + dy
+
+
+def board_xy(offset: tuple[float, float], mirror: str, x, y):
+    """machine frame -> gerber frame: the exact inverse of machine_xy."""
+    dx, dy = offset
+    mx = np.asarray(x, dtype=float)
+    return (dx - mx if mirror == "x" else mx - dx), np.asarray(y,
+                                                              dtype=float) - dy
+
+
+def flip_line(win: BoardWindow, anchor_xy: tuple[float, float]) -> float:
+    """The machine-frame X of the board's OWN mirror line — the axis the
+    blank physically rotates about in a pin-and-flip job — DERIVED from the
+    same Edge.Cuts extents both side frames come from.
+
+    A board feature at gerber x lands at (ax - x0) + x in side A's frame
+    (mirror "none") and at (ax + x1) - x in side B's (mirror "x"). Those two
+    machine positions average to ((ax - x0) + (ax + x1)) / 2 for EVERY x —
+    the x-independence is the proof, and the constant it leaves is the
+    mirror line: ax + (x1 - x0)/2, the board's centreline.
+
+    The assert below closes the loop on the falsified-and-fixed WS2 law
+    (`mirror -axis X` NEGATES X, i.e. mirrors across the Y axis). If either
+    transform's sign or offset formula drifts, the average stops being
+    constant and this raises instead of shipping two frames that disagree
+    about where the board is.
+    """
+    dxa, dya = machine_offset(win, anchor_xy, "none")
+    dxb, dyb = machine_offset(win, anchor_xy, "x")
+    line = (dxa + dxb) / 2.0
+    probes = np.array([win.x0, win.x1, (win.x0 + win.x1) / 2.0,
+                       win.x0 + 0.37 * (win.x1 - win.x0)])
+    ys = np.array([win.y0, win.y1, win.y0, win.y1])
+    ax, ay = machine_xy((dxa, dya), "none", probes, ys)
+    bx, by = machine_xy((dxb, dyb), "x", probes, ys)
+    worst = float(np.abs((ax + bx) / 2.0 - line).max())
+    if worst > 1e-9 or float(np.abs(ay - by).max()) > 1e-9:
+        raise ValueError(
+            f"the two side frames do not mirror about one line (worst "
+            f"{worst:.6g}mm) — `mirror -axis X` must NEGATE X and leave Y "
+            f"alone; one of machine_offset's two branches has drifted")
+    return line

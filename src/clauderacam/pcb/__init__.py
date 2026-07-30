@@ -10,7 +10,17 @@ mesh-vs-gcode split.
 
 pcbjob.py — the `[pcb]` grammar. One TOML parameterizes the six-phase chain
 and its phase order is law; tools go through the same Article XI crib gate as
-every job.
+every job. A `[twosided]` table makes the document DOUBLE-SIDED: the phase
+tables go per side, the registration pin block is derived from `[pins]`, and
+`side_view(job, side)` hands every module below a job shaped like a
+single-sided one so none of them needed to learn about sides.
+
+flip.py — the double-sided gate (WS8): what a flipped board has to prove that
+a one-sided board cannot. Both side frames from ONE Edge.Cuts, the annular
+ring on BOTH faces of every hole-centred pad, concentricity across the flip,
+paste that stays off the hole schedule, side 2's annular scrub laps, and the
+cutout tabs' copper keep-out. `verify_twosided` composes it the way
+twosided.verify composes the coin's two sides.
 
 engine.py / reemit.py — FlatCAM as a headless GEOMETRY engine (pinned commit,
 templated Tcl, sentinel-poll-kill) whose per-phase .nc is interchange only,

@@ -118,12 +118,13 @@ from .. import simulate
 from ..emit import LASER_S_MAX, lint_laser, lint_program
 from ..physics import physics_checks
 from ..simulate import OP_MARK, GcodeError, MoveMetrics, parse_line
+from ..twosided import PIN_CLEAR
 from ..verify import Check, Report, contact_limit
 from . import boardmaps
-from .pcbjob import PROGRAM_PHASES, PcbJob  # noqa: F401  (re-exported: the
-#                                             split moved to the grammar,
-#                                             checks.PROGRAM_PHASES stays a
-#                                             valid name for its readers)
+from .pcbjob import (PIN_PHASES, PROGRAM_PHASES,  # noqa: F401 (re-exported:
+                     PcbJob, programs_of)         # the split moved to the
+#                                             grammar, checks.PROGRAM_PHASES
+#                                             stays a valid name for readers)
 from .reemit import _stroke_chains
 
 # ---------------------------------------------------------------- thresholds
@@ -181,8 +182,13 @@ SHEET_PPM = 12.5
 # Which programs of the split carve, and which are overlay/dialect-only. This
 # is not a preference: `silk` is a laser program (simulate.parse_line refuses
 # M321 by law) and `scrub` drives a tool whose kernel footprint is empty.
-CARVING = ("mill", "holes")
+CARVING = ("mill", "holes", "pins")
 OVERLAY_ONLY = ("silk", "scrub")
+
+PIN_POS_TOL = 0.2           # coin lane's own bar (verify.py "drill only at pin
+#                             positions", <= 0.2): the pin hole is a
+#                             registration datum, and 0.2 is already a tenth of
+#                             a Ø2 dowel's diameter
 
 
 # ----------------------------------------------------------------- board maps
@@ -198,6 +204,7 @@ class BoardMaps:
     layers: dict[str, np.ndarray]
     holes: list[tuple[float, float, float]]
     offset: tuple[float, float]       # derived machine offset (dx, dy)
+    mirror: str = "x"                 # which frame `offset` belongs to
     _cache: dict[str, np.ndarray] = field(default_factory=dict)
 
     @property
@@ -208,11 +215,13 @@ class BoardMaps:
         return 0.5 / self.win.ppmm
 
     def to_board(self, x, y):
-        """machine frame -> gerber frame. Inverse of the mirror-x + offset
-        transform boardmaps.machine_offset derives (single-sided back copper;
-        the double-sided variant lands with Board B)."""
-        dx, dy = self.offset
-        return dx - np.asarray(x), np.asarray(y) - dy
+        """machine frame -> gerber frame: the inverse of the (mirror, offset)
+        transform boardmaps.machine_offset derived. `mirror` is "x" for
+        back-copper work (the single-sided lane, and side 2 of a flipped
+        board) and "none" for side A's front copper — the ONE sign that
+        differs between the two frames, and it is carried here rather than
+        assumed."""
+        return boardmaps.board_xy(self.offset, self.mirror, x, y)
 
     def dist(self, key: str) -> np.ndarray:
         """Cached distance field, mm. 'cu'/'mask'/'edge' = distance TO that
@@ -249,6 +258,24 @@ class BoardMaps:
         return ndimage.map_coordinates(fieldarr, [i - 0.5, j - 0.5], order=1)
 
 
+def window_pad(job: PcbJob) -> float:
+    """How far off the board the raster window must reach: the widest
+    off-board work either setup does (the clear phase's rim margin, the
+    cutout's outside ride) plus the base pad.
+
+    For a DOUBLE-SIDED document this maxes over BOTH sides, so the two side
+    views get pixel-identical windows from the one Edge.Cuts — which is what
+    lets a board-level check compare F.Cu and B.Cu array to array. A
+    single-sided job sees exactly the number it always saw."""
+    tables = list(job.side_phases.values()) if job.twosided else [job.phases]
+    reach = 0.0
+    for phases in tables:
+        reach = max(reach, float(phases["clear"]["margin"]))
+        if phases.get("cutout"):
+            reach = max(reach, job.tool(phases["cutout"]["tool"]).diameter)
+    return CHECK_PAD_BASE + reach
+
+
 def board_maps(job: PcbJob, dpi: int | None = None,
                pad: float | None = None) -> BoardMaps:
     """Rasterize this job's layers into ONE padded window (needs gerbv).
@@ -260,15 +287,16 @@ def board_maps(job: PcbJob, dpi: int | None = None,
     dpi = dpi or boardmaps.DPI_DEFAULT
     tight = boardmaps.extents(job.files["edge"], dpi=dpi)
     if pad is None:
-        pad = CHECK_PAD_BASE + max(float(job.phases["clear"]["margin"]),
-                                   job.phase_tool("cutout").diameter)
+        pad = window_pad(job)
     win = boardmaps.BoardWindow(tight.x0 - pad, tight.y0 - pad,
                                 tight.x1 + pad, tight.y1 + pad, dpi)
     layers = {k: boardmaps.rasterize(job.files[k], win)
               for k in ("cu", "mask", "edge")}
     return BoardMaps(tight=tight, win=win, layers=layers,
                      holes=boardmaps.excellon(job.files["drl"]),
-                     offset=boardmaps.machine_offset(tight, job.anchor))
+                     offset=boardmaps.machine_offset(tight, job.anchor,
+                                                     job.mirror),
+                     mirror=job.mirror)
 
 
 # -------------------------------------------------------------------- samples
@@ -663,25 +691,12 @@ def cutout_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     out.append(Check("cutout side", float(n_in), "0 samples inside the board",
                      n_in == 0, detail))
 
-    final = s.z <= float(job.phases["cutout"]["depth"]) + CUTOUT_FINAL_TOL
-    if not final.any():
+    walk = cutout_gaps(job, s)
+    if walk is None:
         out.append(Check("cutout tab census", 0.0, "unmeasurable", False,
                          "no sample reaches the configured depth"))
         return out
-    sc = _outline_s(job, s.bx[final], s.by[final])
-    # stable sort: samples whose projection clamps to the same outline vertex
-    # (every corner) share an s value, and must keep their PATH order — an
-    # unstable sort scrambles them into gaps that look like tabs
-    order = np.argsort(sc, kind="stable")
-    px_, py_ = s.bx[final][order], s.by[final][order]
-    gaps = np.hypot(np.diff(np.concatenate([px_, px_[:1]])),
-                    np.diff(np.concatenate([py_, py_[:1]])))
-    # A path gap of g leaves g - dia of material: <= 0 means the two cuts
-    # overlap and the outline is severed there (an ordering artifact at a
-    # corner chord looks exactly like this and is harmless); > 0 is a bridge,
-    # and a bridge thinner than the law is the hazard — it snaps in the
-    # fixture and frees the board next to a spinning cutter.
-    material = gaps - tool.diameter
+    px_, py_, material = walk
     tabs = material[material >= TAB_MATERIAL_MIN]
     thin = material[(material > 0) & (material < TAB_MATERIAL_MIN)]
     want = int(job.phases["cutout"]["gaps"])
@@ -693,6 +708,35 @@ def cutout_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
                      + (f", THIN bridges {np.round(np.sort(thin), 2)}"
                         if len(thin) else "")))
     return out
+
+
+def cutout_gaps(job: PcbJob, s: Samples):
+    """The tab walk, factored out: order the final-depth cutting samples
+    around the outline and measure the material each PATH gap leaves.
+
+    -> (ordered bx, ordered by, material per gap) or None if nothing reaches
+    depth. Gap k spans from ordered point k to k+1 (cyclic), so the tab census
+    and the tab-zone copper keep-out (flip.py) find the same tabs from the
+    same ordering — one implementation, two readers.
+
+    A path gap of g leaves g - dia of material: <= 0 means the two cuts
+    overlap and the outline is severed there (an ordering artifact at a corner
+    chord looks exactly like this and is harmless); > 0 is a bridge, and a
+    bridge thinner than the law is the hazard — it snaps in the fixture and
+    frees the board next to a spinning cutter.
+    """
+    final = s.z <= float(job.phases["cutout"]["depth"]) + CUTOUT_FINAL_TOL
+    if not final.any():
+        return None
+    sc = _outline_s(job, s.bx[final], s.by[final])
+    # stable sort: samples whose projection clamps to the same outline vertex
+    # (every corner) share an s value, and must keep their PATH order — an
+    # unstable sort scrambles them into gaps that look like tabs
+    order = np.argsort(sc, kind="stable")
+    px_, py_ = s.bx[final][order], s.by[final][order]
+    gaps = np.hypot(np.diff(np.concatenate([px_, px_[:1]])),
+                    np.diff(np.concatenate([py_, py_[:1]])))
+    return px_, py_, gaps - job.phase_tool("cutout").diameter
 
 
 def _outline_loop(job: PcbJob) -> np.ndarray:
@@ -771,6 +815,32 @@ def _outline_s(job: PcbJob, bx, by) -> np.ndarray:
     return s
 
 
+def project_to_outline(job: PcbJob, bx, by):
+    """Each point's closest point ON the Edge.Cuts loop (board frame). The
+    tab-zone keep-out needs it: a tab's material runs from the cut path INWARD
+    to the outline, and the copper it could tear off sits by the outline, not
+    by the path."""
+    a = _outline_loop(job)
+    bx = np.asarray(bx, dtype=float)
+    by = np.asarray(by, dtype=float)
+    best = np.full(bx.size, np.inf)
+    ox = np.zeros(bx.size)
+    oy = np.zeros(bx.size)
+    for k in range(a.shape[0]):
+        x1, y1, x2, y2 = a[k]
+        dx, dy = x2 - x1, y2 - y1
+        den = dx * dx + dy * dy
+        t = 0.0 if den == 0 else np.clip(((bx - x1) * dx + (by - y1) * dy)
+                                         / den, 0.0, 1.0)
+        qx, qy = x1 + t * dx, y1 + t * dy
+        d = np.hypot(bx - qx, by - qy)
+        take = d < best
+        best = np.where(take, d, best)
+        ox = np.where(take, qx, ox)
+        oy = np.where(take, qy, oy)
+    return ox, oy
+
+
 def silk_checks(job: PcbJob, maps: BoardMaps, text: str) -> list[Check]:
     """Laser silk legend, on the assembled bytes. The laser fires only on FEED
     moves, so the firing set is exactly the G1 segments (each chain's first G1
@@ -846,9 +916,88 @@ def silk_checks(job: PcbJob, maps: BoardMaps, text: str) -> list[Check]:
     return out
 
 
+def pin_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
+    """The registration-pin block, carried over from the coin lane's pins law
+    (verify.py's "drill only at pin positions" / "pin hole depth error",
+    DESIGN.md 2026-07-28) onto a [pcb] job's assembled bytes.
+
+    Two phases share these checks — the spot-face and the peck — because the
+    laws are the same for both: cut ONLY at the configured pin positions, and
+    nowhere near the board. The depth echo is echo_checks' job (the pin
+    phases are ordinary phases to it), so what is left here is position and
+    the board keep-out.
+
+    The board keep-out is the pin keep-out read from the other end: on side 1
+    the pins are holes in the blank's waste and on side 2 they hold steel, so
+    in neither setup may pin work reach the board. `pin_keepout_checks` says
+    the same thing about every OTHER program.
+    """
+    p = job.phases[s.phase]
+    tool = job.phase_tool(s.phase)
+    pos = [(float(x), float(y)) for x, y in p["positions"]]
+    off = np.min(np.stack([np.hypot(s.x - px, s.y - py) for px, py in pos]),
+                 axis=0)
+    worst = float(off.max())
+    k = int(off.argmax())
+    out = [Check(f"{s.phase} only at pin positions", worst,
+                 f"<= {PIN_POS_TOL}", worst <= PIN_POS_TOL,
+                 f"{len(pos)} pins, T{tool.num} d{tool.diameter:g}, worst at "
+                 f"{s.at(k)}")]
+    # the board box in THIS side's machine frame, from the derived transform
+    bxs, bys = boardmaps.machine_xy(
+        maps.offset, maps.mirror, [maps.tight.x0, maps.tight.x1],
+        [maps.tight.y0, maps.tight.y1])
+    x0, x1 = float(min(bxs)), float(max(bxs))
+    y0, y1 = float(min(bys)), float(max(bys))
+    inside = np.minimum.reduce([s.x - x0, x1 - s.x, s.y - y0, y1 - s.y]) \
+        + tool.radius
+    worst_in = float(inside.max())
+    k = int(inside.argmax())
+    out.append(Check(f"{s.phase} clear of the board", worst_in, "<= 0",
+                     worst_in <= 0.0,
+                     f"board box ({x0:.2f},{y0:.2f})..({x1:.2f},{y1:.2f}); "
+                     f"worst at {s.at(k)}"))
+    return out
+
+
+def pin_keepout_checks(job: PcbJob,
+                       samples: dict[str, Samples]) -> list[Check]:
+    """The pins law's other half, on every program that is NOT the pin block:
+    no cutting sample within pin radius + PIN_CLEAR of a pin.
+
+    On side 2 the pins are steel and flush and a tool that crosses one breaks
+    (the coin lane's "pin keep-out (side 2)"); on side 1 they are holes whose
+    walls have to survive to register the flip. So the check runs on BOTH
+    setups' programs — a carry-over, not a copy: PIN_CLEAR is twosided.py's
+    constant, imported, not restated.
+    """
+    if not job.pins:
+        return []
+    pin_r = float(job.pins["diameter"]) / 2
+    keep = pin_r + PIN_CLEAR
+    worst = float("inf")
+    at = ""
+    for ph, s in samples.items():
+        if ph in PIN_PHASES:
+            continue
+        for px, py in job.pins["positions"]:
+            d = np.hypot(s.x - float(px), s.y - float(py)) \
+                - job.phase_tool(ph).radius
+            k = int(d.argmin())
+            if float(d[k]) < worst:
+                worst = float(d[k])
+                at = f"pin ({px},{py}), {s.at(k)}"
+    if worst == float("inf"):
+        return []
+    return [Check("pin keep-out", worst, f">= {keep}", worst >= keep,
+                  f"worst {at} (tool EDGE to pin centre; pin r {pin_r:g} + "
+                  f"{PIN_CLEAR} clear)")]
+
+
 PHASE_CHECKS = {"iso": iso_checks, "clear": clear_checks,
                 "scrub": scrub_checks, "drills": hole_checks,
-                "cutout": cutout_checks}
+                "cutout": cutout_checks,
+                "pinspot": pin_checks, "pindrill": pin_checks}
 
 
 # ------------------------------------------------------- per-program echoes
@@ -877,8 +1026,24 @@ def echo_checks(job: PcbJob, phases: tuple[str, ...],
         nz = np.minimum(m.z0, m.z1)
         descends = (m.z1 < -1e-3) & (m.z1 < m.z0 - 1e-6)
         bad = rap & (descends | (lateral & (nz < -1e-3)))
+        # The registration peck cycle's re-entry rapid descends INTO the hole
+        # it just drilled, which this proxy cannot tell from a dive into
+        # virgin blank — it has no stock model, that being the whole reason it
+        # exists. The pin stages are therefore excluded HERE and judged by the
+        # honest check instead: the pins program is a CARVING program, so
+        # `sheet rapid-vs-stock` measures its rapids against the simulated
+        # sheet, where a hole is a hole (ops/drill.py's own note). Strictly
+        # stronger, not weaker.
+        if m.stage_labels:
+            pin_stages = [n for n, lb in enumerate(m.stage_labels)
+                          if lb in tuple(f"pcb-{p}" for p in PIN_PHASES)]
+            for n in pin_stages:
+                bad &= m.stage != n
         worst = float(nz[bad].min()) if bad.any() else 0.0
         detail = f"{int(rap.sum())} rapids"
+        if m.stage_labels and pin_stages:
+            detail += (" (pin peck re-entries excluded — see sheet "
+                       "rapid-vs-stock)")
         if bad.any():
             k = int(np.nonzero(bad)[0][0])
             detail += f", first offender at line {int(m.lineno[k])}"
@@ -964,6 +1129,22 @@ class SheetStock:
                 "spoil": self.spoil}
 
 
+def _pin_pad(job: PcbJob, bx0: float, by0: float,
+             bx1: float, by1: float) -> float:
+    """How far past the board the modelled sheet must reach to hold the
+    registration-pin work. The pins sit in the blank's WASTE, several
+    millimetres outside the outline (orbit SPEC: 8mm), so a window sized for
+    the board alone would put the pin bores outside the simulation and
+    `sheet containment` would report an escape that is really a too-small
+    model. Zero for a single-sided job, which has no pins."""
+    if not job.pins:
+        return 0.0
+    r = float(job.pins["diameter"]) / 2 + PIN_CLEAR
+    worst = max(max(bx0 - x, x - bx1, by0 - y, y - by1)
+                for x, y in job.pins["positions"])
+    return max(0.0, worst + r + 1.0)
+
+
 def sheet_stock(job: PcbJob, ppm: float = SHEET_PPM) -> SheetStock:
     """DERIVE the sheet stock of a [pcb] job. No hand-typed geometry: the
     board window comes from the Edge.Cuts coordinate words and the transform
@@ -976,13 +1157,13 @@ def sheet_stock(job: PcbJob, ppm: float = SHEET_PPM) -> SheetStock:
     session says UNVERIFIED.
     """
     tight = boardmaps.extents(job.files["edge"], cross_check=False)
-    dx, dy = boardmaps.machine_offset(tight, job.anchor)
-    # single-sided back copper: mirror x then offset (BoardMaps.to_board is
-    # the inverse of exactly this)
-    bx0, bx1 = dx - tight.x1, dx - tight.x0
-    by0, by1 = tight.y0 + dy, tight.y1 + dy
-    pad = CHECK_PAD_BASE + max(float(job.phases["clear"]["margin"]),
-                               job.phase_tool("cutout").diameter)
+    off = boardmaps.machine_offset(tight, job.anchor, job.mirror)
+    # the derived frame, from the ONE place that spells its sign out
+    xs, ys = boardmaps.machine_xy(off, job.mirror,
+                                 [tight.x0, tight.x1], [tight.y0, tight.y1])
+    bx0, bx1 = float(min(xs)), float(max(xs))
+    by0, by1 = float(min(ys)), float(max(ys))
+    pad = max(window_pad(job), _pin_pad(job, bx0, by0, bx1, by1))
     x0, y0, x1, y1 = bx0 - pad, by0 - pad, bx1 + pad, by1 + pad
     half = max(abs(x0), abs(x1), abs(y0), abs(y1))
     n = int(half * 2 * ppm)
@@ -1044,6 +1225,30 @@ def carve_program(sj: SheetJob, sheet: SheetStock,
                           step=0.06, check=True)
 
 
+def _pin_specs(job: PcbJob, sj: SheetJob) -> list[tuple[float, float, float]]:
+    """(x, y, radius) of each registration pin hole, or [] if this job has
+    none. Only meaningful for the program that bores them; every other
+    program's floor is judged without any exclusion at all."""
+    if not job.pins or not job.has_phase("pindrill"):
+        return []
+    r = sj.tool(job.phases["pindrill"]["tool"]).radius
+    return [(float(x), float(y), r)
+            for x, y in job.phases["pindrill"]["positions"]]
+
+
+def _pin_mask(sheet: SheetStock, specs) -> np.ndarray:
+    """The pin discs on the carve grid, in the ONE mapping (Article IV:
+    x = j/ppm - half, y = half - i/ppm — never re-derived)."""
+    n, ppm, half = sheet.n, sheet.ppm, sheet.half
+    yy, xx = np.mgrid[0:n, 0:n]
+    xw = xx / ppm - half
+    yw = half - yy / ppm
+    mask = np.zeros((n, n), bool)
+    for px, py, r in specs:
+        mask |= np.hypot(xw - px, yw - py) <= r + 0.3   # verify.py's 0.3
+    return mask
+
+
 def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
                  res: simulate.CarveResult) -> list[Check]:
     """The geometric + physics checks the PCB gate could not run before the
@@ -1078,13 +1283,40 @@ def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
     # grammar already refuses a configured depth outside that band; this
     # measures the SIMULATED floor of the bytes (the two disagree exactly
     # when a program is not the program the config describes).
-    floor = min(res.min_cut_z, float(res.stock.min()))
+    #
+    # Registration-pin holes are the ONE legal way past that floor — through
+    # the blank into the spoilboard — so they are excluded from it and made
+    # to account for themselves instead, exactly as verify.py's "depth floor
+    # (excl. pin holes)" does for the coin lane. The exclusion is by TOOL
+    # (the twist drill), so no board phase can hide behind it.
     limit = -(sheet.thickness + 0.5)      # verify.MAX_OVERCUT, same number
-    out.append(Check("sheet depth floor", floor, f">= {limit:.3f}",
-                     floor >= limit,
-                     f"{sheet.thickness}mm blank + 0.5 breakthrough "
-                     f"allowance"))
     bed = -(sheet.thickness + sheet.spoil - 2.0)
+    pin_specs = _pin_specs(job, sj)
+    if not pin_specs:
+        floor = min(res.min_cut_z, float(res.stock.min()))
+        out.append(Check("sheet depth floor", floor, f">= {limit:.3f}",
+                         floor >= limit,
+                         f"{sheet.thickness}mm blank + 0.5 breakthrough "
+                         f"allowance"))
+    else:
+        is_drill = np.array([sj.tool(int(t)).type == "drill"
+                             for t in m.tool_num])
+        cut = m.motion == 1
+        nz = np.minimum(m.z0, m.z1)
+        sel = cut & ~is_drill
+        worst_nondrill = float(nz[sel].min()) if sel.any() else 0.0
+        pinmask = _pin_mask(sheet, pin_specs)
+        floor = min(worst_nondrill, float(res.stock[~pinmask].min()))
+        out.append(Check("sheet depth floor (excl. pin holes)", floor,
+                         f">= {limit:.3f}", floor >= limit,
+                         f"{len(pin_specs)} pin holes excluded by TOOL (the "
+                         f"twist drill), {sheet.thickness}mm blank + 0.5"))
+        pin_floor = float(nz[cut & is_drill].min()) \
+            if (cut & is_drill).any() else 0.0
+        out.append(Check("sheet pin bores clear of the bed", pin_floor,
+                         f">= {bed:.3f}", pin_floor >= bed,
+                         f"{sheet.spoil}mm spoilboard takes the pin holes"))
+        floor = min(floor, pin_floor)
     out.append(Check("sheet clear of machine bed", floor, f">= {bed:.3f}",
                      floor >= bed,
                      f"{sheet.spoil}mm spoilboard under the blank"))
@@ -1113,12 +1345,19 @@ def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
 
 
 # ------------------------------------------------------------------ the gate
-def verify_program(job: PcbJob, name: str, path, maps: BoardMaps) -> Report:
-    """Verify ONE assembled program of a [pcb] job against the board maps."""
-    if name not in PROGRAM_PHASES:
+def verify_program(job: PcbJob, name: str, path, maps: BoardMaps,
+                   flip=None) -> Report:
+    """Verify ONE assembled program of a [pcb] job against the board maps.
+
+    `flip` is a flip.FlipContext when this job is one SIDE of a pin-and-flip
+    document: the cross-side checks that need the other side's copper or the
+    board's own rules ride along with the per-phase set (flip.py owns them so
+    that a single-sided report is bit-for-bit the report it always was)."""
+    split = programs_of(job)
+    if name not in split:
         return Report.fatal(f"unknown pcb program {name!r} — the split is "
-                            f"{sorted(PROGRAM_PHASES)}")
-    phases = PROGRAM_PHASES[name]
+                            f"{sorted(split)}")
+    phases = split[name]
     try:
         text = Path(path).read_text()
         if "M321" in text:            # the laser family, its own dialect
@@ -1136,6 +1375,9 @@ def verify_program(job: PcbJob, name: str, path, maps: BoardMaps) -> Report:
         for ph in phases:
             checks += PHASE_CHECKS[ph](job, maps, samples[ph])
         checks += echo_checks(job, phases, samples, text, m)
+        checks += pin_keepout_checks(job, samples)
+        if flip is not None:
+            checks += flip.program_checks(job, name, maps, samples)
         return Report(checks, None, program=text)
     except GcodeError as e:
         return Report.fatal(str(e))
@@ -1144,7 +1386,7 @@ def verify_program(job: PcbJob, name: str, path, maps: BoardMaps) -> Report:
 def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                maps: BoardMaps | None = None,
                dpi: int | None = None,
-               ppm: float = SHEET_PPM) -> dict[str, Report]:
+               ppm: float = SHEET_PPM, flip=None) -> dict[str, Report]:
     """The [pcb] gate: one Report per program, composed the way
     twosided.verify composes its two sides. A program of the canonical split
     that was not handed over is a FATAL report, never a silent gap — the six
@@ -1160,16 +1402,17 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
     `programs` maps program name -> the file whose BYTES go to the machine.
     """
     maps = maps or board_maps(job, dpi=dpi)
+    split = programs_of(job)
     reports: dict[str, Report] = {}
     sheet: SheetStock | None = None
     sj: SheetJob | None = None
-    for name in PROGRAM_PHASES:
+    for name in split:
         if name not in programs:
             reports[name] = Report.fatal(
                 f"no {name!r} program was handed to the gate — phases "
-                f"{PROGRAM_PHASES[name]} are unverified")
+                f"{split[name]} are unverified")
             continue
-        rep = verify_program(job, name, programs[name], maps)
+        rep = verify_program(job, name, programs[name], maps, flip=flip)
         # `rep.program` is set exactly when the bytes parsed — a fatal report
         # has nothing to simulate and simulating it would judge moves the
         # strict parse already refused
@@ -1187,10 +1430,9 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                     str(e))], None, program=rep.program)
         reports[name] = rep
         maps.release()
-    for name in sorted(set(programs) - set(PROGRAM_PHASES)):
+    for name in sorted(set(programs) - set(split)):
         reports[name] = Report.fatal(
-            f"unknown pcb program {name!r} — the split is "
-            f"{sorted(PROGRAM_PHASES)}")
+            f"unknown pcb program {name!r} — the split is {sorted(split)}")
     return reports
 
 

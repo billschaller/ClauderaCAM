@@ -75,9 +75,26 @@ def is_twosided(path: str | Path) -> bool:
         return False
 
 
+def flip_xy(x: float, y: float, axis: str,
+            line: float = 0.0) -> tuple[float, float]:
+    """Where a stock feature at (x, y) lands after the physical flip about
+    `axis`, whose mirror LINE sits at `line` on the other coordinate.
+
+    `line = 0.0` (the default) is the coin jobs' geometry: their stock is
+    centred on the machine origin, so the flip line passes through it and
+    the map is a plain negation. A PCB's WCS is the BOARD's own SW corner
+    (the [pcb] anchor convention), so its mirror line is the board's
+    centreline at x = anchor_x + width/2 — not the origin. The pins law is
+    the same law in both frames; only the line moves, so it is a parameter
+    here rather than a second copy of the law in the PCB lane
+    (pcb/boardmaps.flip_line derives that line from the Edge.Cuts extents).
+    """
+    return (x, 2 * line - y) if axis == "x" else (2 * line - x, y)
+
+
 def _flip_xy(x: float, y: float, axis: str) -> tuple[float, float]:
-    """Where a stock feature at (x, y) lands after the physical flip."""
-    return (x, -y) if axis == "x" else (-x, y)
+    """The coin lane's call shape: the flip line through the machine origin."""
+    return flip_xy(x, y, axis, 0.0)
 
 
 def load(path: str | Path) -> TwoSided:

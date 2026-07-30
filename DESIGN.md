@@ -1446,6 +1446,234 @@ engine run regenerates the new holes program byte-identically. All four
 programs PASS the grown gate (26/5/7/28 checks); 12 suites green on both
 kernels.
 
+## 2026-07-31: WS8 software half — the [pcb] lane learns the FLIP
+
+`pcb/flip.py` (new), plus per-side grammar in `pcb/pcbjob.py`, mirror-aware
+frames in `pcb/boardmaps.py` / `engine.py` / `checks.py` / `reemit.py`, and
+`tests/pcb_twosided_suite.py`. This is Board B's software half, buildable
+before the board exists: the composition `[pcb]` + `[twosided]` that
+PCB-PLAN WS3 promised and boards/orbit/SPEC.md specifies. **No copper was
+cut and no board was designed** — what landed is grammar, frame math, the
+pin block and the check set, proven on a synthetic double-sided fixture and
+(bonus) on a real FlatCAM run of that fixture.
+
+### The grammar: one document, two setups
+
+A `[twosided]` table makes a `[pcb]` document double-sided, and then the
+phase tables go per side — `[phases.front.iso]`, `[phases.back.iso]` — each
+with its own depths, feeds, silk dose and scrub preload. Two rules are
+grammar-level law, both refused by name with their physical reason:
+
+- **`cutout` is side 2 only.** On side 1 the board must stay attached; the
+  tabs exist once. (twosided.py refuses the same thing on the coin.)
+- **`drills` is side 1 only.** Every through-hole is bored from the front in
+  side A's setup, so both artworks reference the same PHYSICAL holes and flip
+  accuracy equals pin-to-hole clearance. Boring one hole twice from two
+  frames is how a via becomes a slot.
+
+**Side A = FRONT** is orbit SPEC's decision and it is now the code's: the
+drill's exit burr lands on the back, which is deburred and machined
+afterwards anyway (a burr on the reflow side would be baked under paste); the
+back is the last face machined and therefore never tape-mounted, so the
+stencil/paste/hotplate side stays free of adhesive residue; the front
+(hand-soldered, robust) takes the tape.
+
+`pcbjob.side_view(job, side)` is twosided.py's move: it hands every consumer
+a job whose `phases`, `files` and `mirror` are that side's, so `board_maps`,
+`sheet_stock`, `render_tcl`, `read_phase`, the gate and the run sheet all
+work unchanged. Identity carries the side exactly as the coin lane's does
+(`path#side`, `name-side`), so program files come out `orbit-front-mill.nc`
+and the viewer's session keys still work. Gerber suffixes grew the `F_*` set
+beside `B_*` plus `B_Paste`; there is ONE `Edge_Cuts` and ONE `.drl`, and the
+grammar refuses a document missing any of them.
+
+The single-sided form is byte-for-byte untouched: the suite splits each
+blessed coupon program back into its ops and RE-ASSEMBLES it (banner,
+preamble, header block, tool changes, dwells and postamble all regenerated)
+and asserts **byte-identical** — 164026 / 78909 / 155252 bytes, three for
+three. `PROGRAM_PHASES` still spells A..D of 4.
+
+### The frames: both from ONE Edge.Cuts, and the mirror law closed
+
+Side A is unmirrored (`mirror = "none"`), side B is mirrored (`"x"`). That
+one flag is the whole difference, and it follows from the file format: a
+KiCad gerber is drawn as seen from the top, so copper facing the spindle
+needs no mirror and copper facing away does.
+
+`boardmaps.flip_line(win, anchor)` derives the board's own mirror line and
+closes the loop on the falsified-and-fixed WS2 law (`mirror -axis X` NEGATES
+X). A board feature at gerber x lands at `(ax - x0) + x` in side A's frame
+and `(ax + x1) - x` in side B's; those average to `((ax - x0) + (ax + x1))/2`
+for EVERY x, and the x-independence IS the proof. The function derives the
+line that way, then re-measures over a probe set and **raises** if the
+average stops being constant or Y moves — so a sign drift in either branch
+is a refusal, not two frames that quietly disagree about where the board is.
+The suite falsifies it: patched to mirror the wrong axis, `flip_line` raises,
+and the `side frame mirror law` check reads 5.0mm of disagreement.
+
+`machine_xy` / `board_xy` are now the ONE place the mirror's sign is spelled
+out; the Tcl template, the raster checks, the silk strokes, the sheet model
+and the viewer's aperture overlay all come there instead of each writing
+`dx - x` and hoping.
+
+The Tcl is templated twice from one document (`engine.run_sides`, each side
+in its own work dir): side A opens `F_Cu`/`F_Mask`, emits NO `mirror` line,
+opens the Excellon and runs `milldrills`; side B opens `B_Cu`/`B_Mask`,
+mirrors every object, and runs `geocutout`. Neither number is typed.
+
+### The pin block: the shipped machinery, one honest hook
+
+The pin block is DERIVED from `[pins]` into two pseudo-phases (`pinspot`,
+`pindrill`) that ride side A between the board holes and the flip, as their
+own program E. Lines come from **ops/drill.py** — the coin lane's spot-face
+and full-retract peck, unchanged — because a registration hole is not board
+artwork: it is in no gerber, it goes millimetres into the spoilboard, and the
+burr it must not leave is why the spot-face exists at all. The coin lane got
+all three right and the flip accuracy of this board rests on it being the
+same code. Writing `[phases.front.pindrill]` by hand refuses, exactly as
+hand-written spotface/pindrill ops refuse on a coin.
+
+**The one hook into shipped code** (`twosided.flip_xy`): the coin's
+`_flip_xy` hard-codes the flip line at the machine origin, because a coin's
+stock is centred there. A PCB's WCS is the BOARD's own SW corner, so its
+mirror line is the board's centreline. `flip_xy(x, y, axis, line=0.0)`
+carries the line as a parameter; `_flip_xy` keeps the coin's call shape at
+line 0. One law, two frames — the alternative was a second copy of the
+symmetry rule in the PCB lane, which is how laws drift apart.
+
+Pin refusals at load (the coin's rules, restated because the shipped
+`check_job_plan` is welded to a Job's disc geometry, with identical numbers):
+symmetry about the DERIVED line, ≥2 pins, drill-must-be-a-drill, the
+counterbore ≥ the drill shank, through the blank, ≥2mm off the machine bed,
+depth ≤ reach + counterbore, the pins fit the blank's declared span, and the
+pins clear the machined envelope (the board box grown by the widest
+off-board reach of either setup) by `PIN_CLEAR`. `PIN_CLEAR` is imported from
+twosided.py, never restated.
+
+On the bytes: `pinspot/pindrill only at pin positions` (≤0.2, the coin
+lane's own bar) and `pinspot/pindrill clear of the board`, plus
+`pin keep-out` (tool EDGE ≥ pin radius + 1.0) carried into EVERY program of
+BOTH setups. The sheet sim runs on the pins program too, with the pin discs
+excluded from the depth floor and made to account for themselves — the same
+split verify.py makes for the coin (`depth floor (excl. pin holes)` +
+`sheet pin bores clear of the bed`). One proxy is exempted, loudly: the peck
+cycle's re-entry rapid descends into the hole it just drilled, which
+`rapid depth` (a stockless proxy) cannot tell from a dive into virgin blank,
+so pin stages are excluded THERE and judged by `sheet rapid-vs-stock`, which
+is strictly stronger.
+
+### The check set, each threshold with its provenance
+
+Board level (gerbers + schedule, no program — a new `"board"` report):
+
+| check | bar | provenance |
+|---|---|---|
+| side frame board box | ≤1e-6 mm | one Edge.Cuts, two derived transforms: the board must occupy the same machine rectangle in both setups |
+| side frame mirror law | ≤1e-6 mm | the WS2 mirror law, closed-loop over every hole's two machine positions |
+| both-side annular ring | ≥ the JOB's declared value | orbit SPEC "THT annular Δ" (0.7 there). Named `[[rules.gauge]]` exceptions for orbit's 0.3 flip gauges |
+| via/hole concentricity across the flip | ≤0.05 mm | the flip contributes an estimated 0.02–0.04 (DESIGN.md, still UNMEASURED); the artwork's half of that budget is the half software can hold near zero |
+| paste clear of the hole schedule | >0 mm | orbit SPEC "paste Δ": paste in a via wicks and blocks the wire, and vias are stitched AFTER reflow |
+
+Program level:
+
+| check | bar | provenance |
+|---|---|---|
+| annular scrub inside copper | ≥0.15 mm (tool EDGE) | orbit SPEC "scrub Δ NEW" |
+| annular scrub clear of the hole rim | ≥0.20 mm (tool EDGE) | same: a 0.3 spring tip spiralling across a Ø1.0 hole drops in and levers the pad off |
+| tab-zone copper keep-out | ≥1.0 mm, both sides | orbit SPEC "tab-zone copper NEW": tabs snap by hand and a tab bridging copper tears it off the laminate |
+
+Three measurement decisions, stated as Article IX requires:
+
+- **The ring walk is RADIAL, not a distance field.** A 0.6 track leaving a
+  Ø2.6 pad is NEARER to the hole rim than the pad's own boundary, so
+  `distance-to-non-copper` reads 0.3 where the annular ring is really 0.8.
+  The walk goes outward at 72 angles and stops at `RING_PROBE = 1.5` — more
+  copper than any rule on either board asks for (orbit's widest annulus is
+  PAD±'s 1.05), and a hole in a solid pour has no pad boundary to find.
+- **A hole is a hole-centred PAD if EITHER side's copper covers its rim.**
+  That is the point: orbit SPEC's named failure ("a good back pad over a
+  shaved front pad") includes the pad being MISSING on one side, and a
+  per-side census would quietly reclassify that hole as a bare bore on the
+  bad side. Bores bare on both sides (mounting holes) are excluded and
+  COUNTED in the detail.
+- **Concentricity assumes round hole-centred pads** (half the ring's spread
+  over the non-capped rays). Every hole-centred pad either board specifies is
+  round; a deliberately oval one would read as eccentric, and that is a
+  refusal to argue with evidence, not a number to loosen.
+- **`annular scrub clear of the hole rim` is the one check the disc-lap laws
+  cannot express.** The copper gerber draws a pad as a SOLID disc — the hole
+  lives only in the Excellon — so a lap straight across the hole centre reads
+  as deeply inside copper and passes `scrub window` AND `scrub plateau
+  margin`. The suite proves exactly that: the negative fails the rim check at
+  −0.655 while both single-sided scrub laws still PASS.
+
+Deliberately NOT carried over from the coin's two-sided gate, stated rather
+than skipped: punch-through, sever-vs-actual-bottom and tab bridge all rest
+on a carried BOTTOM FIELD, because a coin's two faces are carved reliefs that
+can meet in the middle. A PCB's two faces are 0.15mm of copper on a 1.5mm
+laminate — side 2 cannot punch into side 1's art, there is no moat to thin
+the tab slot, and the tab bridge is the full board thickness by construction.
+What replaces them is the drill-once law and the registration checks above.
+Also punted loudly: the VIEWER does not open a double-sided [pcb] document
+yet (session.py's `build` still keys the single-sided split); its frames are
+mirror-aware now, which is the half that could have silently lied.
+
+### Housekeeping
+
+`engine.run` resolves `work_dir` to absolute itself, with the reason in the
+docstring: the subprocess runs with cwd = the FlatCAM checkout, so a relative
+`set OUT` would write every phase file beside `flatcam.py` and the sentinel
+poll would time out looking in the caller's directory. The first live-run
+driver worked around it outside; the resolution belongs to the function that
+knows about the cwd switch.
+
+### The fixture, and a live run nobody expected to get
+
+`tests/pcb_twosided_suite.py` builds `stub2` from gerber text — a 20×15
+double-sided board with two Ø1.0 wire vias (Ø2.6 pads both sides), a flip
+gauge (Ø1.7 pad, declared 0.3), a bare Ø3.4 mounting bore, one SMD pad
+carrying the only B.Paste aperture, per-side mask and silk, one Edge.Cuts,
+one .drl — and two Ø2.0 pins on the derived mirror line in the blank's waste.
+Nine programs (five front, four back) plus the artwork report all PASS, and
+**twelve negative controls** each get caught BY NAME with their neighbours
+still passing.
+
+Then, because the pinned FlatCAM happens to be on this box and the fixture is
+tiny, the suite runs the REAL engine on both sides as a local bonus (~19s;
+CI never runs FlatCAM). Both Tcl files execute, all eight phase files
+re-emit clean under the param-match law, and 8 of the 10 live reports PASS —
+which is the first proof that the double-sided templated Tcl is Tcl the
+engine accepts.
+
+**The finding that run produced, and it is a real one:** FlatCAM's
+`paint mask` fills each aperture with disc laps from the mask layer alone and
+knows nothing about the Excellon. On side 2 every hole is already bored, so
+`paint` drives the spring tip straight across them, and the gate refuses it
+(`annular scrub clear of the hole rim` = −0.60). The CHECK is landed; the
+GENERATOR is not. Side 2's scrub geometry needs either a mask minus the
+dilated holes fed to `paint`, or annular laps emitted in-repo the way silk
+strokes are. Board B cannot cut its side-2 scrub until that exists — which is
+the gate doing its job, not a hole in it. The suite asserts the failure by
+name as a tripwire, and prints a loud TODO(engine) block; when the generator
+lands, that assertion is what tells the next agent to update it.
+
+Two smaller findings for whoever designs Board B:
+
+- **orbit SPEC's pin depth does not clear the bed as derived.** Ø2.0×12
+  dowel + the coin lane's formula (length + 0.2 seat + 0.6 tip allowance) =
+  12.8mm, and a 1.5 blank on 12.7 MDF leaves 12.2. The SPEC's own stated
+  12.0 clears by 0.2; the derived depth is 0.6 INSIDE the guard and the
+  grammar refuses it. Board B needs a shorter dowel, a measured (smaller)
+  tip allowance, or more spoilboard.
+- **the coin's pin feed is a brass number.** A Ø2 full-face peck at F120
+  reads 107% of fr4's sustained chip limit in the sheet sim; F100 lands at
+  89%. Board B declares its own.
+
+Suites: **13 green** on both kernels (`pcb_twosided_suite.py` wired into
+BOTH CI jobs, raster sections skipping loudly without gerbv).
+`golden_mango` 5/5 EXACT MATCH; nothing in `tests/golden_pcb/` re-blessed,
+and the byte-identical re-assembly above is the proof rather than the claim.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

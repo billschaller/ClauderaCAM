@@ -35,6 +35,8 @@ jobs:
         run: python tests/pcb_checks_suite.py
       - name: pcb viewer (sheet stock sim, 2D overlay, run sheet, sessions)
         run: python tests/pcb_viewer_suite.py
+      - name: pcb double-sided (two frames, pin block, flip checks, 12 hazards)
+        run: python tests/pcb_twosided_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -63,3 +65,5 @@ jobs:
         run: python tests/pcb_checks_suite.py
       - name: pcb viewer without gerbv (sheet sim runs, gate claims nothing)
         run: python tests/pcb_viewer_suite.py
+      - name: pcb double-sided without gerbv (raster sections must skip loudly)
+        run: python tests/pcb_twosided_suite.py
