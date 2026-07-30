@@ -313,14 +313,17 @@ def machine_offset(win: BoardWindow, anchor_xy: tuple[float, float],
     """DERIVE the FlatCAM-side translation that lands the (mirrored)
     board with its lower-left corner on the machine-frame anchor.
 
-    mirror="x" is the single-sided back-copper convention: the engine
-    mirrors every object across the X axis about (0,0) (y -> -y), so the
-    board's y-span [y0, y1] becomes [-y1, -y0]; the offset that places
-    the mirrored lower-left at anchor is (ax - x0, ay + y1). mirror
-    "none" places the unmirrored board. Anything else refuses."""
+    mirror="x" is the single-sided back-copper convention and matches
+    FlatCAM's `mirror <obj> -axis X -origin 0,0`, which NEGATES X
+    (mirrors across the Y axis — verified against the zigbee V2 Tcl:
+    its hand-computed `offset -x 154 -y 124` is exactly (x1, -y0) of
+    the board extents, landing the SW corner on G54 (0,0)). The
+    mirrored x-span [-x1, -x0] plus (ax + x1, ay - y0) puts the board
+    at [ax, ax+w] x [ay, ay+h]. mirror "none" places the unmirrored
+    board. Anything else refuses."""
     ax, ay = anchor_xy
     if mirror == "x":
-        return ax - win.x0, ay + win.y1
+        return ax + win.x1, ay - win.y0
     if mirror == "none":
         return ax - win.x0, ay - win.y0
     raise ValueError(f"unsupported mirror {mirror!r}")

@@ -139,13 +139,13 @@ check("empty mask distances are inf",
 print("machine transform:")
 win20 = bm.BoardWindow(0, 0, 20, 15)
 check("mirror-x offset lands lower-left on the anchor",
-      bm.machine_offset(win20, (154.0, 124.0)) == (154.0, 139.0))
+      bm.machine_offset(win20, (154.0, 124.0)) == (174.0, 124.0))
 check("unmirrored offset", bm.machine_offset(
     win20, (154.0, 124.0), mirror="none") == (154.0, 124.0))
 off = bm.machine_offset(bm.BoardWindow(95.0, -114.5, 125.0, -90.5),
                         (10.0, 10.0))
 check("offset derived from non-origin extents",
-      off == (10.0 - 95.0, 10.0 + -90.5), str(off))
+      off == (10.0 + 125.0, 10.0 + 114.5), str(off))
 caught("unsupported mirror refused",
        lambda: bm.machine_offset(win20, (0, 0), mirror="y"), "unsupported")
 
@@ -199,6 +199,11 @@ if (zb / "zigbee-button-v2-Edge_Cuts.gbr").is_file():
         zh = bm.excellon(zdrl)
         check("zigbee hole schedule = the 10 verified bores",
               len(zh) == 10, f"{len(zh)} holes")
+    # the 154/124 law, closed loop: the V2 Tcl's hand-computed offset
+    # must fall out of the extents derivation exactly
+    zoff = bm.machine_offset(zwin, (0.0, 0.0))
+    check("derived offset == the hand-computed 154/124",
+          zoff == (154.0, 124.0), str(zoff))
     zcu = bm.rasterize(zb / "zigbee-button-v2-B_Cu.gbr", zwin)
     zmask = bm.rasterize(zb / "zigbee-button-v2-B_Mask.gbr", zwin)
     check("zigbee copper renders ink", zcu.sum() > 1000)

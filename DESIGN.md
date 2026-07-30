@@ -548,11 +548,14 @@ split, transplanted.
   `min_gap_mm`) — the numbers every WS5 containment/coverage/margin
   check will be built on.
 - **The 154/124 law**: `machine_offset()` DERIVES the mirror+offset
-  from extents and a configured anchor. Cross-checked against reality:
-  the suite reads the real zigbee V2 files when present — extents
-  94.40,−124.00 → 154.00,−100.00 (59.6×24.0, the board that "grew from
-  23 → 24mm"), and the drill schedule parses to exactly the 10
-  pcbnew-verified bores.
+  from extents and a configured anchor. FlatCAM's `mirror -axis X`
+  NEGATES X (mirrors across the Y axis) — the first draft assumed
+  y→−y and the real zigbee Tcl falsified it within the hour, which is
+  the whole point of deriving instead of trusting. Closed loop in the
+  suite: the V2 extents (94.40,−124.00 → 154.00,−100.00, the board
+  that "grew from 23 → 24mm") produce EXACTLY the hand-computed
+  `offset -x 154 -y 124` = (x1, −y0), and the drill schedule parses
+  to exactly the 10 pcbnew-verified bores.
 
 ## Roadmap
 
