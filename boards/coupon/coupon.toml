@@ -180,16 +180,16 @@ plunge = 200
 # reason. SPEC.md: "whole B side masked, pads scrubbed (deflate -0.10)".
 
 # --- phase 4: silk legend (laser) ------------------------------------------
-# dose S0.10 is OPERATOR-DIRECTED (Bill, 2026-07-30), bracketed up from the
-# field-validated S0.03/F100 pair of 2026-07-19 (emit.LASER_DOSE_DEFAULT /
-# LASER_FEED_DEFAULT still carry the field pair); the ceiling stays S0.30 —
-# a defocused 20% beam cured mask in washes, so 10% focused is well inside
-# the proven-cure regime. clearance 0.3 is the mask guide S5 law that
+# dose S0.06 is OPERATOR-DIRECTED (Bill, 2026-07-30): bench bracketing on
+# this board's run — the field-validated S0.03/F100 pair of 2026-07-19 was
+# raised to S0.10, which proved TOO HOT at the bench, so the bracket
+# narrowed to S0.06 (emit.LASER_DOSE_DEFAULT / LASER_FEED_DEFAULT still
+# carry the field pair); the ceiling stays S0.30. clearance 0.3 is the mask guide S5 law that
 # SPEC.md restates ("strokes >= 0.3 from solderable pads") — cured white on
 # a pad repels solder. The grammar refuses anything below 0.3.
 [phases.silk]
 clearance = 0.3
-dose = 0.10
+dose = 0.06
 feed = 100
 
 # --- phase 5: pad scrub (spring tool) --------------------------------------
