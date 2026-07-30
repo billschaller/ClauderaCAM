@@ -1913,6 +1913,47 @@ scrubbability negative's specimen moved to (112.0,−104.5) because its
 old spot merged with SW1.3's new aperture — the fixed board un-narrowed
 it.
 
+## 2026-07-30: the silk auto-labeler — placement is computed, never hand-tuned
+
+Bill, at the bench: "lots of unlabelled parts and the positioning isn't
+great … without claude having to manually position them (I don't want
+that)." Board A's legend had carried three hand-chosen texts and zero
+reference designators. `boards/silklabel.py` is the answer: a pure-
+geometry placer (no pcbnew import — layout scripts feed it rectangles),
+deterministic for identical input, that layout scripts call at build
+time. Board A: **41 of 48 parts labeled**, 1.7 s.
+
+The placer encodes the CAM gate's laws as candidate REJECTION, so the
+generator cannot emit a label the pipeline would chew: mask apertures
+inflated 0.40 (the silk clip's 0.30 law + slack — a closer label arrives
+pre-clipped), existing silk + 0.20, board edge 1.00 (the cutout chips
+rim legend), placed labels + 0.30, and declared keep-clear rects. Text
+is 1.0 mm — the fab-house legend floor `silk_metric_checks` enforces.
+
+What the Board A run taught, each measured: (1) courtyards as HARD
+obstacles strand a 2.54-pitch field at 12/48 — they are a soft penalty
+(12/mm²) now, a corner-brush over a neighbour beats exile; (2) centred-
+only slots miss the open silk BETWEEN parts — slides of ±½/±1 body-
+extent along each side, plus far gap tiers to 2.8, carry the dense
+middle; (3) the `coupon_ladder` zone bbox as a keepout strands every
+part living IN the strip — the honest keep-clears are the three
+serpentine blocks exactly (white cure over them would blind the loupe's
+sliver reading) and the M3 washer shadows; (4) greedy claim order
+strands parts, so three re-seat sweeps plus depth-1 eviction to
+fixpoint recover them — all bounded, all deterministic.
+
+The seven unplaced are honest, printed at build time, and stay off the
+board rather than on top of something: TP2/TP4/TP6 label only onto
+serpentine blocks (unlabelable BY LAW), CP3 is cornered by edge + M3 +
+serpentine, and CP2/S2/U2 lose a genuinely over-subscribed
+neighbourhood. The assembly map carries them.
+
+Closure: DRC 0 ×2; raster diff vs the committed set — Cu/Mask/Paste/drl
+**0 differing px**, silk lost 0 px and gained exactly the labels. Gate
+PASS ×4; mill/scrub/holes **byte-identical to golden** (the labeler
+cannot touch copper); silk re-blessed at 1562 strokes (was 536 — the
+legend tripled, still one M3 block under `lint_laser`).
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

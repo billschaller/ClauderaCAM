@@ -672,6 +672,77 @@ def assert_tab_bodies(fps):
             d = (dx * dx + dy * dy) ** 0.5
             assert d >= 3.0, f"{ref} body {d:.2f}mm from tab at ({tx},{ty})"
 
+def auto_label(board):
+    """Reference labels on B.SilkS, positions computed — never hand-placed
+    (Bill 2026-07-30). The placer is boards/silklabel.py; this glue only
+    measures real text bboxes and harvests obstacle rects from the board:
+    mask apertures (the silk clip's 0.30 law + slack), existing silk,
+    courtyards (a label over a neighbour misinforms), the coupon-ladder
+    zone and M3 keepouts (a label under a washer or across the gauge
+    field is unreadable or misleading). Runs on the POST-FILL board right
+    before the final save — labels are silk-only and copper cannot move."""
+    sys.path.insert(0, os.path.join(HERE, ".."))
+    import silklabel as sl
+
+    def rect(bb):
+        return sl.Rect(bb.GetLeft() / 1e6, bb.GetTop() / 1e6,
+                       bb.GetRight() / 1e6, bb.GetBottom() / 1e6)
+
+    def text_wh(ref, rot):
+        t = pcbnew.PCB_TEXT(board)
+        t.SetText(ref); t.SetLayer(pcbnew.B_SilkS); t.SetMirrored(True)
+        t.SetTextSize(VECTOR2I(NM(0.9), NM(1.0)))
+        t.SetTextThickness(NM(0.16)); t.SetTextAngle(deg(rot))
+        bb = t.GetBoundingBox()
+        return (bb.GetWidth() / 1e6, bb.GetHeight() / 1e6)
+
+    parts, apertures, silk, extra = [], [], [], []
+    for fp in board.Footprints():
+        ref = fp.GetReference()
+        for pad in fp.Pads():
+            if pad.IsOnLayer(pcbnew.B_Mask):
+                apertures.append(rect(pad.GetBoundingBox()))
+        if ref.startswith("H"):
+            continue                      # M3 mounts: nothing to name
+        cy = fp.GetCourtyard(pcbnew.B_CrtYd)
+        if cy.OutlineCount() == 0:
+            cy = fp.GetCourtyard(pcbnew.F_CrtYd)
+        body = rect(cy.BBox()) if cy.OutlineCount() \
+            else rect(fp.GetBoundingBox(False))
+        parts.append(sl.Part(ref, body, text_wh(ref, 0), text_wh(ref, 90)))
+    for d in board.Drawings():
+        if d.GetLayer() == pcbnew.B_SilkS:
+            silk.append(rect(d.GetBoundingBox()))
+        elif d.GetLayer() == pcbnew.B_Mask:
+            apertures.append(rect(d.GetBoundingBox()))   # scrub-ring gauge
+    # Hard keep-clears, drawn precisely: the three serpentine blocks (the
+    # loupe reads copper slivers through the translucent mask — white cure
+    # on top would blind it) and the M3 washer shadows. NOT the whole
+    # coupon_ladder zone: CP1-3, the TP row and S2 live inside that strip,
+    # and its bbox as a keepout strands all of them (measured 9 parts with
+    # zero candidates before this narrowed).
+    for _net, _ta, _tb, wdt, x0, pitch, n, ytop, ybot, _ym in SERPS:
+        extra.append(sl.Rect(OX + x0 - wdt, OY + min(ytop, ybot) - wdt,
+                             OX + x0 + (n - 1) * pitch + wdt,
+                             OY + max(ytop, ybot) + wdt))
+    for z in board.Zones():
+        if z.GetZoneName() == "m3_keepout":
+            extra.append(rect(z.GetBoundingBox()))
+    placed, unplaced = sl.place_labels(
+        parts, sl.Rect(OX, OY, OX + W, OY + H), apertures, silk,
+        bodies_extra=extra)
+    for pl in placed:
+        t = pcbnew.PCB_TEXT(board)
+        t.SetText(pl.ref); t.SetLayer(pcbnew.B_SilkS); t.SetMirrored(True)
+        t.SetTextSize(VECTOR2I(NM(0.9), NM(1.0)))
+        t.SetTextThickness(NM(0.16)); t.SetTextAngle(deg(pl.rot))
+        t.SetPosition(VECTOR2I(NM(pl.x), NM(pl.y)))
+        board.Add(t)
+    print(f"auto-label: {len(placed)}/{len(parts)} placed"
+          + (f", UNPLACED: {unplaced}" if unplaced else ""))
+    return placed, unplaced
+
+
 def assert_masks_and_pads(board):
     """Mask expansion 0 asserted (DFM SS9 INVERTS the fab +0.05..0.10: the
     scrub tool needs the aperture to BE the pad -- expansion eats the 0.05
@@ -861,6 +932,7 @@ def main():
     # the copper bytes cannot move at all, which is the honest form of "this
     # change reaches no copper" -- the mask layer does not get to rewrite B.Cu.
     add_scrub_ring(board2, pcbnew.B_Mask)
+    auto_label(board2)
     pcbnew.SaveBoard(BOARD, board2)
     # courtyard checks -> warning: this hand-assembled milled board uses
     # deliberate same-net pad butt-joints (R4/S2, JP5/C1, JP5 beside U2's
