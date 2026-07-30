@@ -855,6 +855,178 @@ word, on purpose — it costs one branch and it is what lets the gate judge
 a hand-posted interchange file, which must never need the emitter's
 cooperation.
 
+## 2026-07-30 (afternoon): the first live engine run — Board A is golden
+
+`boards/coupon/coupon.toml` + `tests/golden_pcb/`. The lane ran end to
+end for the first time on real gerbers: FlatCAM headless on Board A's
+committed export, five phases re-emitted through emit.py into the four
+programs of the split, `verify_pcb` on their bytes, all four **PASS**,
+and the whole set blessed as the golden-pcb assets. `tests/golden_pcb`
+existing is what turns the suite's TODO(Board A) box into a running
+verification loop — no code changed to switch it on, which was the
+point of writing the loop before the board existed.
+
+**The run.** `engine.preflight` accepted the checkout (billschaller/
+flatcam @ 16e635a, the WS0 pin, on `clauderacam-headless-tcl`) and
+maintained the two circle-steps keys; `engine.run` templated the Tcl
+from the TOML, ran it offscreen and killed the process group at the
+sentinel: **8.7 seconds** of wall clock for iso + clear + scrub +
+milldrills + cutout on a 55 × 40 board. The transform is DERIVED, not
+typed: Edge_Cuts extents x 100.000..155.000, y −140.000..−100.000 plus
+the anchor (0, 0) give offset (155.000, 140.000) — the same formula
+whose value on the zigbee board is the 154/124 pair that used to be
+hand-computed. The board lands at machine 0..55 × 0..40 and the
+programs work outside it: mill spans X −0.400..55.400 / Y
+−0.580..40.400 (the clear rim band) and holes spans −0.550..55.550 /
+−0.550..40.550 (the cutout riding a tool radius outside the outline),
+which is why the anchor comment tells the operator the blank must
+overhang on all four sides.
+
+| phase | tool | lines | path | est |
+|---|---|---|---|---|
+| iso | T2 vee 0.2 tip | 4,948 | 2055.66 mm | 4.11 min |
+| clear | T3 corn 0.8 | 2,672 | 1543.27 mm | 3.09 min |
+| silk | 455nm laser | 974 | 140.97 mm | 1.41 min |
+| scrub | T5 spring 0.3 | 3,303 | 1597.87 mm | 3.99 min |
+| drills | T3 corn 0.8 | 5,449 | 793.61 mm | 2.65 min |
+| cutout | T7 corn 1.0 | 296 | 1292.82 mm | 2.59 min |
+
+Programs: mill 7,642 lines, silk 974, scrub 3,319, holes 5,767 —
+**≈17.8 min** of estimated machine time across the four, plus the
+operator's mask squeegee/cure between A and B. Estimates are estimates;
+the verdicts below are facts.
+
+**Every program PASSED every check**, worst margins as measured:
+
+- mill — iso containment **0.021** (≤0.06), iso coverage **0.037**
+  (≤0.08), clear keep-out **0.084** (≥0.02), clear opening **0.005**
+  (≤0.45), rapid depth 0 over 160 rapids, both floor Zs / params /
+  tools exact, dialect lint clean.
+- silk — pad clearance **0.656** (≥0.30) over 481 firing segments,
+  focus move present, dose S0.03 == job dose, feed echo F100, lint
+  clean. The clip took nothing: **481 gerber chains → 481 strokes, 0
+  clipped, 0 dropped**, 140.97mm of 140.97mm kept. The legend was
+  designed against the 0.3 law (SPEC.md) and it shows.
+- scrub — window **0.131** (≥0.05), plateau margin **0.133** (≥0.05).
+- holes — **37/37 bores**, worst diameter error **0.000**, worst centre
+  offset **0.000**, depth −1.7 in 5 z levels, zero stray bores; cutout
+  ride **0.011** (≤0.05), zero samples inside the board, **4 tabs of
+  1.5mm** exactly as configured.
+
+Two field cross-checks came out where the 2026-07-19 pcbnew
+verification put them. The iso containment worst point reads 0.021 at
+the lane's declared 0.01mm/px and **0.0045 re-probed at 0.001mm/px** —
+the field number is 0.005. And `clear keep-out`'s worst point, asked to
+stay 0.10 off copper, is truly **0.0972** there: FlatCAM under-delivers
+0.003, the rest of the 0.084 reading is the raster bias and sampling
+slop the gate declares up front.
+
+**The assembled bytes are reproducible.** A second engine run from the
+blessed job regenerates all four programs **byte-identically** (sha256
+of each matches), even though FlatCAM stamps a wall-clock date into
+every .nc header — because re-emission keeps geometry and throws the
+interchange file's prose away. That is what makes these files a golden
+asset in the Article III sense and not just a snapshot.
+
+### Findings this run produced
+
+**The unreachable sentinel (fixed, engine.py).** `engine.run` polled
+the process log for `puts "ALL-PHASES-DONE"` and would therefore have
+timed out on every successful run in the lane's history. FlatCAM
+evaluates the shellfile in a `tkinter.Tcl()` interpreter whose `stdout`
+channel is not the process's fd 1: a test script containing `puts
+"SENTINEL-A"`, an explicit `flush stdout`, a Tcl file write and an
+`open_gerber` produced the file, logged the `open_gerber`, and produced
+**zero** occurrences of the token in a redirected log. The operator's
+own field run set shows the same hole — its `run.log` never contains the
+sentinel its Tcl `puts`-es, and that runner polled for OUTPUT FILES
+instead. Fix: the templated Tcl's last action writes the token to
+`ALL-PHASES-DONE.txt` beside the phase outputs and the runner polls
+that. The law is unchanged and now enforceable: the file is written only
+after the last `write_gcode` returns, a missing sentinel inside the
+timeout is still a FAILED run even if every output exists, and stale
+outputs are deleted before launch so one run can never be read as
+another's. A sentinel nobody can observe is not a gate, it is a
+600-second timeout on every success.
+
+**The clear phase asked for exactly the bar (fixed, job-side).** At the
+zigbee run's `-offset 0.05` the mill program FAILED `clear opening` at
+**7.040** — the pocket contains no admissible tool centre at all, so the
+nearest one is 7mm away. The check is right and the job was wrong
+(Article I). `clear opening` demands a channel of dia + 0.10 = 0.9 (guide
+§3's own filter, the castellation-chewing incident), i.e. the tool centre
+0.45 from copper; offset 0.05 asks for 0.05 + r = 0.450, the bar to
+three decimals. 31% of 120,074 clearing samples read under it, and the
+worst sample re-probed at 0.001mm/px has the 0.8 corn threading a
+**0.8967mm** channel — 0.0033 under the guide's filter, with runout and
+deflection unmodeled. Board A's job therefore carries **offset 0.10**,
+the one number in it that differs from the field Tcl: only channels
+≥1.0mm get a tool, `clear opening` reads 0.005 with 0.445 to spare, and
+the copper left behind is copper the mask seals. No threshold moved.
+
+**The scrub ring is not a gauge (OPEN — board-side, not patched).**
+SPEC.md's coupon block specifies "an annular copper ring pad (~8mm OD,
+2mm band) for reading scrub-margin registration with a loupe", and
+`tools-layout.py` builds it as a `PCB_SHAPE` circle on **B.Cu** —
+graphics, not a pad. Graphics on B.Cu produce no B.Mask aperture, and
+the committed `coupon-B_Mask.gbr` confirms it: 87 aperture placements,
+the nearest **7.316mm** from the ring centre, i.e. 3.316mm outside the
+ring's outer edge. The scrub phase paints the mask apertures, so it
+cannot lap the ring: measured on the assembled scrub program, 96,182
+samples with a closest approach of **6.466mm** to a centre whose band
+ends at 4.0. The copper ring is really there and really gets isolated —
+it just never gets scrubbed, so it reads the same on a perfect run and a
+botched one and gauges nothing. Fixing it is a board-side change (the
+ring wants to be a pad, or want its own B.Mask graphic), it goes through
+tools-layout.py → kicad-cli DRC → gerber re-export → the boardmaps
+closure, and it is the main loop's call — not something to slip into a
+CAM commit. Board A's other five phase gauges are unaffected.
+
+**The 0.4mm ladder behaves exactly as designed.** Iso puts two
+centrelines in each ladder gap, 0.100 from each copper edge, so their
+separation is gap − 2·tip_r: measured **0.200 / 0.300 / 0.400** across
+the 0.4 / 0.5 / 0.6 ladders (14 / 10 / 8 centrelines crossing the block
+midline, spacings exact to 0.001). Both passes are legitimate — that is
+what isolating a 0.4 gap from both sides in one pass looks like. And
+clearing stays out entirely: **zero** clearing samples land in any of
+the three ladder blocks.
+
+**Re-emission refused nothing.** All five phase files read clean through
+the strict parser: zero arcs, zero G-less modal lines, and 673
+coordinate-less feed setters (iso 92, clear 66, scrub 168, drills 297,
+cutout 50) folded onto the following motion line — the fold the
+2026-07-30 unsimulatable-program incident bought, doing its job on a
+board it had never seen. One cosmetic asymmetry noted, not fixed:
+`render_tcl` passes the vee's full 3.175 diameter to `cncjob -dia` while
+`isolate` correctly gets the 0.2 tip, so the iso .nc header prints "TOOL
+DIAMETER: 3.175". It reaches no geometry and re-emission drops the
+header, but the header is a lie and should stop being one.
+
+**Provenance of the job file.** Every number in `coupon.toml` is either
+the zigbee-button V2 Tcl that cut copper on 2026-07-19 (iso −0.15/F500/
+plunge 200/S12000; clear margin 1.4/overlap 25; scrub −0.21/overlap 45/
+offset 0.15/F400/S6000; drills −1.7/dpp 0.5/F300; cutout −1.7/dpp 0.3/
+4×1.5mm tabs/F500), a guide rule (1.5mm stock, 0.2 breakthrough, T7 for
+the second corn, silk clearance 0.3), the field-validated laser pair
+(S0.03 / F100), this board's SPEC.md, or a grammar limit the loader
+enforces anyway — with the single stated exception of `clear offset`
+above. Material is **fr4**: the guide calls the stock "FR-1/FR-4" and
+physics.py resolves that with evidence rather than a coin flip (its
+`fr4` limits are anchored to these exact zigbee cuts; its `fr1` entry
+says the bench "has only cut the FR-4-class blanks"), and since the two
+tables are numerically identical today the choice changes no limit, only
+which provenance the job claims. Spoilboard 12.7mm is the 1/2in MDF the
+two-sided coin job records. The tool crib gate passed on all four tools
+(T2 vee 0.2/30°, T3 corn 0.8, T5 spring 0.3, T7 corn 1.0), each claiming
+no more reach than its inventory entry.
+
+Suites: all **11 green**, including the newly live golden-pcb loop.
+Still open for WS5/WS6 on this board: the thin-sheet stock model that
+would let `verify.verify()` run its own simulation over a [pcb] job,
+scrub COVERAGE (still un-barred until Board A's pads are inspected under
+a loupe), and the run-sheet/overlay viewer work. Board A has not been
+cut yet — these are verified files, not verified copper.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

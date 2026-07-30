@@ -16,10 +16,24 @@ Engine discipline, each rule traced:
     matters because the emitter refuses real arcs (Article V): FlatCAM
     must segment finely enough to hold tolerance.
   - SENTINEL-POLL-KILL: the fork's restricted Tcl has no exit/quit.
-    The script ends with `puts "ALL-PHASES-DONE"`; the runner polls
-    stdout for the sentinel and output files for existence, then kills
-    the process group. A missing sentinel inside the timeout is a
-    FAILED run even if some outputs exist.
+    The script's LAST action writes the sentinel token into a file
+    beside the phase outputs; the runner polls for that file, then
+    kills the process group. A missing sentinel inside the timeout is
+    a FAILED run even if every output exists.
+
+    The sentinel is a FILE and not a line of stdout because stdout does
+    not work (2026-07-30, the unreachable-sentinel incident — the first
+    live run on Board A). FlatCAM's shell evaluates the shellfile in a
+    `tkinter.Tcl()` interpreter whose `stdout` channel is not the
+    process's fd 1: `puts "ALL-PHASES-DONE"` followed by an explicit
+    `flush stdout` produces NOTHING in a redirected log, while in the
+    same script a Tcl `open`/`puts $fh`/`close` writes its file and the
+    following `open_gerber` logs its own execution — so the script ran
+    and the token was simply discarded. The operator's field run set
+    shows the same hole: its run.log contains zero occurrences of the
+    sentinel its Tcl `puts`-es, and that runner polled for OUTPUT FILES
+    instead. A sentinel nobody can observe is not a gate, it is a
+    600-second timeout on every successful run.
 """
 from __future__ import annotations
 
@@ -37,6 +51,7 @@ PINNED_COMMIT = "16e635abd411d49f69012c0d63317c53b0e39724"
 FLATCAM_DIR_DEFAULT = Path.home() / "scratch" / "carvera" / "flatcam"
 CIRCLE_KEYS = {"geometry_circle_steps": 64, "gerber_circle_steps": 64}
 SENTINEL = "ALL-PHASES-DONE"
+SENTINEL_FILE = "ALL-PHASES-DONE.txt"   # written by the Tcl, polled by run()
 
 # phase -> engine output file stem; the numbers are the CHAIN positions
 # (mask=3 and silk=4 are not FlatCAM's — mask is the operator, silk is
@@ -110,7 +125,11 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
           cnc("cut_geo", cut_t, p["depth"], p["feed"], p["plunge"],
               "cut_cnc", dpp=p["dpp"]),
           f"write_gcode cut_cnc $OUT/{PHASE_NC['cutout']}"]
-    L.append(f'puts "{SENTINEL}"')
+    # the sentinel, written LAST and only if every write_gcode above
+    # returned — see the module docstring for why it is a file
+    L += [f"set fh [open $OUT/{SENTINEL_FILE} w]",
+          f'puts $fh "{SENTINEL}"',
+          "close $fh"]
     return "\n".join(L) + "\n"
 
 
@@ -160,6 +179,10 @@ def run(job: PcbJob, work_dir: Path) -> dict[str, Path]:
     tcl.write_text(render_tcl(job, win, work_dir))
     log = work_dir / "engine.log"
     expected = {ph: work_dir / nc for ph, nc in PHASE_NC.items()}
+    done = work_dir / SENTINEL_FILE
+    for stale in (done, *expected.values()):
+        # a previous run's artifact must never be mistaken for this one's
+        stale.unlink(missing_ok=True)
     with open(log, "w") as lf:
         proc = subprocess.Popen(
             [pf["python"], "flatcam.py", "--headless=1",
@@ -170,8 +193,8 @@ def run(job: PcbJob, work_dir: Path) -> dict[str, Path]:
         try:
             deadline = time.time() + pf["cfg"]["timeout_s"]
             while time.time() < deadline:
-                text = log.read_text(errors="replace")
-                if SENTINEL in text:
+                if done.is_file() and SENTINEL in done.read_text(
+                        errors="replace"):
                     break
                 if proc.poll() is not None:
                     raise RuntimeError(

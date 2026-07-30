@@ -1,0 +1,234 @@
+# Board A — "coupon": the PCB lane's first live job (PCB-PLAN.md WS3/WS4/WS7).
+#
+# This file fully parameterizes the operator's six-phase chain over the
+# gerbers committed next to it (boards/coupon/gerbers, exported 2026-07-30
+# from the DRC-clean deterministic pcbnew build). It is the golden-pcb job:
+# tests/golden_pcb/coupon.toml is a VERBATIM copy of this file, so `gerbers`
+# and `out` are relative names that resolve the same way in both places.
+#
+# PROVENANCE OF EVERY NUMBER BELOW. Nothing here is a preference; each value
+# is one of (a) the zigbee-button V2 Tcl that actually cut copper on
+# 2026-07-19 and was verified against pcbnew the same day
+# (~/scratch/ha/devices/projects/zigbee-button/pcb/cam/flatcam/
+# zigbee-button.tcl), (b) a rule from ~/scratch/carvera/guides
+# (pcb-milling-workflow.md, solder-mask-and-silkscreen.md), (c) this board's
+# own process contract (boards/coupon/SPEC.md), or (d) a limit in
+# physics.py / pcbjob.py that the grammar enforces anyway. Where the zigbee
+# job and this one differ, the difference is stated.
+#
+# TRANSFORM: not written down. boardmaps.machine_offset DERIVES it from the
+# Edge_Cuts extents (x 100.000..155.000, y -140.000..-100.000 in the
+# gerbers' own frame) plus the anchor below — mirror across the Y axis, then
+# offset (anchor_x + x1, anchor_y - y0) = (155.000, 140.000). The
+# zigbee build's hand-computed 154/124 constants are exactly this formula on
+# that board's extents; here nobody types them.
+#
+# AT THE MACHINE: the blank stays fixtured through every phase (mask and
+# legend registration die if it moves), copper side UP, G54 zeroed on the
+# BOARD's SW corner with the blank overhanging on all four sides — the clear
+# phase's rim band and the cutout's outside ride both work off the board.
+# Auto-level over the board area before phase 1; Z0 = copper top. Confirm
+# the blank position against the anchor before every program.
+
+[pcb]
+name = "coupon"
+stem = "coupon"
+gerbers = "gerbers"
+out = "out"
+
+[blank]
+# 100x150 single-sided copper-clad from the PCB pack, long side along X —
+# the stock the zigbee boards were cut from (that project's flatcam/README
+# fixtures the same blanks "with the long side along X"). 1.5mm thickness is
+# the guide's declared stock (pcb-milling-workflow.md S4: "1.5 mm
+# single-sided FR-1/FR-4 blank — toolpaths assume 1.5"), and it is what the
+# -1.7 breakthrough depths below are computed from.
+width = 150.0
+height = 100.0
+thickness = 1.5
+# Board SW corner on G54 (0,0) — the zigbee convention, unchanged (that
+# job's Tcl header: "board SW corner at G54 (0,0), copper up, Z0 = copper
+# top"). Everything the offset needs beyond this is DERIVED from Edge_Cuts.
+anchor = [0.0, 0.0]
+
+[spoilboard]
+# 1/2in MDF, the same spoilboard the two-sided coin job records
+# (jobs/mango-twosided.toml). Required by the grammar: the -1.7 drills and
+# edge cut break through the blank and must have somewhere safe to go.
+thickness = 12.7
+
+[material]
+# The guide calls the stock "FR-1/FR-4". physics.py resolves that ambiguity
+# with evidence rather than a coin flip: the `fr4` entry's limits are
+# anchored to "the flawless zigbee-button V2 cuts (2026-07-19, 1.5mm
+# blank)", and the `fr1` entry states that the bench "has only cut the
+# FR-4-class blanks — same numbers until FR-1 evidence says otherwise". So
+# the modeled material that carries this shop's actual cutting evidence is
+# fr4, and the two tables are numerically identical today: this choice
+# changes no limit, only which provenance the job claims.
+name = "fr4"
+
+[machine]
+inventory = "../../jobs/inventory.toml"
+
+# --- tools: every entry matches jobs/inventory.toml on type, diameter,
+# shank, flute count and reach (Article XI). Numbering follows the guide's
+# run order (T2 engraver, T3 the 0.8 corn, T7 the 1.0 corn — "renumbered T7
+# because the library calls every corn T3 and duplicate numbers refuse to
+# post"), and T5 is the spring mask tool as the zigbee run numbered it.
+
+[[tool]]
+num = 2
+type = "vee"
+diameter = 3.175            # cone's widest cutting dia (crib)
+tip_diameter = 0.2          # crib + case label "30 deg . TIP 0.2 . 1F . FL 10"
+included_angle_deg = 30.0
+rpm = 12000                 # zigbee tcl: iso_cnc -spindlespeed 12000
+flutes = 1
+flute_length = 10.0         # the crib entry's reach, claimed no longer
+shank_diameter = 3.175
+
+[[tool]]
+num = 3
+type = "flat"
+diameter = 0.8              # "6mm Flute Corn 0.8" — cut the zigbee boards
+rpm = 12000                 # zigbee tcl: clear_cnc / holes_cnc
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 5
+type = "scrub"
+diameter = 0.3              # modeled as a flat 0.3 scrub width (mask guide
+#                             S3.1), never as a chamfer mill
+rpm = 6000                  # zigbee tcl: mask_cnc -spindlespeed 6000
+flutes = 1
+flute_length = 2.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 7
+type = "flat"
+diameter = 1.0              # "6mm Flute Corn 1.0" — cut the zigbee cutouts
+rpm = 12000                 # zigbee tcl: cut_cnc -spindlespeed 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+# --- phase 1: isolation -----------------------------------------------------
+# zigbee tcl line 25 verbatim: -dia 0.2 (the TIP diameter — one pass at
+# tip_r offset isolates a 0.4 gap from both sides, milling guide S3.2),
+# z_cut -0.15, F500, plunge 200. The guide's own note on -0.15: "convention,
+# not physics — enough to clear 35um copper plus board bow auto-leveling
+# didn't catch"; it is safe here because SPEC.md sets every design clearance
+# at 0.4 ("with 0.4 mm design clearances either works; below ~0.3, go
+# shallow"). The 0.4 ladder traces are the deliberate exception and get two
+# centerlines 0.12 apart in their gaps, which is what a 0.4 gap looks like.
+[phases.iso]
+tool = 2
+depth = -0.15
+feed = 500
+plunge = 200
+
+# --- phase 2: copper clearing ----------------------------------------------
+# zigbee tcl line 34: 0.8 corn, -overlap 25, -margin 1.4, standard method,
+# connected, contour. depth matches the iso depth on the guide's instruction
+# ("clearing needs the same bow margin"). One value DIFFERS from the field
+# job and it is the only number in this file that does:
+#
+#   offset 0.10, not the zigbee run's 0.05.
+#
+# The field 0.05 is the milling guide's bare keep-clear, and on THIS board it
+# lands the clearing contour exactly on the gate's opening bar. `clear
+# opening` demands every clearing sample sit where a disc of dia + 0.10 = 0.9
+# fits (guide S3's own filter, the castellation-chewing incident — an 0.84mm
+# slot took an 0.8 corn with 0.02 total clearance), i.e. the tool CENTRE at
+# least 0.45 from copper. offset 0.05 asks for exactly 0.05 + r = 0.450.
+# Measured on this board's first live run, offset 0.05: 120,074 clearing
+# samples, 31% of them reading under the bar at the lane's declared
+# 0.01mm/px, and `clear opening` FAILS at 7.040 — the pocket holds no
+# admissible tool centre at all, so the nearest one is 7mm away. Re-probed at
+# 0.001mm/px, the worst sample's true tool-centre clearance is 0.4483: the
+# 0.8 corn threading an 0.8967mm channel, 0.0033 under the guide's own
+# filter. The physical hazard and the measurement both say the same thing —
+# a job that asks for exactly a bar is a coin flip against any honest
+# measurement, and 0.05/side is not "comfortably fits" for a 0.8 cutter whose
+# runout and deflection this lane does not model.
+# offset 0.10 keeps the tool edge 0.10 off kept copper, so only channels
+# >= 1.0mm are entered: the 0.9 bar plus 0.1 of real margin. Measured after:
+# `clear opening` 0.005 (bar 0.45), `clear keep-out` 0.084 declared-dpi with
+# the worst point's TRUE edge clearance 0.0972 of the 0.10 asked. What stays
+# behind is copper the mask seals ("the floating copper slivers left between
+# castellations after isolation are fine to leave"). The coupon's 0.4/0.5/0.6
+# ladder gaps were never enterable at either value — zero clearing samples
+# land in any of the three ladder blocks — and `clear opening` proves that
+# rather than assuming it.
+[phases.clear]
+tool = 3
+depth = -0.15
+margin = 1.4
+offset = 0.10
+overlap = 25
+feed = 500
+plunge = 200
+
+# --- phase 3: solder mask = OPERATOR (no machine params) --------------------
+# Squeegee white UV mask over the whole B side, cure, IPA-prep. It is a
+# first-class run-sheet step between programs A (mill) and B (silk), not a
+# toolpath; the grammar allows [phases.mask] to be absent for exactly that
+# reason. SPEC.md: "whole B side masked, pads scrubbed (deflate -0.10)".
+
+# --- phase 4: silk legend (laser) ------------------------------------------
+# dose S0.03 / F100 are the field-validated pair from 2026-07-19
+# (emit.LASER_DOSE_DEFAULT / LASER_FEED_DEFAULT carry the same numbers and
+# the same provenance); the ceiling is S0.30 and bracketing UP happens on
+# scrap, never in a config. clearance 0.3 is the mask guide S5 law that
+# SPEC.md restates ("strokes >= 0.3 from solderable pads") — cured white on
+# a pad repels solder. The grammar refuses anything below 0.3.
+[phases.silk]
+clearance = 0.3
+dose = 0.03
+feed = 100
+
+# --- phase 5: pad scrub (spring tool) --------------------------------------
+# zigbee tcl line 29 verbatim: -tooldia 0.3 -overlap 45 -offset 0.15,
+# lines method, connected, contour; z_cut -0.21, F400, plunge 200. -0.21 is
+# spring PRELOAD, not cut depth, and it is field-tuned: the grammar's band
+# is [-0.25, -0.18] because -0.25 peeled traces off a bowed blank and
+# shallower than -0.18 leaves film (mask guide S2/S3.4, 2026-07-19).
+[phases.scrub]
+tool = 5
+depth = -0.21
+overlap = 45
+offset = 0.15
+feed = 400
+plunge = 200
+
+# --- phase 6a: holes (milled, not drilled) ---------------------------------
+# zigbee tcl line 40 verbatim: milldrills with the 0.8 corn, -diatol 5,
+# z_cut -1.7 (1.5 blank + 0.2 breakthrough into the spoilboard — the guide's
+# number), -dpp 0.5, F300, plunge 200. Every hole is helically bored; the
+# PCB twist-drill set is deliberately ABSENT from the crib (its reach was
+# never measured), so milldrills is not a preference here, it is the only
+# honest option (Article XI).
+[phases.drills]
+tool = 3
+depth = -1.7
+dpp = 0.5
+feed = 300
+plunge = 200
+
+# --- phase 6b: edge cut ----------------------------------------------------
+# zigbee tcl line 44 verbatim: 1.0 corn, -margin 0, 4 tabs of 1.5mm,
+# z_cut -1.7, -dpp 0.3 ("the tool's own cutting data set the stepdown — keep
+# it, 1 mm tools like conservative"), F500, plunge 200. The tabs are law,
+# not taste: >= 2 of >= 1.0 because a freed board grabs the cutter.
+[phases.cutout]
+tool = 7
+depth = -1.7
+dpp = 0.3
+gaps = 4
+gapsize = 1.5
+feed = 500
+plunge = 200

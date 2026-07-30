@@ -246,7 +246,16 @@ check("derived offset in the tcl (ax+x1, ay-y0)",
 check("iso cuts with the TIP diameter", "isolate cu -dia 0.2" in tcl)
 check("scrub painted at the modeled flat width",
       "paint mask -tooldia 0.3" in tcl)
-check("sentinel last", tcl.rstrip().endswith('puts "ALL-PHASES-DONE"'))
+# the sentinel is a FILE, written last: FlatCAM's embedded Tcl interpreter
+# discards `puts` to stdout, so a stdout sentinel is unobservable and every
+# successful run would time out (2026-07-30, the unreachable-sentinel
+# incident, caught by Board A's first live run)
+check("sentinel written LAST, and to a file (stdout is unreachable)",
+      tcl.rstrip().endswith(
+          f'set fh [open $OUT/{engine.SENTINEL_FILE} w]\n'
+          f'puts $fh "{engine.SENTINEL}"\nclose $fh')
+      and tcl.index(engine.SENTINEL_FILE) > tcl.rindex("write_gcode"),
+      tcl.rstrip().splitlines()[-1])
 check("every phase writes its nc",
       all(nc in tcl for nc in engine.PHASE_NC.values()))
 check("templating banner present", "DO NOT hand-edit" in tcl)
