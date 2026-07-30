@@ -47,26 +47,39 @@ let refreshing = false;        // one state/buffer refresh at a time
 
 const BRASS = [0.79, 0.64, 0.15];
 const FRESH = [0.85, 0.87, 0.92];      // fresh-machined: bright, silvery
+const COPPER = [0.72, 0.45, 0.20];     // copper-clad sheet, as fixtured
+const SUBSTRATE = [0.85, 0.81, 0.60];  // FR-4 glass/epoxy under the copper
 
-let mesh = null, geoN = 0;
+let mesh = null, geoKey = '';
 
-function ensureGeometry(n, ppm, half) {
-  if (mesh && geoN === n) return;
+// The carve grid a session serves. A mill job serves the whole n×n grid; a
+// [pcb] session serves the CROP of it that is the modelled sheet (nx/ny at
+// pixel offsets i_off/j_off) — the pixel indices stay in simulate.py's ONE
+// mapping, so nothing here re-derives a grid centre (Article IV).
+function gridOf(m) {
+  return { nx: m.nx ?? m.n, ny: m.ny ?? m.n, ppm: m.ppm, half: m.half,
+           ioff: m.i_off ?? 0, joff: m.j_off ?? 0, pcb: m.kind === 'pcb' };
+}
+
+function ensureGeometry(g) {
+  const key = `${g.nx}x${g.ny}@${g.ppm}/${g.half}+${g.ioff},${g.joff}`;
+  if (mesh && geoKey === key) return;
   if (mesh) { scene.remove(mesh); mesh.geometry.dispose(); }
-  const pos = new Float32Array(n * n * 3);
-  const col = new Float32Array(n * n * 3);
-  for (let i = 0; i < n; i++) {
-    for (let j = 0; j < n; j++) {
-      const k = (i * n + j) * 3;
-      pos[k] = j / ppm - half;       // world x
-      pos[k + 2] = i / ppm - half;   // -world y (text upright from front)
+  const n = g.nx * g.ny;
+  const pos = new Float32Array(n * 3);
+  const col = new Float32Array(n * 3);
+  for (let i = 0; i < g.ny; i++) {
+    for (let j = 0; j < g.nx; j++) {
+      const k = (i * g.nx + j) * 3;
+      pos[k] = (j + g.joff) / g.ppm - g.half;       // world x
+      pos[k + 2] = (i + g.ioff) / g.ppm - g.half;   // -world y (upright)
     }
   }
-  const idx = new Uint32Array((n - 1) * (n - 1) * 6);
+  const idx = new Uint32Array((g.ny - 1) * (g.nx - 1) * 6);
   let p = 0;
-  for (let i = 0; i < n - 1; i++) {
-    for (let j = 0; j < n - 1; j++) {
-      const a = i * n + j, b = a + 1, c = a + n, d = c + 1;
+  for (let i = 0; i < g.ny - 1; i++) {
+    for (let j = 0; j < g.nx - 1; j++) {
+      const a = i * g.nx + j, b = a + 1, c = a + g.nx, d = c + 1;
       idx[p++] = a; idx[p++] = c; idx[p++] = b;
       idx[p++] = b; idx[p++] = c; idx[p++] = d;
     }
@@ -76,28 +89,32 @@ function ensureGeometry(n, ppm, half) {
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   const mat = new THREE.MeshStandardMaterial({
-    color: 0xffffff, metalness: 0.75, roughness: 0.38,
+    color: 0xffffff, metalness: g.pcb ? 0.45 : 0.75,
+    roughness: g.pcb ? 0.55 : 0.38,
     vertexColors: true, side: THREE.DoubleSide,
   });
   mesh = new THREE.Mesh(geo, mat);
   mesh.scale.y = parseFloat($('zex').value);
-  geoN = n;
+  geoKey = key;
   scene.add(mesh);
 }
 
-function updateMesh(cur, prev, n, ppm, half) {
-  ensureGeometry(n, ppm, half);
+function updateMesh(cur, prev, m) {
+  const g = gridOf(m);
+  ensureGeometry(g);
   lastCur = cur; lastPrev = prev;
   const pos = mesh.geometry.attributes.position.array;
   const col = mesh.geometry.attributes.color.array;
   const hl = $('hl').checked;
-  for (let i = 0; i < n * n; i++) {
+  const base = g.pcb ? COPPER : BRASS;
+  const cut = g.pcb ? SUBSTRATE : FRESH;
+  for (let i = 0; i < g.nx * g.ny; i++) {
     const k = i * 3;
     pos[k + 1] = cur[i];
     // fresh = removed by THIS stage (vs previous stage's stock; the first
     // stage compares against the uncut top plane z=0)
     const pv = prev ? prev[i] : 0;
-    const c = (hl && pv - cur[i] > 5e-4) ? FRESH : BRASS;
+    const c = (hl && pv - cur[i] > 5e-4) ? cut : base;
     col[k] = c[0]; col[k + 1] = c[1]; col[k + 2] = c[2];
   }
   mesh.geometry.attributes.position.needsUpdate = true;
@@ -105,6 +122,89 @@ function updateMesh(cur, prev, n, ppm, half) {
   mesh.geometry.computeVertexNormals();
   mesh.visible = true;
   $('empty').style.display = 'none';
+}
+
+// ------------------------------------------------- the 2D overlay (WS6)
+// Silk and scrub carve nothing, so there is no stock to render: what the
+// program actually DRAWS is the truthful preview (Article VI). Lines live
+// just above the sheet top plane; the gerber reference layers are labelled
+// as gerber and default to off.
+let ovGroup = null;
+const ovOn = new Map();       // layer key -> user's show/hide choice
+
+function disposeGroup(gr) {
+  if (!gr) return;
+  scene.remove(gr);
+  gr.traverse((o) => { if (o.geometry) o.geometry.dispose();
+                       if (o.material) o.material.dispose(); });
+}
+
+function lineObj(polylines, color, y, opacity) {
+  let count = 0;
+  for (const pl of polylines) count += Math.max(0, pl.length - 1);
+  const pos = new Float32Array(count * 6);
+  let p = 0;
+  for (const pl of polylines) {
+    for (let i = 0; i + 1 < pl.length; i++) {
+      pos[p++] = pl[i][0];     pos[p++] = y; pos[p++] = -pl[i][1];
+      pos[p++] = pl[i + 1][0]; pos[p++] = y; pos[p++] = -pl[i + 1][1];
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const mat = new THREE.LineBasicMaterial({
+    color: new THREE.Color(color), transparent: opacity < 1,
+    opacity: opacity, depthWrite: false });
+  return new THREE.LineSegments(geo, mat);
+}
+
+function rectPoly(r) {
+  return [[[r[0], r[1]], [r[2], r[1]], [r[2], r[3]], [r[0], r[3]],
+           [r[0], r[1]]]];
+}
+
+function renderOverlay(m) {
+  disposeGroup(ovGroup);
+  ovGroup = null;
+  if (m.kind !== 'pcb') return;
+  ovGroup = new THREE.Group();
+  const s = m.sheet;
+  if (s) {
+    ovGroup.add(lineObj(rectPoly(s.board), '#7aa2ff', 0.03, 0.9));
+    ovGroup.add(lineObj(rectPoly([s.x0, s.y0, s.x1, s.y1]), '#4a5060',
+                        0.03, 0.8));
+  }
+  for (const L of (m.overlay?.layers ?? [])) {
+    const polys = L.kind === 'polys' ? L.polys : L.polylines;
+    const o = lineObj(polys ?? [], L.color, L.kind === 'polys' ? 0.05 : 0.08,
+                      L.kind === 'polys' ? 0.8 : 1.0);
+    o.visible = ovOn.has(L.key) ? ovOn.get(L.key) : !!L.on;
+    o.userData.key = L.key;
+    ovGroup.add(o);
+  }
+  scene.add(ovGroup);
+}
+
+function setLayerVisible(key, on) {
+  ovOn.set(key, on);
+  ovGroup?.traverse((o) => { if (o.userData?.key === key) o.visible = on; });
+}
+
+function frameView(m) {
+  const s = m.sheet;
+  const cx = s ? (s.x0 + s.x1) / 2 : 0;
+  const cy = s ? (s.y0 + s.y1) / 2 : 0;
+  const span = s ? Math.max(s.x1 - s.x0, s.y1 - s.y0) : 2 * (m.half ?? 30);
+  controls.target.set(cx, 0, -cy);
+  camera.position.set(cx, span * 0.85, -cy + span * 0.85);
+  controls.update();
+}
+
+function topView() {
+  const t = controls.target;
+  const d = camera.position.distanceTo(t);
+  camera.position.set(t.x, t.y + d, t.z + 1e-3);
+  controls.update();
 }
 
 // --------------------------------------------------------------- utilities
@@ -130,16 +230,21 @@ function showSide() {
   if (side.style.display !== 'flex') { side.style.display = 'flex'; resize(); }
 }
 
-async function fetchStage(sid, k, v, n) {
+async function fetchStage(sid, k, v, npx) {
   if (buffers.has(k)) return buffers.get(k);
   const res = await fetch(`/api/session/${encodeURIComponent(sid)}/stock` +
     `?v=${encodeURIComponent(v)}&stage=${k}`);
   if (!res.ok) throw new Error('version changed');   // 409: next poll retries
   const buf = await res.arrayBuffer();
-  if (buf.byteLength !== n * n * 4) throw new Error('bad size');
+  if (buf.byteLength !== npx * 4) throw new Error('bad size');
   const a = new Float32Array(buf);
   buffers.set(k, a);
   return a;
+}
+
+function stagePixels(m) {
+  const g = gridOf(m);
+  return g.nx * g.ny;
 }
 
 // ------------------------------------------------------------ sidebar bits
@@ -191,15 +296,48 @@ function renderHeader() {
   if (meta.stale) { v.textContent = 'STALE'; v.className = 'badge stale'; }
   else if (meta.ok === true) { v.textContent = 'PASS'; v.className = 'badge ok'; }
   else if (meta.ok === false) { v.textContent = 'FAIL'; v.className = 'badge fail'; }
-  else { v.textContent = ''; v.className = 'badge'; }
+  else if (meta.kind === 'pcb') {
+    v.textContent = 'UNVERIFIED'; v.className = 'badge stale';
+  } else { v.textContent = ''; v.className = 'badge'; }
   const s = meta.stock_size, t = meta.stock_thickness;
-  $('jobfacts').innerHTML =
-    `<b>${esc(meta.material ?? '?')}</b> · ${esc(meta.machine ?? '')}<br>` +
-    `stock ${s}×${s}×${t} mm · part Ø${meta.model_d} · <b>${esc(meta.nc ?? '')}</b><br>` +
-    `${meta.nstages} stages · ~${fmtTime(meta.total_est_s ?? 0)} total ` +
-    `<span style="color:var(--dimmer)">(est, + tool changes)</span>` +
-    (meta.stale ? `<br><span style="color:var(--warn)">toolpaths were ` +
-      `regenerated — re-run verify</span>` : '');
+  const nst = (meta.stages ?? []).length;
+  if (meta.kind === 'pcb') {
+    const b = meta.sheet.board;
+    const g = meta.gate ?? {};
+    $('jobfacts').innerHTML =
+      `<b>${esc(meta.material ?? '?')}</b> · ${esc(meta.machine ?? '')} · ` +
+      `program <b>${esc(meta.program)}</b> (${(meta.phases ?? []).join(' + ')})<br>` +
+      `board ${(b[2] - b[0]).toFixed(1)}×${(b[3] - b[1]).toFixed(1)} mm at ` +
+      `machine ${b[0].toFixed(1)},${b[1].toFixed(1)} · sheet ${t} mm thick, ` +
+      `window ${meta.sheet.x0.toFixed(1)}…${meta.sheet.x1.toFixed(1)} × ` +
+      `${meta.sheet.y0.toFixed(1)}…${meta.sheet.y1.toFixed(1)}<br>` +
+      `<b>${esc(meta.nc ?? '')}</b> · ${nst} stage${nst === 1 ? '' : 's'} · ` +
+      `~${fmtTime(meta.total_est_s ?? 0)} ` +
+      `<span style="color:var(--dimmer)">(est) of ~` +
+      `${fmtTime(meta.chain_est_s ?? 0)} for the chain</span><br>` +
+      `<span style="color:var(--dimmer)">` +
+      (meta.carves
+        ? `sheet sim ${(meta.sim.mm_per_px).toFixed(3)} mm/px, virgin sheet ` +
+          `per program (upper-bound engagement)`
+        : `no stock simulation — this program removes no material`) +
+      `</span><br>` +
+      (g.ran
+        ? `<span class="${meta.ok ? 'ok-t' : 'bad-t'}">PCB gate ` +
+          `${esc(g.verdict)}</span> over ${(meta.checks ?? []).length} ` +
+          `checks` + (g.sheet_sim ? ' incl. the sheet sim' : '')
+        : `<span style="color:var(--warn)">PCB gate NOT RUN — ` +
+          `${esc(g.note || 'no verdict')}</span>`) +
+      (meta.stale ? `<br><span style="color:var(--warn)">programs were ` +
+        `regenerated — re-run the gate</span>` : '');
+  } else {
+    $('jobfacts').innerHTML =
+      `<b>${esc(meta.material ?? '?')}</b> · ${esc(meta.machine ?? '')}<br>` +
+      `stock ${s}×${s}×${t} mm · part Ø${meta.model_d} · <b>${esc(meta.nc ?? '')}</b><br>` +
+      `${meta.nstages} stages · ~${fmtTime(meta.total_est_s ?? 0)} total ` +
+      `<span style="color:var(--dimmer)">(est, + tool changes)</span>` +
+      (meta.stale ? `<br><span style="color:var(--warn)">toolpaths were ` +
+        `regenerated — re-run verify</span>` : '');
+  }
   const dl = $('dl');
   if (meta.has_program && meta.sid) {
     dl.style.display = 'inline-block';
@@ -229,9 +367,62 @@ function renderStages() {
     row.innerHTML =
       `<span class="idx">${st.index + 1}</span>` +
       `<span class="slabel">${esc(st.label)}</span>` +
-      `<span class="tchip">T${st.tool ?? '?'}</span>` +
+      `<span class="tchip">${st.overlay ? '2D' : 'T' + (st.tool ?? '?')}` +
+      `</span>` +
       `<span class="stime">${fmtTime(st.est_s)}</span>`;
     row.onclick = () => showStage(st.index).catch(() => {});
+    box.appendChild(row);
+  }
+}
+
+function renderOverlayCard() {
+  const box = $('ovLayers');
+  const layers = meta.overlay?.layers ?? [];
+  box.innerHTML = '';
+  for (const L of layers) {
+    const on = ovOn.has(L.key) ? ovOn.get(L.key) : !!L.on;
+    const row = document.createElement('div');
+    row.className = 'ovrow';
+    row.innerHTML =
+      `<input type="checkbox" ${on ? 'checked' : ''}>` +
+      `<span class="swatch" style="background:${esc(L.color)}"></span>` +
+      `<span class="ovl">${esc(L.label)}</span>`;
+    row.querySelector('input').onchange = (e) =>
+      setLayerVisible(L.key, e.target.checked);
+    box.appendChild(row);
+    const note = document.createElement('div');
+    note.className = 'ovnote';
+    note.textContent = L.note ?? '';
+    box.appendChild(note);
+  }
+  $('ovNotes').innerHTML = (meta.overlay?.notes ?? [])
+    .map((n) => `<div class="note">${esc(n)}</div>`).join('');
+}
+
+function renderRunSheet() {
+  const box = $('runsheet');
+  box.innerHTML = '';
+  for (const st of meta.run_sheet ?? []) {
+    const here = st.kind === 'program' && st.program === meta.program;
+    const row = document.createElement('div');
+    row.className = 'rstep' + (here ? ' here' : '');
+    const est = st.est_s ? ` · ~${fmtTime(st.est_s)}` : '';
+    const file = st.file ? ` · ${esc(st.file)}` : '';
+    row.innerHTML =
+      `<span class="rn">${st.n}</span>` +
+      `<span class="rkind ${esc(st.kind)}">` +
+      `${st.kind === 'offmachine' ? 'bench' : esc(st.kind)}</span>` +
+      `<span class="rbody"><span class="rt">${esc(st.title)}</span>` +
+      `<span class="rd">${esc(st.detail)}${file}${est}` +
+      (st.missing ? ' · <b>program not on disk</b>' : '') +
+      `</span></span>`;
+    if (st.kind === 'program' && !st.missing && !here) {
+      row.style.cursor = 'pointer';
+      row.onclick = () => {
+        const s = sessions.find((x) => x.job === `${meta.board} ${st.program}`);
+        if (s) selectSession(s.sid);
+      };
+    }
     box.appendChild(row);
   }
 }
@@ -254,7 +445,26 @@ function renderDetail() {
     ? `<span class="tchip">T${t.num}</span> <b>${esc(t.type)} Ø${t.diameter}` +
       `</b> · ${t.flutes} flute${t.flutes > 1 ? 's' : ''} · ` +
       `${t.rpm.toLocaleString()} rpm`
-    : '—';
+    : `<b>${esc(st.tool_desc ?? '—')}</b>`;
+  if (st.overlay) {
+    // an overlay stage has no carve facts because there is no carve: show
+    // only what the bytes support, and say why the rest is missing
+    const rows = [
+      ['est. machining time', '~' + fmtTime(st.est_s)],
+      [st.dose_s !== undefined ? 'firing strokes' : 'scrub laps',
+       st.moves.toLocaleString()],
+      [st.dose_s !== undefined ? 'firing travel' : 'path at depth',
+       fmtLen(st.cut_mm)],
+      ['feed', st.max_feed.toFixed(0) + ' mm/min'],
+      [st.dose_s !== undefined ? 'dose' : 'commanded Z (spring preload)',
+       st.dose_s !== undefined ? 'S' + st.dose_s : st.min_z.toFixed(3) + ' mm'],
+      ['material removed', 'none — see the note'],
+    ];
+    $('dgrid').innerHTML = rows.map(([k, v]) =>
+      `<span class="k">${k}</span><span class="v">${v}</span>`).join('');
+    $('dbars').innerHTML = `<div class="note">${esc(st.note ?? '')}</div>`;
+    return;
+  }
   const rows = [
     ['est. machining time', '~' + fmtTime(st.est_s)],
     ['moves', st.moves.toLocaleString()],
@@ -321,14 +531,24 @@ function setCardsVisible(on) {
                     'checksCard']) {
     $(id).style.display = on ? '' : 'none';
   }
-  if (mesh) mesh.visible = on;
-  $('empty').style.display = on ? 'none' : 'flex';
+  const pcb = on && meta && meta.kind === 'pcb';
+  const stock = on && (meta?.nstages ?? 0) > 0;
+  $('runCard').style.display = pcb ? '' : 'none';
+  $('overlayCard').style.display =
+    pcb && (meta.overlay?.layers ?? []).length ? '' : 'none';
+  $('toolsCard').style.display = on && (meta?.tools ?? []).length
+    ? '' : 'none';
+  if (mesh) mesh.visible = stock;
+  if (ovGroup) ovGroup.visible = on;
+  // an overlay-only [pcb] program has no stock and still has something true
+  // to show; only a session with neither falls back to the empty message
+  $('empty').style.display = (stock || pcb) ? 'none' : 'flex';
 }
 
 function renderAll() {
-  setCardsVisible(true);
   renderHeader(); renderStages(); renderDetail(); renderTools();
-  renderChecks();
+  renderChecks(); renderOverlayCard(); renderRunSheet();
+  setCardsVisible(true);
 }
 
 // ------------------------------------------------------------ interactions
@@ -340,12 +560,16 @@ function selectSession(sid) {
 }
 
 async function showStage(k) {
-  if (!meta || !meta.nstages) return;
-  selStage = Math.max(0, Math.min(k, meta.nstages - 1));
-  const cur = await fetchStage(meta.sid, selStage, meta.version, meta.n);
-  const prev = selStage > 0
-    ? await fetchStage(meta.sid, selStage - 1, meta.version, meta.n) : null;
-  updateMesh(cur, prev, meta.n, meta.ppm, meta.half);
+  if (!meta) return;
+  const nst = (meta.stages ?? []).length;
+  selStage = Math.max(0, Math.min(k, Math.max(0, nst - 1)));
+  if (meta.nstages > 0) {
+    const npx = stagePixels(meta);
+    const cur = await fetchStage(meta.sid, selStage, meta.version, npx);
+    const prev = selStage > 0
+      ? await fetchStage(meta.sid, selStage - 1, meta.version, npx) : null;
+    updateMesh(cur, prev, meta);
+  }
   renderStages(); renderDetail(); renderTools();
 }
 
@@ -358,20 +582,29 @@ async function refreshSelected(s) {
       `/api/session/${encodeURIComponent(s.sid)}/state`);
     if (!res.ok) return;
     const m = await res.json();
-    if (m.status !== 'ready' || !m.n || !m.nstages) return;
+    // an overlay-only [pcb] program serves no stock and is still a session
+    if (m.status !== 'ready' || (!m.nstages && m.kind !== 'pcb')) return;
+    const newSid = committed.sid !== m.sid;
     const want = (meta && committed.sid === s.sid &&
                   meta.nstages === m.nstages)
-      ? Math.min(selStage, m.nstages - 1) : m.nstages - 1;
+      ? Math.min(selStage, Math.max(0, m.nstages - 1))
+      : Math.max(0, m.nstages - 1);
     const saved = buffers;
     buffers = new Map();
     try {
-      const cur = await fetchStage(m.sid, want, m.version, m.n);
-      const prev = want > 0
-        ? await fetchStage(m.sid, want - 1, m.version, m.n) : null;
+      let cur = null, prev = null;
+      if (m.nstages > 0) {
+        const npx = stagePixels(m);
+        cur = await fetchStage(m.sid, want, m.version, npx);
+        prev = want > 0
+          ? await fetchStage(m.sid, want - 1, m.version, npx) : null;
+      }
       meta = m; selStage = want;
       committed = { sid: m.sid, version: m.version };
-      updateMesh(cur, prev, m.n, m.ppm, m.half);
+      if (cur) updateMesh(cur, prev, m);
+      renderOverlay(m);
       renderAll();
+      if (newSid) frameView(m);
     } catch (e) {
       buffers = saved;   // version raced; the next poll retries
     }
@@ -438,8 +671,10 @@ $('zex').addEventListener('input', (e) => {
   if (mesh) mesh.scale.y = parseFloat(e.target.value);
 });
 $('hl').addEventListener('change', () => {
-  if (meta && lastCur) updateMesh(lastCur, lastPrev, meta.n, meta.ppm, meta.half);
+  if (meta && lastCur) updateMesh(lastCur, lastPrev, meta);
 });
+$('topBtn').addEventListener('click', topView);
+$('fitBtn').addEventListener('click', () => { if (meta) frameView(meta); });
 $('checksHead').addEventListener('click', () => {
   $('checkList').classList.toggle('open');
 });

@@ -8,6 +8,7 @@ from pathlib import Path
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
     stages as stagesmod, twosided as twomod, verify as verifymod
+from .pcb import pcbjob as pcbjobmod, session as pcbsess
 from .viewer import client as viewer
 
 
@@ -38,6 +39,8 @@ def main(argv=None) -> int:
             pass
         return 0
 
+    if pcbsess.is_pcb(args.job):
+        return run_pcb(args)
     if twomod.is_twosided(args.job):
         return run_twosided(args)
 
@@ -82,6 +85,41 @@ def main(argv=None) -> int:
             except KeyboardInterrupt:
                 pass
     return 0
+
+
+def run_pcb(args) -> int:
+    """verify/view for a [pcb] document: every program of the split through
+    the board-map gate AND the sheet stock sim, one viewer session each,
+    plus the run sheet. `generate` is deliberately absent: the phase
+    geometry comes from the FlatCAM engine (pcb/engine.py), which is an
+    optional external binary and not something a CLI verb should launch
+    behind the operator's back."""
+    if args.cmd in ("generate", "all", "preview"):
+        print(f"`{args.cmd}` is not wired for [pcb] jobs: phase geometry "
+              f"comes from the FlatCAM engine (clauderacam.pcb.engine) and "
+              f"the programs are re-emitted from it. Run the engine, then "
+              f"`verify` or `view`.")
+        return 2
+    pj = pcbjobmod.load(args.job)
+    if args.cmd == "view":
+        viewer.ensure_server(args.port, jobs_dir=Path(args.job).parent)
+    sessions = pcbsess.build(pj)
+    print(pcbsess.report_text(sessions))
+    for st in sessions[0].meta["run_sheet"]:
+        est = f"  ~{stagesmod.fmt_time(st['est_s'])}" if st.get("est_s") \
+            else ""
+        print(f"  {st['n']:2d} [{st['kind']}] {st['title']}{est}")
+    for name, url, sid in viewer.push_pcb(sessions):
+        print(f"viewer session {name}: {url}#{sid}")
+    rc = 0 if all(s.meta["ok"] is True for s in sessions) else 1
+    if args.cmd == "view" and viewer.server.running():
+        print("serving — ctrl-c to stop")
+        try:
+            while True:
+                time.sleep(3600)
+        except KeyboardInterrupt:
+            pass
+    return rc
 
 
 def run_twosided(args) -> int:

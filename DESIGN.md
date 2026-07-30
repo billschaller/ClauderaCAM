@@ -1171,6 +1171,218 @@ ring is now exactly the coupon that will set it. Suites: all **11
 green**. Board A still has not been cut — these are verified files, not
 verified copper.
 
+## 2026-07-30 (night): WS6 — the viewer learns the PCB lane, and the sheet gets a stock model
+
+`src/clauderacam/pcb/session.py` (new), the viewer front end, and
+`tests/pcb_viewer_suite.py`. A [pcb] document now opens like any other
+job: **four sessions, one per program of the canonical split** (four
+files reach the machine, so four sessions do — the same shape
+`twosided.py` uses for its two sides), each with a stage list recovered
+from the program's own markers, per-stage stats, the gate's checks and
+the verified bytes to download. `clauderacam verify|view` and the MCP
+`load_job|verify|view` tools all walk the [pcb] path, and `/api/open` on
+a [pcb] TOML dissolves its placeholder into the four program sessions the
+way a two-sided document dissolves into its sides.
+
+### The thin-sheet stock model (the WS5 debt, paid)
+
+`verify.verify()` needs a target mesh, a skim plane and a keep-out disc;
+a PCB has none of the three. But what the geometric MACHINERY needs is
+smaller — a stock plane, a grid and a tool table — so `session.SheetJob`
+wears exactly that much of `Job`'s shape and nothing more (deliberately
+NOT a Job: `verify.verify()` must not be callable on a board by
+accident). With it, `sheet_stock()` defines the sheet:
+
+- **thickness** from `[blank]`, spoilboard from `[spoilboard]`;
+- **XY window DERIVED**: Edge.Cuts extents through
+  `boardmaps.machine_offset` (the 154/124 law) give the board window in
+  machine frame, grown by `CHECK_PAD_BASE + max(clear margin, cutout tool
+  Ø)` — the same rule `checks.board_maps` uses for its raster window, and
+  not decoration: Board A's board is 0..55 × 0..40 and its programs reach
+  −0.58..55.55 outside it.
+- Board A: board `0,0 .. 55,40` → sheet `−3.4,−3.4 .. 58.4,43.4` over a
+  1.5mm blank on 12.7mm of MDF.
+
+With the sheet defined, the MILL and HOLES programs ride
+`simulate.carve()` **unchanged** — the same strict parser, the same
+kernel, the same measurements as the coin jobs — and produce exactly the
+checks `checks.py`'s docstring lists under "deliberately not checked
+here … needs a thin-sheet stock model the [pcb] grammar does not build
+yet". They are ADDITIONS, prefixed `sheet ` so nothing can confuse them
+with a board-map check, and no existing threshold moved.
+
+| program | what the session shows | why |
+|---|---|---|
+| mill (iso+clear) | stock sim, 2 stages, 26 checks | it carves |
+| silk (laser) | **2D overlay only**, 1 stage, 5 checks | a laser removes no material |
+| scrub (spring) | **2D overlay only**, 1 stage, 7 checks | commanded Z is spring preload; the kernel's footprint is empty by law |
+| holes (drills+cutout) | stock sim, 2 stages, 28 checks | it carves |
+
+**Three honesty notes, stated because they are load-bearing.**
+
+1. *The grid is square and the sheet is not.* Article IV's mapping is
+   never re-derived, so the carve grid stays the square centred on the
+   machine origin: Board A's is `half 58.4`, `n 1460`. Everything served
+   to the browser is the **crop** down to the sheet window (772×585 at
+   pixel offsets 188/688 — 1.81 MB per stage instead of 8.53 MB), and the
+   crop is proven lossless every build: if any material was removed
+   outside it, `build()` REFUSES rather than serve a preview that hides a
+   cut. The negative control is in the suite (a program cutting at X−20
+   escapes 16.60mm and fails `sheet containment` by name; its material
+   shows up 0.150mm deep outside the crop; `build()` raises).
+2. *Every program starts from a VIRGIN sheet.* Carrying stock from one
+   program to the next needs an initial-stock kernel parameter that does
+   not exist, and adding one means adding it to BOTH kernels (Article X)
+   — out of scope here. A virgin sheet holds MORE material than the real
+   one, so contact, engagement and rapid readings are upper bounds: the
+   conservative reading, which is the one that wins.
+3. *The resolution is the gate's own* (`carve_check`'s 12.5 px/mm), so a
+   PCB number and a mill number mean the same thing. At 0.08mm/px a
+   0.2mm-tip isolation groove is one to two pixels wide, which makes the
+   iso stage's REMOVED VOLUME quantized — **53.6mm³ at 25 px/mm, 55.7 at
+   12.5, 63.3 at 10**. Depths, contact and every pass/fail verdict are
+   stable across that range; volume is the number to distrust, and the
+   session card says so.
+
+**Measured on Board A's blessed programs: 66 checks across the four
+programs, every one PASS** (12+14 mill, 5 silk, 7 scrub, 14+14 holes).
+The new sheet readings:
+
+- mill — rapid-vs-stock **0** (no rapid touches remaining stock), T2 vee
+  true footprint contact **0.150** (< 0.35), T3 **0.150** (< 1.0), shank
+  clearance **0**, floor **−0.150** (≥ −2.000 blank+breakthrough, ≥
+  −12.200 bed), containment **0**, chip/tooth **0.0028** (≤ 0.00576),
+  cutting power **0.67 W**, sustained **0.54 W**, enclosed chip
+  **0.08 mm³**.
+- holes — T3 contact **0.500** and T7 **0.300**, i.e. exactly the two
+  configured step-downs, which is what a helical bore and a 0.3 stepdown
+  cutout should read; floor **−1.700**; power **1.58 W**.
+
+Estimates: mill 6:29, silk 1:25, scrub 2:48, holes 3:48 — **~14:30 for
+the chain**, against the WS4 table's ~17.8 min. Both are estimates and
+they differ for a stated reason: the stage model charges G0 at the
+machine's rapid feed, WS4's `est_min` charged every millimetre at the
+cutting feed. Verdicts are facts, times are estimates.
+
+### The 2D overlay (Article VI, not a heightmap of nothing)
+
+Silk and scrub carve nothing. A heightmap "simulation" of either renders
+a flat sheet and calls it a preview, which is a lie with a picture
+attached — so those programs get a 2D overlay of what the bytes actually
+DRAW, parsed from the same files the gate judged: the laser's firing G1
+segments (**481 strokes, 140.97mm**, dark G0 hops not drawn, because the
+laser fires only on feed moves) and the spring tool's cutting laps
+(**114 laps, 1121.65mm at Z−0.21 of preload**). Both sessions state, in
+the payload the browser renders, WHY there is no stock.
+
+Two gerber layers ride along, labelled as gerber, off by default and
+never a verdict: **B.Mask apertures** (the openings silk must clear and
+the scrub is meant to cover — coverage is still deliberately un-barred)
+and **B.Paste apertures** (the stencil source; 63 flashes on the live
+board, absent from the golden set, and the run sheet says so instead of
+promising a stencil).
+
+**A finding this produced, immediately.** The first aperture reader drew
+FLASHES only — and the scrub-margin ring blessed hours earlier
+(2026-07-30 evening, above) is not a flash: it is two G75 arc DRAWS on
+B.Mask. A flashes-only overlay would have silently omitted the one
+feature the board grew that day, and drawing those arcs as chords would
+have painted a straight line through the ring's middle. So the reader now
+returns draws as well as flashes, interpolates **G75** arcs from their
+I/J centre (0.05mm steps; Board A's ring comes out as two 190-point
+half-circles of radius 3.000000, asserted to six decimals), and **refuses**
+single-quadrant G74 arcs and unknown macro apertures — counting them into
+the layer's own note. An overlay that quietly omits pads is the same
+class of lie as a preview of the target model.
+
+### The run-sheet card
+
+The operator steps between the programs ARE the job (pcbjob.py's
+docstring is the law), so the card renders the whole bench workflow in
+one order with the programs in their places: **14 steps** from "fixture
+the blank" to "THT from the front, then test", with the mask/legend/scrub
+cycle in the operator's REVISED order (squeegee + cure → white coat →
+fit the laser → silk → IPA wipe → refit the spindle → scrub). Every step
+is traced — `pcb-milling-workflow.md` §2/§4/§6 (the one G54 zero, the
+full-coverage tape, auto-level before program A, the solder order),
+`solder-mask-and-silkscreen.md` §1–§5 (the spring tool, the tested mask
+workflow, the UNTESTED laser recipe with its M323/M324 test-fire), and
+PCB-PLAN.md's stencil/reflow steps — and every number in it comes from
+THIS job (dose S0.03, 4 tabs of 1.5mm, Z−0.21 preload), so the card is
+the job's own run sheet and not boilerplate. Program steps also name
+their file, their estimate and their **M6 pauses**, recovered from the
+bytes (mill: T2 then T3, one pause).
+
+A phase may carry an optional `note = "…"` in its `[phases.X]` table and
+it lands on that step of the card; the existing grammar already ignores
+unknown keys inside a phase, so this needed no grammar change.
+
+### Front end
+
+`static/app.js` grew a rectangular grid (nx/ny at pixel offsets, still
+simulate.py's ONE mapping — no re-derived centres), a copper/substrate
+palette for PCB stock, the overlay group with per-layer toggles, a
+board+sheet frame, camera framing on the board (a session at machine
+0..55 was off-screen under the coin-era default), top-view/fit buttons,
+the run-sheet card, and an overlay-only session path (no mesh, no "empty"
+placeholder, the overlay IS the content). Still vendored three.js, still
+no CDN, no build step, no framework; the server still logs nowhere.
+
+### Verdict discipline
+
+A [pcb] session shows PASS **only when the PCB gate itself ran**. The
+sheet sim is an addition to the gate, never a substitute, so a box
+without gerbv gets the sheet sim, the overlays and the run sheet with
+`ok = null`, an UNVERIFIED badge and the reason printed on the card —
+never a green badge it did not earn. The suite asserts exactly that in
+both directions, which is also how it runs in the pure-python CI job.
+
+### Punted, loudly
+
+- **`verify_pcb` should adopt the sheet checks.** They live in
+  `session.py` today because closing WS6 must not edit `checks.py`. Until
+  it does, `clauderacam verify <pcb>` (which builds sessions) is the only
+  path that runs them — a bare `checks.verify_pcb()` call still skips the
+  stock simulation, and its docstring still says so.
+- **The program headers still carry no run-sheet comments or tool table.**
+  WS4's plan promised both; `emit.assemble` writes only the job name, so
+  the M6-pause instructions the operator reads at the machine exist ONLY
+  for the laser program (`assemble_laser`'s two comment lines). The card
+  is not a substitute for a comment in the file — the operator posts the
+  file, not the browser.
+- **Cross-program stock carry-over** (see honesty note 2) and a
+  **`clauderacam generate` verb for [pcb]** (the CLI refuses it on
+  purpose: phase geometry comes from an optional external engine and a
+  CLI verb should not launch FlatCAM behind the operator's back).
+- **No STALE marking for [pcb] sessions.** The mill lane calls
+  `viewer.invalidate()` from `generate`, so a regenerated .nc turns its
+  session yellow. The PCB lane has no generate verb to hang that on yet,
+  so whoever writes the re-assembly driver owes the `invalidate` call —
+  until then a [pcb] session can display a verdict about bytes that have
+  since been rewritten on disk. The DOWNLOAD is safe either way (it
+  serves the stored bytes the gate judged, never the live file); it is
+  the badge that could go stale without saying so.
+
+### The tightest margin in the lane (a model verdict, reported as one)
+
+`sheet sustained chip per tooth` on the **drills** stage reads **0.00575
+mm³/tooth against the fr4 model's 0.00576** — 99.8% of the limit at the
+gate's declared resolution, and 91–100% across 10–25 px/mm. It PASSES,
+and it is the only number in the lane sitting on its bar. The physics
+here is the 0.8 corn boring helically at F300 with a 0.5 stepdown, and
+the limit is PROVISIONAL (physics.py: fr4's `a_tooth_max_frac` is the
+validated 0.00625 frac plus 45%). Nothing was changed: the bytes are
+blessed (Article III), the verdict is a pass, and a model verdict is not
+a measured fact. But if Board A's bores come off the machine with burnt
+walls or a dulled corn, this is the number that predicted it — F250 or a
+0.4 stepdown is the knob, and it wants metal evidence first.
+
+Suites: **12 green** (the new `pcb_viewer_suite.py` is wired into BOTH CI
+jobs; with gerbv it runs the gate twice — build plus the browser-open
+path — in ~35s, and the whole sheet sim costs 0.4s on the Rust kernel and
+2.5s on the pure-Python one). Board A still has not been cut: these are
+verified files with a truthful preview, not verified copper.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
@@ -1186,7 +1398,11 @@ verified copper.
   heightmap-following vee offset surfaces in offset.py, gated on a
   machine-validated tip engagement limit before any carving job ships
   with one.
-- **v1 viewer**: toolpath overlay per op, A/B against target model,
-  per-check highlight (e.g. paint the engagement hotspot).
+- **v1 viewer**: the toolpath overlay SHIPPED for the PCB lane's
+  non-carving programs (WS6, above: laser strokes, scrub laps, gerber
+  aperture reference layers, in 2D). Still open: an overlay for CARVING
+  ops of any job (where the stock sim is the primary preview), A/B against
+  the target model, and per-check highlight (e.g. paint the engagement
+  hotspot).
 - **v2**: adaptive/trochoidal rough option. (Two-sided pin-and-flip
   jobs: SHIPPED 2026-07-28, see above.)

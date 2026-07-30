@@ -10,6 +10,7 @@ from mcp.server.fastmcp import FastMCP, Image
 
 from . import emit, engine, job as jobmod, preview as previewmod, \
     stages as stagesmod, twosided as twomod, verify as verifymod
+from .pcb import pcbjob as pcbjobmod, session as pcbsess
 from .viewer import client as viewer
 
 mcp = FastMCP("clauderacam")
@@ -17,6 +18,21 @@ mcp = FastMCP("clauderacam")
 
 def _job(path: str):
     return jobmod.load(path)
+
+
+def _pcb_text(sessions, pushed) -> str:
+    """One text block for a [pcb] document: the gate + sheet-sim verdicts,
+    then the run sheet, then whatever viewer sessions landed."""
+    lines = [pcbsess.report_text(sessions)]
+    card = sessions[0].meta["run_sheet"] if sessions else []
+    lines.append("run sheet:")
+    for st in card:
+        est = f"  ~{stagesmod.fmt_time(st['est_s'])}" if st.get("est_s") \
+            else ""
+        lines.append(f"  {st['n']:2d} [{st['kind']}] {st['title']}{est}")
+    for name, url, sid in pushed:
+        lines.append(f"viewer session {name}: {url}#{sid}")
+    return "\n".join(lines)
 
 
 def _push_viewer(j, report) -> str:
@@ -38,6 +54,23 @@ def _stage_text(j, report) -> str:
 @mcp.tool()
 def load_job(path: str) -> str:
     """Load a job TOML and report its parameters and derived geometry."""
+    if pcbsess.is_pcb(path):
+        pj = pcbjobmod.load(path)
+        sheet = pcbsess.sheet_stock(pj)
+        progs = pcbsess.program_paths(pj)
+        return "\n".join([
+            f"[pcb] job {pj.name}: gerbers={pj.gerber_dir}",
+            f"blank {pj.blank_w}x{pj.blank_h}x{pj.thickness}mm, anchor "
+            f"{pj.anchor}, spoilboard {pj.spoil_thickness}",
+            f"board window (machine) {sheet.bx0:.3f},{sheet.by0:.3f} .. "
+            f"{sheet.bx1:.3f},{sheet.by1:.3f} — DERIVED from Edge.Cuts",
+            f"sheet stock {sheet.x0:.2f},{sheet.y0:.2f} .. {sheet.x1:.2f},"
+            f"{sheet.y1:.2f} x {sheet.thickness}mm at {sheet.ppm} px/mm",
+            "tools: " + ", ".join(f"T{t.num} {t.type} d{t.diameter}"
+                                  for t in pj.tools.values()),
+            "programs: " + (", ".join(f"{n} ({p.name})"
+                                      for n, p in progs.items())
+                            or "none on disk yet")])
     j = _job(path)
     lines = [f"job {j.name}: stl={j.stl}",
              f"stock {j.stock_size}x{j.stock_size}x{j.stock_thickness}mm, "
@@ -99,7 +132,12 @@ def verify(path: str) -> str:
     ball engagement, surface completeness, fixture keep-out). The file is
     cleared for metal only if this returns PASS. Updates the viewer if open.
     Two-sided jobs verify both sides; the back is checked against the
-    carried (flipped) front stock."""
+    carried (flipped) front stock. [pcb] jobs verify every program of the
+    six-phase split against the board maps AND the sheet stock sim."""
+    if pcbsess.is_pcb(path):
+        pj = pcbjobmod.load(path)
+        sessions = pcbsess.build(pj)
+        return _pcb_text(sessions, viewer.push_pcb(sessions))
     if twomod.is_twosided(path):
         ts = twomod.load(path)
         return _twosided_verify_text(ts, twomod.verify(ts))
@@ -124,7 +162,13 @@ def view(path: str, port: int = 8323) -> str:
     """Open (or join) this job's session in the live viewer app: starts a
     server only if none is running anywhere, verifies the job, and pushes
     its state. Returns the session URL to open in a browser. Two-sided
-    jobs open one session per side."""
+    jobs open one session per side; [pcb] jobs one session per program of
+    the split, each carrying the shared run-sheet card."""
+    if pcbsess.is_pcb(path):
+        pj = pcbjobmod.load(path)
+        viewer.ensure_server(port, jobs_dir=pj.path.parent)
+        sessions = pcbsess.build(pj)
+        return _pcb_text(sessions, viewer.push_pcb(sessions))
     if twomod.is_twosided(path):
         ts = twomod.load(path)
         viewer.ensure_server(port, jobs_dir=ts.path.parent)

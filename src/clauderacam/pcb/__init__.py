@@ -28,9 +28,19 @@ against the board maps and never touches the engine's state (Article I).
                                     "holes": ...})
   print(checks.report_text(reports))
 
-Still to wire (WS6): the CLI/MCP `[pcb]` subcommand and the viewer session —
-a pcb job has no stock simulation yet, so it cannot ride the Job path that
-`clauderacam verify` walks.
+session.py — the viewer side (WS6). It defines the THIN-SHEET STOCK MODEL
+(thickness from the blank, XY window derived from the board window) that
+checks.py's docstring lists as missing, which is what lets the MILL and HOLES
+programs ride simulate.carve() for real rapid/contact/depth/physics readings;
+it renders the non-carving programs (laser silk, spring-tool scrub) as a 2D
+overlay of what their bytes DRAW instead of a heightmap that would be a flat
+sheet (Article VI); and it builds the run-sheet card. `clauderacam verify`
+and `view` walk a [pcb] document through it — four sessions, one per program.
+
+  from clauderacam.pcb import pcbjob, session
+  job = pcbjob.load("boards/coupon/coupon.toml")
+  for s in session.build(job):          # one per program of the split
+      print(s.name, s.meta["ok"], len(s.stocks))
 """
 from .checks import (PROGRAM_PHASES, board_maps, report_text,  # noqa: F401
                      verify_pcb, verify_program)

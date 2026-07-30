@@ -33,6 +33,8 @@ jobs:
         run: python tests/pcb_engine_suite.py
       - name: pcb checks (iso/clear/scrub/silk/holes/cutout, 19 hazards caught)
         run: python tests/pcb_checks_suite.py
+      - name: pcb viewer (sheet stock sim, 2D overlay, run sheet, sessions)
+        run: python tests/pcb_viewer_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -59,3 +61,5 @@ jobs:
         run: python tests/pcb_engine_suite.py
       - name: pcb checks without gerbv (raster sections must skip loudly)
         run: python tests/pcb_checks_suite.py
+      - name: pcb viewer without gerbv (sheet sim runs, gate claims nothing)
+        run: python tests/pcb_viewer_suite.py

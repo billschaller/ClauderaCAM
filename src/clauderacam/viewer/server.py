@@ -1,8 +1,12 @@
 """Localhost viewer server: one process, many SESSIONS, everyone joins.
 
 A session is one open job document (the job TOML is the document format).
-Sessions are keyed by the resolved job path — opening a file that is
-already open JOINS its session, which is the collaboration model: Claude
+Sessions are keyed by the resolved path of the artifact the operator
+posts: the .nc's job file for a one-sided job, one per side for a
+two-sided document, and one per PROGRAM for a [pcb] document (four files
+reach the machine, so four sessions do — see pcb/session.py).
+Opening a file that is already open JOINS its session, which is the
+collaboration model: Claude
 regenerates and verifies through the MCP while a human watches the same
 session in a browser; the browser polls and reflects every push within a
 second.
@@ -170,6 +174,25 @@ def _load_in_background(path: Path) -> str:
         try:
             from .. import job as jobmod, stages, twosided, \
                 verify as verifymod
+            from ..pcb import session as pcbsess
+            if pcbsess.is_pcb(path):
+                # a [pcb] document opens as one session per PROGRAM of the
+                # canonical split (four files reach the machine, so four
+                # sessions do); the placeholder dissolves into them, exactly
+                # like the two-sided case below
+                from ..pcb import pcbjob as pcbjobmod
+                pj = pcbjobmod.load(path)
+                progs = pcbsess.program_paths(pj)
+                if not progs:
+                    error_session(str(path),
+                                  f"no programs in {pj.out_dir} — ask "
+                                  f"Claude to run the pcb engine")
+                    return
+                for s in pcbsess.build(pj, programs=progs):
+                    push_session(s.path, s.meta,
+                                 encode_stocks(s.stocks), s.program)
+                close_session(sid)
+                return
             if twosided.is_twosided(path):
                 # a two-sided document opens as one session per side; the
                 # placeholder session for the raw path dissolves into them

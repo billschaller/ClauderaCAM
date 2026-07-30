@@ -53,18 +53,13 @@ def ensure_server(port: int = 8323, jobs_dir=None) -> tuple[str, bool]:
     return server.start(port, jobs_dir=jobs_dir), True
 
 
-def push_job(job, report) -> tuple[str, str] | None:
-    """Push a verified job into the viewer as a session (joining any
-    existing session for the same file). Returns (url, sid), or None when
-    no server is running anywhere — pushing never launches one."""
-    from .. import stages
-    if report.carve is None:
-        return None
-    meta, stocks = stages.viewer_payload(job, report)
-    blobs = server.encode_stocks(stocks)
-    program = report.program.encode()
+def _push(path: str, meta: dict, blobs: list[bytes],
+          program: bytes) -> tuple[str, str] | None:
+    """Land one session payload on whichever server is live. Returns
+    (url, sid), or None when no server is running anywhere — pushing never
+    launches one."""
     if server.running():
-        sid = server.push_session(meta["path"], meta, blobs, program)
+        sid = server.push_session(path, meta, blobs, program)
         return f"http://localhost:{server.current_port()}/", sid
     found = discover()
     if not found:
@@ -77,9 +72,35 @@ def push_job(job, report) -> tuple[str, str] | None:
         found["url"] + "api/push?token=" +
         urllib.parse.quote(found["token"]),
         data=body, headers={"Content-Type": "application/octet-stream"})
-    with urllib.request.urlopen(req, timeout=30) as r:
+    with urllib.request.urlopen(req, timeout=60) as r:
         sid = json.loads(r.read())["sid"]
     return found["url"], sid
+
+
+def push_job(job, report) -> tuple[str, str] | None:
+    """Push a verified job into the viewer as a session (joining any
+    existing session for the same file). Returns (url, sid), or None when
+    no server is running anywhere."""
+    from .. import stages
+    if report.carve is None:
+        return None
+    meta, stocks = stages.viewer_payload(job, report)
+    return _push(meta["path"], meta, server.encode_stocks(stocks),
+                 report.program.encode())
+
+
+def push_pcb(sessions) -> list[tuple[str, str, str]]:
+    """Push a [pcb] document's sessions (pcb.session.build's output — one
+    per program of the canonical split). Returns [(program, url, sid)] for
+    whatever landed; an empty list means no viewer is running anywhere."""
+    out: list[tuple[str, str, str]] = []
+    for s in sessions:
+        pushed = _push(s.path, s.meta, server.encode_stocks(s.stocks),
+                       s.program)
+        if pushed is None:
+            return out
+        out.append((s.name, pushed[0], pushed[1]))
+    return out
 
 
 def invalidate(job) -> None:

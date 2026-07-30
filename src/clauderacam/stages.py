@@ -84,16 +84,14 @@ def stage_lines(stats: list[dict]) -> list[str]:
     return out
 
 
-def viewer_payload(job, report: Report) -> tuple[dict, list[np.ndarray]]:
-    """Everything the viewer app shows: job card, stage list, tool card,
-    checks — plus the per-stage stock grids to serve. report.carve must be
-    present (a fatal-parse report has nothing to show)."""
-    res = report.carve
-    stats = stage_stats(job, res)
+def tool_cards(job, res: CarveResult, stats: list[dict]) -> list[dict]:
+    """The viewer's tool card list. Shared with the PCB lane's session
+    builder (pcb/session.py), which shows the same card for a sheet job —
+    one definition so the two can never drift."""
     tools = []
     for t in sorted(job.tools):
         tool = job.tools[t]
-        c = res.contact.get(t)
+        c = res.contact.get(t) if res else None
         tools.append({
             "num": t, "type": tool.type, "diameter": tool.diameter,
             "rpm": tool.rpm, "flutes": tool.flutes,
@@ -103,6 +101,16 @@ def viewer_payload(job, report: Report) -> tuple[dict, list[np.ndarray]]:
             "contact": float(c.max) if c else 0.0,
             "contact_limit": float(contact_limit(tool)),
         })
+    return tools
+
+
+def viewer_payload(job, report: Report) -> tuple[dict, list[np.ndarray]]:
+    """Everything the viewer app shows: job card, stage list, tool card,
+    checks — plus the per-stage stock grids to serve. report.carve must be
+    present (a fatal-parse report has nothing to show)."""
+    res = report.carve
+    stats = stage_stats(job, res)
+    tools = tool_cards(job, res, stats)
     meta = {
         "job": job.name, "path": str(job.path),
         "nc": job.out.name, "ok": report.ok,
