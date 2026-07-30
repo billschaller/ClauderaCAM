@@ -29,6 +29,8 @@ jobs:
         run: python tests/pcb_tools_suite.py
       - name: pcb ground truth (gerbv rasters, excellon, transforms)
         run: python tests/pcb_groundtruth_suite.py
+      - name: pcb engine (grammar gate, templated tcl, param-match law)
+        run: python tests/pcb_engine_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -51,3 +53,5 @@ jobs:
         run: python tests/pcb_tools_suite.py
       - name: pcb ground truth without gerbv (must skip loudly, not fail)
         run: python tests/pcb_groundtruth_suite.py
+      - name: pcb engine on the pure-python kernel
+        run: python tests/pcb_engine_suite.py

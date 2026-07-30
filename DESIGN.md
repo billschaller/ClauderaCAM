@@ -557,6 +557,47 @@ split, transplanted.
   `offset -x 154 -y 124` = (x1, −y0), and the drill schedule parses
   to exactly the 10 pcbnew-verified bores.
 
+## 2026-07-30 (early): WS3+4 — the [pcb] grammar and the engine harness
+
+`pcb/pcbjob.py`, `pcb/engine.py`, `pcb/reemit.py`. The six-phase chain
+is grammar-level law (iso → clear → mask[operator] → silk → scrub →
+drills+cutout, the operator's revised order); the program split follows
+the operator steps: A mill (iso+clear), mask squeegee+cure, B silk
+(laser dialect), C scrub, D holes+cutout.
+
+- **Grammar gate** (each refusal bench-traced): scrub preload band
+  [−0.25, −0.18] (−0.25 peeled traces, shallower than −0.18 leaves
+  film); ≥2 tabs ≥1.0 on the cutout (a freed board grabs the cutter);
+  through-depths must break the blank but stay 0.5 shy of excavating
+  the spoilboard and 2mm clear of the bed; per-phase tool CLASS
+  enforced (iso=vee, scrub=scrub, …); materials fr4/fr1 only; no
+  spoilboard, no job. Tools go through the same Article XI crib gate
+  as every job.
+- **Engine harness**: Tcl is TEMPLATED from the TOML with the DERIVED
+  transform — the file says "DO NOT hand-edit" and means it. preflight
+  refuses a FlatCAM checkout that isn't the WS0 pin, and asserts-or-
+  writes the two circle-steps keys before every run. Runner:
+  sentinel-poll-kill (the fork's Tcl has no exit); no sentinel within
+  the timeout = FAILED run regardless of what files appeared.
+- **Re-emission (Article V)**: read_phase() runs every engine line
+  through the gate's own strict parser and enforces the param-match
+  law — spindle S must equal the phase tool's rpm, feed words must be
+  exactly {feed, plunge}, floor Z must equal the configured depth (the
+  stale-ZMIN incident class refuses instead of shipping). Output is an
+  OpResult; emit.assemble() adds the dwell, M5-before-M6, stage
+  markers, tool table. Proven on the real zigbee iso phase: 2564 lines
+  read clean and re-emit with the dwell the 2026-07-19 files lacked.
+- **Silk without FlatCAM**: stroke chains come from the B.Silkscreen
+  gerber's D01/D02 words (flashes refuse — no centerline to cure), get
+  the same derived mirror+offset as every layer, drop (and COUNT)
+  chains inside the pad clearance, and leave through assemble_laser.
+  A silently thinned legend is a lie; the drop count goes on the
+  run-sheet.
+
+Still open in WS3/4: a live engine run end-to-end on Board A's gerbers
+(the design is in flight), and the double-sided [pcb]+[twosided]
+composition (Board B).
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
