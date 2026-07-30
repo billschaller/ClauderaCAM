@@ -1,0 +1,45 @@
+# 30-type 74HCxx DIP logic assortment — ONE piece per type.
+# Transcribed 2026-07-29 from the Amazon listing (https://a.co/d/087GWMlA).
+# PRIMARY SOURCE: the box-lid label photo (51QD4ykJ1FL.jpg), a 6x5 grid
+# naming all 30 types. The listing's TEXT bullets name a DIFFERENT set
+# (29 named; see [discrepancy]) — the photo of the physical box wins
+# until the bench says otherwise. See parts/README.md.
+
+[kit]
+brand = "unbranded (74HCxx assortment)"
+pieces = 30
+values = 30
+per_value = 1        # qty ONE each: a used or fried chip is GONE —
+                     # always socket (operator has plenty of DIP
+                     # sockets, all sizes) and bench-confirm any 74HC
+                     # part before the BOM locks
+package = "DIP"
+status = "listing-transcribed"
+
+# box-lid label, column order as printed
+types = [
+  "74HC00",  "74HC02",  "74HC04",  "74HC05",  "74HC08",
+  "74HC10",  "74HC14",  "74HC21",  "74HC30",  "74HC32",
+  "74HC74",  "74HC125", "74HC126", "74HC132", "74HC138",
+  "74HC139", "74HC157", "74HC163", "74HC164", "74HC165",
+  "74HC174", "74HC244", "74HC245", "74HC273", "74HC373",
+  "74HC374", "74HC393", "74HC573", "74HC574", "74HC595",
+]
+
+[discrepancy]
+# The feature bullets instead list: 74HC00,02,04,05,06,07,08,11,14,32,
+# 74,86,112,123,125,132,138,139,157,163,164,166,221,240,244,245,273,
+# 373,374 (29 of "30"). Twenty types appear in BOTH sources and are
+# safe to design with pre-bench:
+both = [
+  "74HC00", "74HC02", "74HC04", "74HC05", "74HC08", "74HC14",
+  "74HC32", "74HC74", "74HC125", "74HC132", "74HC138", "74HC139",
+  "74HC157", "74HC163", "74HC164", "74HC244", "74HC245", "74HC273",
+  "74HC373", "74HC374",
+]
+box_only = ["74HC10", "74HC21", "74HC30", "74HC126", "74HC165",
+            "74HC174", "74HC393", "74HC573", "74HC574", "74HC595"]
+bullets_only = ["74HC06", "74HC07", "74HC11", "74HC86", "74HC112",
+                "74HC123", "74HC166", "74HC221", "74HC240"]
+# The one that matters for LED work is 74HC595 (box-only): CONFIRM IT
+# ON THE BENCH before any design leans on it.

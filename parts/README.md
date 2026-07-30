@@ -42,11 +42,24 @@ S8050, covers claim "5 IC values / 55 pcs" while six part numbers are
 listed, and per-value quantities are derived from category totals, not
 printed.
 
+## Other kits (transcribed 2026-07-29, same method)
+
+- `bojack-dip-ic.toml` — 12 DIP ICs ×10 (incl. NE555P, ULN2003/2803
+  Darlington arrays) + DIP sockets; complete from the listing bullets.
+- `74hc-kit.toml` — 30 DIP logic types, **one piece each** (socket
+  them). Box-lid photo and listing bullets DISAGREE on ten types; both
+  lists recorded, the 20-type intersection is safe pre-bench, and
+  74HC595 (box-only) must be bench-confirmed before a design leans on
+  it.
+- `kokiso-smd.toml` — 50 SOT-23-class values ×10 (15 diodes, 20
+  transistors, 15 MOSFETs), transcribed from the catalog images.
+
 ## Not yet cataloged (bench-catalog before their first BOM)
 
-- KOKISO 500pc SMD kit (SOT-23 diodes / transistors / MOSFETs)
-- BOJACK 12-piece DIP IC kit (known to include NE555)
-- 74HC-series DIP kit
 - THT bins (resistors, capacitors, inductors, diodes, buttons,
   switches, piezos, LEDs)
 - ESP32-H2-Zero modules, SMD ATtiny85 (SOIC-8)
+
+Known-plentiful, never a design constraint (operator-stated
+2026-07-29): DIP sockets in all sizes — every DIP IC gets socketed,
+which is also what makes the one-each 74HC kit safe to design with.

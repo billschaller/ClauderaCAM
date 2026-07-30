@@ -1,0 +1,270 @@
+# KOKISO 500-piece SMD kit — 50 values x 10: 15 diodes, 20 BJTs,
+# 15 MOSFETs, SOT-23 class. Transcribed 2026-07-29 from the Amazon
+# listing gallery (https://a.co/d/07CQUW5y): master catalog
+# 612hjVgqaLS.jpg, per-species packet sheets, bag-label and top-marking
+# photos cross-checked. See parts/README.md for method and status.
+
+[kit]
+brand = "KOKISO"
+pieces = 500
+values = 50
+per_value = 10
+status = "listing-transcribed"  # bench-verify at BOM time
+
+# diodes — 15, packages as printed on the packet sheet
+[[diode]]
+part = "BAV99"
+package = "SOT-23"
+kind = "dual series switching"
+
+[[diode]]
+part = "BAV70"
+package = "SOT-23"
+kind = "dual common-cathode switching"
+
+[[diode]]
+part = "BAW56"
+package = "SOT-23"
+kind = "dual common-anode switching"
+
+[[diode]]
+part = "FR107"
+marking = "RS1M"
+package = "SMA"
+kind = "fast rectifier 1A 1000V"
+
+[[diode]]
+part = "US1M"
+package = "SMA"
+kind = "ultrafast rectifier 1A 1000V"
+
+[[diode]]
+part = "ES1J"
+package = "SMA"
+kind = "superfast rectifier 1A 600V"
+
+[[diode]]
+part = "ES1D"
+package = "SMA"
+kind = "superfast rectifier 1A 200V"
+
+[[diode]]
+part = "1N5819"
+marking = "SS14"
+package = "SMA"
+kind = "schottky 1A 40V"
+
+[[diode]]
+part = "SS24"
+package = "SMA"
+kind = "schottky 2A 40V"
+
+[[diode]]
+part = "SS34"
+package = "SMA"
+kind = "schottky 3A 40V"
+
+[[diode]]
+part = "SS54"
+package = "SMA"
+kind = "schottky 5A 40V"
+
+[[diode]]
+part = "1N4001"
+marking = "M1"
+package = "SMA"
+kind = "rectifier 1A 50V"
+
+[[diode]]
+part = "1N4004"
+marking = "M4"
+package = "SMA"
+kind = "rectifier 1A 400V"
+
+[[diode]]
+part = "1N4007"
+marking = "M7"
+package = "SMA"
+kind = "rectifier 1A 1000V"
+
+[[diode]]
+part = "LL4148"
+package = "LL-34"               # MELF cylindrical
+kind = "switching"
+
+# BJTs — 20, all SOT-23, polarity as printed; no marking codes given
+[[bjt]]
+part = "S9012"
+polarity = "PNP"
+
+[[bjt]]
+part = "S9013"
+polarity = "NPN"
+
+[[bjt]]
+part = "S9014"
+polarity = "NPN"
+
+[[bjt]]
+part = "S9015"
+polarity = "PNP"
+
+[[bjt]]
+part = "S9018"
+polarity = "NPN"                # RF/HF small-signal
+
+[[bjt]]
+part = "2SC1623"
+polarity = "NPN"
+
+[[bjt]]
+part = "S8050"
+polarity = "NPN"
+
+[[bjt]]
+part = "S8550"
+polarity = "PNP"
+
+[[bjt]]
+part = "SS8050"
+polarity = "NPN"                # higher-current 8050 variant
+
+[[bjt]]
+part = "SS8550"
+polarity = "PNP"
+
+[[bjt]]
+part = "MMBT5551"
+polarity = "NPN"
+
+[[bjt]]
+part = "MMBT5401"
+polarity = "PNP"
+
+[[bjt]]
+part = "MMBT2222A"
+polarity = "NPN"
+
+[[bjt]]
+part = "MMBT2907A"
+polarity = "PNP"
+
+[[bjt]]
+part = "MMBTA42"
+polarity = "NPN"                # high-voltage
+
+[[bjt]]
+part = "MMBTA92"
+polarity = "PNP"                # high-voltage
+
+[[bjt]]
+part = "MMBTA44"
+polarity = "NPN"                # high-voltage
+
+[[bjt]]
+part = "MMBT3904"
+polarity = "NPN"
+
+[[bjt]]
+part = "MMBT3906"
+polarity = "PNP"
+
+[[bjt]]
+part = "TL431"
+polarity = "NPN"                # AS PRINTED on the sheet — TL431 is
+                                # actually a 2.5V shunt regulator
+                                # reference, not a BJT
+
+# MOSFETs — 15, all SOT-23. Channel provenance varies: rows 1-4 were
+# occluded on the packet sheet (channel from datasheet knowledge, NOT
+# the sheet — marked accordingly); markings from the top-marking photo.
+[[fet]]
+part = "SI2300"
+channel = "N"
+channel_src = "datasheet"       # sheet row occluded
+marking = "2300"
+
+[[fet]]
+part = "SI2301"
+channel = "P"
+channel_src = "datasheet"       # sheet row occluded
+marking = "A1SHB"
+
+[[fet]]
+part = "SI2302"
+channel = "N"
+channel_src = "datasheet"       # sheet row occluded
+marking = "A2SHB"
+
+[[fet]]
+part = "SI2303"
+channel = "P"
+channel_src = "datasheet"       # sheet row occluded
+marking = "A3SHB"
+
+[[fet]]
+part = "SI2305"
+channel = "P"
+channel_src = "sheet"
+marking = "A5SHB"
+
+[[fet]]
+part = "SI2306"
+channel = "N"
+channel_src = "sheet"
+marking = "A6SHB"
+
+[[fet]]
+part = "SI2307"
+channel = "P"
+channel_src = "sheet"
+marking = "S7"
+
+[[fet]]
+part = "SI2308"
+channel = "N"
+channel_src = "sheet"
+marking = "K08"
+
+[[fet]]
+part = "SI2309"
+channel = "P"
+channel_src = "sheet"
+marking = "MS09"
+
+[[fet]]
+part = "SI2310"
+channel = "N"
+channel_src = "sheet"
+marking = "K10"
+
+[[fet]]
+part = "AO3400"
+channel = "N"
+channel_src = "sheet"
+marking = "X0.."                # X0 + lot suffix
+
+[[fet]]
+part = "AO3401"
+channel = "P"
+channel_src = "sheet"
+marking = "X1.."                # the zigbee-button reverse-protection
+                                # P-FET (AO3401A) — proven on that board
+
+[[fet]]
+part = "AO3415"
+channel = "P"
+channel_src = "sheet"
+marking = "XF.."
+
+[[fet]]
+part = "AO3416"
+channel = "N"
+channel_src = "sheet"
+marking = "AGSA"
+
+[[fet]]
+part = "2N7002"
+channel = "N"
+channel_src = "sheet"
+marking = "7002"

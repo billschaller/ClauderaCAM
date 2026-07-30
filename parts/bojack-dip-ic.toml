@@ -1,0 +1,78 @@
+# BOJACK 12-value DIP IC assortment — 120 pcs (10 per value) + sockets.
+# Transcribed 2026-07-29 from the Amazon listing feature bullets
+# (https://a.co/d/07590Uxw) — the bullets list every part explicitly,
+# no image transcription needed. See parts/README.md for status
+# semantics.
+
+[kit]
+brand = "BOJACK"
+pieces = 120
+values = 12
+per_value = 10
+status = "listing-transcribed"  # bench-verify at BOM time
+
+[[ic]]
+part = "LM324N"
+function = "quad opamp"
+package = "DIP-14"
+
+[[ic]]
+part = "LM339N"
+function = "quad comparator"
+package = "DIP-14"
+
+[[ic]]
+part = "ULN2003AN"
+function = "7ch darlington array (500mA sinks)"
+package = "DIP-16"
+
+[[ic]]
+part = "ULN2803APG"
+function = "8ch darlington array (500mA sinks)"
+package = "DIP-18"
+
+[[ic]]
+part = "LM358P"
+function = "dual opamp"
+package = "DIP-8"
+
+[[ic]]
+part = "LM386"
+function = "audio amplifier"
+package = "DIP-8"
+
+[[ic]]
+part = "LM393"
+function = "dual comparator"
+package = "DIP-8"
+
+[[ic]]
+part = "NE5532P"
+function = "dual low-noise audio opamp"
+package = "DIP-8"
+
+[[ic]]
+part = "NE555P"
+function = "timer"
+package = "DIP-8"
+
+[[ic]]
+part = "UA741CN"
+function = "single opamp"
+package = "DIP-8"
+
+[[ic]]
+part = "JRC4558D"
+function = "dual audio opamp"
+package = "DIP-8"
+
+[[ic]]
+part = "PC817"
+function = "optocoupler"
+package = "DIP-4"
+
+[sockets]
+dip8 = 12
+dip14 = 4
+dip16 = 2
+dip18 = 2
