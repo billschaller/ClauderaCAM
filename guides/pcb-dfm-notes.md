@@ -73,6 +73,23 @@ passes — but it is a floating copper hair bonded to laminate by nothing but
 adhesive, in a board that gets handled, hand-soldered and snapped off tabs.
 That is pain point (a), and this is its number.
 
+> **Addendum (2026-07-31, after the sliver fix landed as `9dfef94`):** the
+> band above is now HISTORY, not law. The iso phase runs a multi-pass ladder
+> (`pcbjob.iso_pass_plan`) sized so iso alone consumes every gap up to the
+> 1.2 mm clearing floor, and the `residual copper` check carves the mill
+> program and fails on ANY remaining undesigned copper, whatever its cause.
+> The forbidden-band layout sweep this file recommended, and its "copper gap
+> band" design check, are therefore superseded — the arithmetic stays as the
+> explanation of the incident, and as the derivation the pass ladder is
+> built from. Two more of this file's numbers were corrected by measurement
+> during the Board A relayout: the inter-stroke silk floor of 0.30 exceeds
+> what KiCad's stroke font physically delivers between glyphs (0.150
+> measured at h1.5); the gate's bar is JLCPCB's own 0.15 on TRUE ink
+> distance, and the silk ladder's 1.0 rung is the bench gauge for whether
+> dose bloom bridges it. And the 1.0 mm jumper-hole class was tried and
+> reverted: it forces 2.2 pads, which shave three long-standing 0.44
+> clearances under the 0.4 law — 0.9 sits in-band for 22 AWG and stands.
+
 Worked values:
 
 | drawn gap | sliver after iso | who removes it |

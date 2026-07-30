@@ -18,11 +18,15 @@ species and package size the bench holds.
 | track | ≥ 0.5 mm min; 0.6 signal / 0.8–1.2 power | conservative, hand-solderable |
 | jumpers | unplated wire links, front side | no plated vias; where flat routing would contort the board, a bare wire link (JPn) hops on the component side -- expected practice on a single-sided milled board |
 | THT annular | ≥ 0.6 mm | milled pads lift easier than plated |
+| thermal reliefs | pour gap 0.4, spokes 0.6 drawn ×4 @ 45° on hole-centered GND pads; SMD GND pads get ONE routed 0.6 neck, never a solid connect | Bill 2026-07-31: solid pour contact heat-sinks the iron; a neck is a heat path hand soldering can beat (guides/pcb-dfm-notes.md §1) |
 | copper-to-edge | ≥ 0.4 mm | edge cut is separate |
-| drills | ≤ 1.2 straight; larger helical-bored (0.8 corn) | drill set 0.3–1.2; 3.4 (M3) bores fine |
-| footprints | hand-solder variants where they exist | no plating, big pads |
-| silkscreen | **B.Silkscreen ONLY**, lasered onto cured white mask | one setup, copper side up; strokes ≥ 0.3 from solderable pads |
-| solder mask | whole B side masked, pads scrubbed (deflate −0.10) | spring-tool scrub phase |
+| drills | hole = lead + 0.2..0.4 rounded up to a bore class; ≤ 1.2 straight, larger helical-bored (0.8 corn) | dfm-notes §5; lead dims are datasheet-class — bench-confirm flags stand |
+| footprints | hand-solder variants where they exist; solderable pads ≥ 0.70 narrow (U2's stock 0.60 SOIC pads widened to 0.80 in-board) | no plating, big pads; below 0.70 the spring tool gets no lap and the pad ships under mask (dfm-notes §9) |
+| silkscreen | **B.Silkscreen ONLY**, lasered onto cured white mask; text ≥ 1.0 mm | one setup, copper side up; strokes ≥ 0.3 from solderable pads; 1.0 is both fab houses' legend floor |
+| solder mask | whole B side masked, pads scrubbed (deflate −0.10); mask expansion 0, asserted | spring-tool scrub phase; an expanded aperture eats the plateau bar |
+| teardrops | at THT pad-track junctions, ≤ 1.0× pad radius | an unplated pad's only anchor is adhesive (dfm-notes §12) |
+| copper angles | no drawn turn sharper than 90° | an acute wedge between kerfs leaves a sliver of 0.210/tanθ (dfm-notes §8) |
+| tab keep-out | part bodies ≥ 3.0 mm from cutout tab stubs | the filed bump would rock a body; bodiless copper (wire pads, TPs) exempt |
 
 Exception (deliberate): the 0.4 mm ladder trace in the coupon block
 violates the 0.5 track minimum — that is the point of a
@@ -102,7 +106,7 @@ must render.
 | SW1 | SS-12D00-class slide SPDT | THT 2.54 | THT bins — **bench-confirm footprint** |
 | S2 | 6×6 tactile | THT | THT bins — **bench-confirm** |
 | PAD± | wire pads | 1.5 mm drill | copper + wire |
-| JP1–JP6 | wire links (10.16 / 12.7 / 15.24 mm spans) | 0.9 mm drill | operator wire stock |
+| JP1–JP7 | wire links (10.16 / 12.7 / 15.24 mm spans) | 0.9 mm drill | operator wire stock |
 | H1–H4 | M3 mounting holes | 3.4 mm bore | no hardware in BOM |
 | TP1–TP6 | ladder probe pads | bare copper ~2 mm | none |
 
@@ -113,14 +117,20 @@ B's job.
 
 ## Jumpers (board-only, front-side wire links)
 
-Six unplated wire links, all on the component side, pads 2.1 mm / drill
+Seven unplated wire links, all on the component side, pads 2.1 mm / drill
 0.9 mm (annular 0.6), spans limited to 10.16 / 12.7 / 15.24 mm so the
 operator can bend wire on a jig. JP1 carries N_DISCH across the
 TRIG_THR wall to S2; JP2 and JP3 stitch the VCC tree across the LED and
-power belts; JP4–JP6 drop GND into the three pour pockets that
-single-sided routing fences off. **Bench notes**: JP6 crosses the JP2
-wire run — use insulated wire for JP6 (or bend it per the fab-layer
-dogleg); JP3's wire passes ~0.3 mm from the U1 socket's west edge —
+power belts; JP4–JP6 drop GND into the pour pockets that single-sided
+routing fences off (JP6 grew to 12.7 mm in the 2026-07-31 thermal
+rework so its far pad lands in MAIN pour — once SMD pads stopped
+solid-connecting, the pocket network it stitches had no other copper
+path to ground); JP7 (added in the same rework) bridges the pocket
+sealed under/east of U1 — TRIG's limb, N_KICK, S2's moat and N_U2AOUT
+ring it completely — to the southeast pour. **Bench notes**: JP6 and
+JP7 cross other wire runs of the SAME net (GND) — bare wire contact is
+harmless there, or bend per the fab-layer doglegs; JP3's wire passes
+~0.3 mm from the U1 socket's west edge —
 dress it tight to the board. Jumper footprints are board-only (not in
 the schematic); KiCad models each wire as an F.Cu track inside the
 footprint so connectivity and DRC see the link — F.Cu is never
@@ -134,8 +144,11 @@ Reserved corner block ~14×40 mm, self-labeled in silk:
 - **Pad ladder**: one unconnected footprint column 1206 → 0805 → 0603
   (two-pad passive footprints, paste apertures included — they test
   the stenchill stencil at every size).
-- **Silk ladder**: "0.4 0.5 0.6" markings plus text at 1.2 / 1.5 /
-  2.0 mm heights ("SILK 1.2" etc.).
+- **Silk ladder**: "0.4 0.5 0.6" markings plus text at 1.0 / 1.2 /
+  1.5 / 2.0 mm heights ("SILK 1.0" etc.). The 1.0 rung sits AT both
+  fab houses' legend floor — it is the gauge for whether laser dose
+  bloom bridges the font's true 0.15 inter-glyph ink gap
+  (guides/pcb-dfm-notes.md §9 addendum).
 - **Scrub ring**: an annular copper ring pad (~8 mm OD, 2 mm band)
   for reading scrub-margin registration with a loupe.
 

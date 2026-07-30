@@ -874,6 +874,70 @@ else:
     print("  Until then this line is the loud gap, not a silent one.")
     print("  " + "=" * 68)
 
+# ==================== DFM hand-solder checks: caught negatives (2026-07-31)
+# The operator's render review made three laws (thermal reliefs, pad
+# scrubbability, legend metrics). The OLD golden board was the live specimen
+# for two of them — solid jumper annuli and 0.60 SOIC apertures — and was
+# re-blessed fixed; these negatives corrupt COPIES of the blessed rasters so
+# each law keeps a specimen it provably catches.
+print("\nDFM negatives (corrupted copies of the blessed coupon rasters):")
+if GOLDEN.is_dir() and (GOLDEN / "coupon.toml").is_file():
+    import dataclasses
+
+    def _paint(arr, win, cx, cy, r0, r1, value=True):
+        """Set an annulus (r0..r1 around world cx,cy) in a raster."""
+        ii, jj = np.mgrid[0:arr.shape[0], 0:arr.shape[1]]
+        bx, by = win.px_to_world(ii + 0.5, jj + 0.5)
+        d = np.hypot(bx - cx, by - cy)
+        arr[(d >= r0) & (d <= r1)] = value
+
+    dj = pcbjob.load(GOLDEN / "coupon.toml")
+    dmaps = checks.board_maps(dj)
+
+    # 1. thermal: flood PAD2's moat ring solid -> the heat-sunk hand joint
+    cu2 = dmaps.layers["cu"].copy()
+    _paint(cu2, dmaps.win, 104.8, -129.5, 1.8, 2.7)
+    m2 = dataclasses.replace(dmaps, layers={**dmaps.layers, "cu": cu2},
+                             _cache={})
+    t = {c.name: c for c in checks.thermal_checks(dj, m2)}
+    check("thermal solid connect CATCHES a flooded moat",
+          not t["thermal solid connect"].ok,
+          f"{t['thermal solid connect'].value:.2f} of the ring is copper")
+    m2.release()
+
+    # 2. scrubbability: a 0.5-wide aperture the spring tool cannot lap
+    mask2 = dmaps.layers["mask"].copy()
+    i0, j0 = dmaps.win.world_to_px(np.array([110.0]), np.array([-130.0]))
+    ii, jj = int(i0[0]), int(j0[0])
+    half_w = int(0.25 * dmaps.win.ppmm)
+    half_h = int(1.0 * dmaps.win.ppmm)
+    mask2[ii - half_h:ii + half_h, jj - half_w:jj + half_w] = True
+    m3 = dataclasses.replace(dmaps, layers={**dmaps.layers, "mask": mask2},
+                             _cache={})
+    s = checks.scrubbability_checks(dj, m3)[0]
+    check("pad scrubbability CATCHES a 0.5-wide aperture", not s.ok,
+          f"narrow {s.value:.2f} < 0.70")
+    m3.release()
+
+    # 3. silk metrics: a 3-glyph line at 0.8 height, under the fab floor
+    silk2 = bm.rasterize(dj.files["silk"], dmaps.win).copy()
+    i1, j1 = dmaps.win.world_to_px(np.array([112.0]), np.array([-104.0]))
+    ii, jj = int(i1[0]), int(j1[0])
+    bar_h = int(0.8 * dmaps.win.ppmm)
+    bar_w = max(2, int(0.15 * dmaps.win.ppmm))
+    for k in range(3):
+        dx = int(k * 0.5 * dmaps.win.ppmm)
+        silk2[ii:ii + bar_h, jj + dx:jj + dx + bar_w] = True
+    m4 = dataclasses.replace(dmaps, layers={**dmaps.layers, "silk": silk2},
+                             _cache={})
+    sm = {c.name: c for c in checks.silk_metric_checks(dj, m4)}
+    check("silk text height CATCHES a 0.8 legend line",
+          not sm["silk text height"].ok, f"min {sm['silk text height'].value:.2f}")
+    m4.release()
+    dmaps.release()
+else:
+    print("  SKIP: no blessed coupon to corrupt")
+
 # ================================================== local bonus: the real run
 ZPH = ZB / "cam/flatcam/phases"
 ZNC = {"iso": "fc-1-iso.nc", "clear": "fc-3a-clear.nc",

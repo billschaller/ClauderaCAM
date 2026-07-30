@@ -1796,6 +1796,58 @@ honest mill program), split into five islands the suite now counts.
 
 13 suites green on both kernels; `golden_mango` 5/5 EXACT MATCH.
 
+## 2026-07-31: the hand-solder relayout — Board A learns the fab houses' manners
+
+The operator's render review had a second half: "I'm not a fan of such
+large ground pour contact for hand soldering," plus a directive to digest
+JLCPCB/PCBWay DFM practice (`guides/pcb-dfm-notes.md`). This entry is that
+work landing on Board A and in the gate.
+
+**Board-side** (`tools-layout.py`, deterministic as always, DRC 0 errors ×
+`--severity-all --schematic-parity`): hole-centered GND pads take thermal
+reliefs (gap 0.4, spoke 0.6 ×4 at 45°; U1.1 at 90° — the socket corner's
+diagonals died in the BLINK moat); SMD GND pads are ZONE_CONNECTION_NONE
+with ONE routed 0.6 neck each (14 necks, two hand-routed in the U2 pocket);
+teardrops at 15 THT junctions; no drawn copper turn over 90° (a build-time
+assertion — it caught the /VF corner at 95.3° and the N_LED diagonals on
+its first run); silk floor 1.0 with a new "SILK 1.0" ladder rung; the hole
+rule re-sized every drill from its lead (U1's socket 0.8→0.9 — the 0.8
+class was PLUNGE-ONLY for the 0.8 corn and is now extinct; 39 bores in 4
+classes); U2's stock 0.60 SOIC pads widened to 0.80 (the scrubbability
+floor caught them as unscrubbable); LED2/3 and C6 moved off the tab stubs
+(the ≥3.0 body law); mask expansion 0 asserted on every footprint.
+
+**The pour lesson**: killing solid SMD connects re-plumbed the whole GND
+topology. Pockets that had been silently stitched through solid pads lost
+their only path to ground — JP6 grew 10.16→12.7mm so its far pad lands in
+MAIN pour instead of feeding one pocket from another, and **JP7** (the
+seventh jumper) bridges the pocket that TRIG's limb, N_KICK, S2's moat and
+N_U2AOUT seal completely (S2's moat meets N_U2AOUT's cap EXACTLY — found
+by island arithmetic, drawn as law here). Same-net wire crossings are
+physically harmless and modeled with doglegs where nets differ.
+
+**Gate-side** (`checks.py`, three new laws, each with a caught negative):
+`thermal solid connect / spoke count / spoke width` — every Excellon bore
+with a mask aperture whose flooded copper component IS the pour (≥25% of
+ink AND ≥50mm² — the twosided fixture taught that a bare pad on a tiny
+board can clear a fraction test) must cross its moat ring with ≥2 spokes
+≥0.40 delivered, never a solid annulus; `pad scrubbability` — every mask
+aperture ≥0.70 narrow, closing the silent-PASS where a small pad gets no
+scrub toolpath and ships under mask (the OLD golden board failed this
+check on U2 the day it landed); `silk text height / stroke ratio / glyph
+gap` — legend metrics on the ink, height ≥1.0, ratio in 1:7.5..1:3.5, gap
+≥0.15 TRUE ink distance (the dfm-notes 0.3 aspiration exceeds what
+KiCad's stroke font delivers — measured 0.150 at h1.5; JLCPCB's own floor
+is the bar and the SILK 1.0 rung is the bench gauge for dose bloom).
+
+Verified end to end: live engine ×2 byte-identical, all four programs
+PASS (mill 30 / silk 8 / scrub 8 / holes 28 checks), extents exactly
+55×40, 39 bores, offset (155,140) derived. Re-blessed: ALL four programs
++ all five gerbers (the board changed everywhere); `coupon.toml`
+untouched. The OLD golden board was the live negative for two of the new
+laws — its solid jumper annuli and 0.60 apertures failed them on first
+contact, which is the incidents-make-law loop closing in one commit.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
@@ -1823,8 +1875,9 @@ honest mill program), split into five islands the suite now counts.
   programs are verified bytes and blessed golden, which is "verified
   files, not verified copper." Bench work before and during: parts-gate
   bench confirms at BOM freeze (the THT bins — 5mm LEDs, slide switch,
-  tactile — are uncataloged), JP6 crosses JP2 so that jumper wants
-  insulated wire, then tape, all six phases, assemble, blink. The
+  tactile — are uncataloged), seven jumpers now (JP6/JP7 cross other
+  GND wires — bare contact is harmless, or bend per the doglegs), then
+  tape, all six phases, assemble, blink. The
   process window the coupon measures (trace/gap ladders, silk heights,
   the scrub ring) becomes law; incidents are expected and will become
   checks.

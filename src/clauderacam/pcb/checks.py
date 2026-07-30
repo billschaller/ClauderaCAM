@@ -1402,6 +1402,240 @@ def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
     return out
 
 
+# --------------------------------------------------------------------------
+# Hand-solder / DFM design checks (the operator's 2026-07-31 render review +
+# guides/pcb-dfm-notes.md). These judge the DESIGN as the gerbers deliver
+# it — raster-only, net-free: pour membership comes from a flood fill of the
+# copper ink itself, so a wrong netlist cannot fool them.
+
+POUR_FRACTION = 0.25   # a copper component holding >=25% of ALL copper ink
+                       # IS the pour; no routed net on a board this size
+                       # comes close (measured: coupon pour 55%, VCC tree 4%)
+POUR_MIN_MM2 = 50.0    # ...AND a pour is a PLANE: on a tiny board with no
+                       # pour at all, a single pad flash can clear the 25%
+                       # fraction (the twosided fixture: 40%); a component
+                       # under 50mm2 cannot heat-sink an iron and is no pour
+SPOKE_MIN = 0.40       # dfm-notes §1: the milled starved-thermal floor —
+                       # drawn 0.6 spokes deliver ~0.52 after the 0.08 kerf
+                       # overcut; below 0.40 the relief is decorative
+SPOKE_COUNT_MIN = 2    # PCBWay/BestPCBs practice: one spoke is a fuse
+SOLID_FRACTION = 0.85  # a moat ring mostly copper = solid connect — the
+                       # heat-sunk hand joint the review complained about
+SCRUB_PAD_MIN = 0.70   # dfm-notes §9: 2·(scrub_r + window) + 2·deflate;
+                       # a narrower aperture gets no scrub lap and ships
+                       # under mask while every per-phase check passes
+SILK_H_MIN = 1.0       # both fab houses' legend floor (JLCPCB std font 1.0)
+SILK_RATIO = (1/7.5, 1/3.5)   # stroke:height band around JLCPCB's 1:6
+SILK_GAP_MIN = 0.15    # JLCPCB's published inter-stroke floor, measured as
+                       # TRUE ink distance. The dfm-notes aspiration of 0.3
+                       # exceeds what KiCad's stroke font can deliver between
+                       # glyphs (measured 0.150 at h1.5 on this board); the
+                       # silk ladder's 1.0 rung is the bench gauge for
+                       # whether dose bloom bridges 0.15 — if it does, that
+                       # is an Article II incident and this bar rises
+
+
+def _ring_profile(cu: np.ndarray, win, cx: float, cy: float,
+                  r: float, n: int = 720) -> np.ndarray:
+    """Copper occupancy around a circle, bilinear-sampled (1 = ink)."""
+    th = np.linspace(0.0, 2 * np.pi, n, endpoint=False)
+    i, j = win.world_to_px(cx + r * np.cos(th), cy + r * np.sin(th))
+    return ndimage.map_coordinates(cu.astype(np.float32),
+                                   [i - 0.5, j - 0.5], order=1)
+
+
+def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
+    """Hole-centered pads that belong to the POUR must connect through
+    thermal spokes an iron can beat (the operator's 2026-07-31 review:
+    solid pour contact heat-sinks the joint; dfm-notes §1). For each
+    Excellon bore whose center carries a mask aperture, the pad's copper
+    component is flooded; if that component is the pour, the pad's moat
+    ring (the min-copper circle between the pad edge and pad edge + 0.9)
+    is profiled: it must be mostly void (not a solid connect), crossed by
+    >= 2 spokes, and its thinnest crossing must deliver >= 0.40. Pads on
+    routed nets (small components) are exempt — their heat path is their
+    tracks, which the review accepts."""
+    cu = maps.layers["cu"]
+    lab, _ = ndimage.label(cu)
+    sizes = np.bincount(lab.ravel())
+    total = float(cu.sum())
+    px = 1.0 / maps.win.ppmm
+    in_mask = maps.dist("in_mask")
+    worst_frac, worst_cnt, worst_w = 0.0, 99, 9e9
+    who_f = who_c = who_w = ""
+    judged = skipped = 0
+    for hx, hy, hd in maps.holes:
+        i, j = maps.win.world_to_px(np.array([hx]), np.array([hy]))
+        ii, jj = int(round(i[0] - 0.5)), int(round(j[0] - 0.5))
+        h, w = maps.win.shape
+        if not (0 <= ii < h and 0 <= jj < w) or in_mask[ii, jj] <= 0:
+            skipped += 1
+            continue                        # bare bore: M3, gauge class
+        r_ap = float(in_mask[ii, jj])       # aperture radius at the center
+        rmid = (hd / 2 + r_ap) / 2
+        ring = _ring_profile((lab > 0), maps.win, hx, hy, rmid)
+        i2, j2 = maps.win.world_to_px(hx + rmid * np.cos(np.linspace(0, 6.28, 16)),
+                                      hy + rmid * np.sin(np.linspace(0, 6.28, 16)))
+        labs = lab[np.clip((i2 - 0.5).round().astype(int), 0, h - 1),
+                   np.clip((j2 - 0.5).round().astype(int), 0, w - 1)]
+        labs = labs[labs > 0]
+        if labs.size == 0:
+            skipped += 1
+            continue
+        pad_lab = int(np.bincount(labs).argmax())
+        comp_mm2 = sizes[pad_lab] * px * px
+        if sizes[pad_lab] < POUR_FRACTION * total or comp_mm2 < POUR_MIN_MM2:
+            skipped += 1
+            continue        # routed-net pad (tracks carry it) or no pour
+        judged += 1
+        best = (1.1, r_ap + 0.06)
+        for r in np.arange(r_ap + 0.06, r_ap + 0.9, 0.02):
+            frac = float(_ring_profile(cu, maps.win, hx, hy, r).mean())
+            if frac < best[0]:
+                best = (frac, r)
+        frac, rm = best
+        prof = _ring_profile(cu, maps.win, hx, hy, rm) > 0.5
+        if prof.all():
+            runs, minw = 1, 2 * np.pi * rm
+        else:
+            k = int(np.argmin(prof))        # rotate to start in a void
+            p = np.roll(prof, -k)
+            pp = np.concatenate(([False], p, [False])).astype(int)
+            starts = np.flatnonzero(np.diff(pp) == 1)
+            ends = np.flatnonzero(np.diff(pp) == -1)
+            widths = (ends - starts) * (2 * np.pi * rm / prof.size)
+            runs = len(widths)
+            minw = float(widths.min()) if runs else 0.0
+        tag = f"bore ({hx:.2f},{hy:.2f}) d{hd:g} at moat r{rm:.2f}"
+        if frac > worst_frac:
+            worst_frac, who_f = frac, tag
+        if runs < worst_cnt:
+            worst_cnt, who_c = runs, tag
+        if runs and minw < worst_w:
+            worst_w, who_w = minw, tag
+    note = f"{judged} pour pads judged, {skipped} exempt (bare or routed)"
+    if judged == 0:
+        return [Check("thermal spokes", 0.0, "n/a", True,
+                      f"no pour-connected hole pads — {note}")]
+    return [
+        Check("thermal solid connect", worst_frac,
+              f"<= {SOLID_FRACTION:g} of the moat ring",
+              worst_frac <= SOLID_FRACTION, f"{who_f}; {note}"),
+        Check("thermal spoke count", float(worst_cnt),
+              f">= {SPOKE_COUNT_MIN}", worst_cnt >= SPOKE_COUNT_MIN,
+              f"{who_c}; {note}"),
+        Check("thermal spoke width", worst_w,
+              f">= {SPOKE_MIN:g}", worst_w >= SPOKE_MIN - 3 * px,
+              f"{who_w}; delivered, raster tol 3px; {note}"),
+    ]
+
+
+def scrubbability_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
+    """Every mask aperture must be wide enough for the spring tool to lap
+    (dfm-notes §9: 2·(scrub_r + window) + 2·deflate = 0.70 with the lane's
+    numbers). Below that FlatCAM's paint gets a marginal region — the class
+    it silently skips (the ncc/clear-opening incidents) — and the pad ships
+    under mask with `scrub coverage` deliberately un-barred. Judged on the
+    mask raster: narrow dimension = 2 × the aperture's deepest interior
+    point."""
+    mask = maps.layers["mask"]
+    lab, n = ndimage.label(mask)
+    if n == 0:
+        return [Check("pad scrubbability", 0.0, "unmeasurable", False,
+                      "no mask apertures at all")]
+    depth = maps.dist("in_mask")
+    px = 1.0 / maps.win.ppmm
+    worst, who = 9e9, ""
+    for c in range(1, n + 1):
+        m = lab == c
+        narrow = 2 * float(depth[m].max())
+        if narrow < worst:
+            ii, jj = np.unravel_index(np.argmax(depth * m), depth.shape)
+            bx, by = maps.win.px_to_world(np.array([ii + 0.5]),
+                                          np.array([jj + 0.5]))
+            worst, who = narrow, f"aperture at ({bx[0]:.2f},{by[0]:.2f})"
+    return [Check("pad scrubbability", worst, f">= {SCRUB_PAD_MIN:g}",
+                  worst >= SCRUB_PAD_MIN - 2 * px,
+                  f"{who} of {n} apertures; raster tol 2px")]
+
+
+def silk_metric_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
+    """Legend metrics on the silk ink (dfm-notes §9, JLCPCB floors): text
+    height >= 1.0, stroke:height inside the 1:7.5..1:3.5 band around
+    JLCPCB's 1:6, inter-glyph gap >= 0.30 (their 0.15/0.2 raised for laser
+    dose bloom). Glyphs cluster into lines by bbox adjacency; a line needs
+    >= 3 glyphs to be judged as text — shorter marks (polarity ticks, the
+    ladder gauge bars) are graphics, not legend, and are exempt by count."""
+    # the standard maps carry cu/mask/edge; silk is rasterized on demand
+    silk = maps.layers.get("silk")
+    if silk is None:
+        silk = boardmaps.rasterize(job.files["silk"], maps.win)
+    lab, n = ndimage.label(silk, structure=np.ones((3, 3), int))
+    if n == 0:
+        return [Check("silk legend metrics", 0.0, "n/a", True, "no silk ink")]
+    depth = boardmaps.dist_mm(~silk, maps.win)
+    px = 1.0 / maps.win.ppmm
+    boxes = ndimage.find_objects(lab)
+    glyphs = []
+    for c, sl in enumerate(boxes, 1):
+        if sl is None:
+            continue
+        gh = (sl[0].stop - sl[0].start) * px
+        gw = (sl[1].stop - sl[1].start) * px
+        thick = 2 * float(depth[sl][lab[sl] == c].max())
+        glyphs.append((sl[1].start * px, sl[1].stop * px,
+                       sl[0].start * px, sl[0].stop * px, gh, gw, thick, c))
+    glyphs.sort()
+    lines: list[list] = []
+    for g in glyphs:
+        for ln in lines:
+            last = ln[-1]
+            yo = min(g[3], last[3]) - max(g[2], last[2])
+            if yo > 0.3 * min(g[4], last[4]) and 0 <= g[0] - last[1] <= 1.6:
+                ln.append(g)
+                break
+        else:
+            lines.append([g])
+    texts = [ln for ln in lines if len(ln) >= 3]
+    if not texts:
+        return [Check("silk legend metrics", 0.0, "n/a", True,
+                      f"{n} silk marks, none form a text line")]
+    h_min, r_lo, r_hi, gap_min = 9e9, 9e9, 0.0, 9e9
+    who_h = who_g = ""
+    for ln in texts:
+        hh = float(np.median([g[4] for g in ln]))
+        tt = float(np.median([g[6] for g in ln]))
+        if hh < h_min:
+            h_min, who_h = hh, f"line at ({ln[0][0]:.1f},{ln[0][2]:.1f})"
+        r_lo, r_hi = min(r_lo, tt / hh), max(r_hi, tt / hh)
+        for a, b in zip(ln, ln[1:]):
+            # TRUE ink-to-ink distance (a bbox gap understates it: a 'V'
+            # after a '5' overlaps boxes while the strokes stay clear) —
+            # EDT of glyph a's ink on a crop, sampled at glyph b's pixels
+            x0 = max(0, int((a[1] - 0.6) / px)); x1 = int((b[0] + 0.9) / px)
+            y0 = max(0, int((min(a[2], b[2]) - 0.3) / px))
+            y1 = int((max(a[3], b[3]) + 0.3) / px)
+            crop = lab[y0:y1, x0:x1]
+            am, bm = crop == a[7], crop == b[7]
+            if not am.any() or not bm.any():
+                continue
+            d = ndimage.distance_transform_edt(~am)[bm].min() * px
+            if d < gap_min:
+                gap_min, who_g = d, f"gap at ({a[1]:.1f},{a[2]:.1f})"
+    return [
+        Check("silk text height", h_min, f">= {SILK_H_MIN:g}",
+              h_min >= SILK_H_MIN - 2 * px,
+              f"{len(texts)} text lines; smallest {who_h}"),
+        Check("silk stroke ratio", r_hi,
+              f"{SILK_RATIO[0]:.3f} .. {SILK_RATIO[1]:.3f}",
+              SILK_RATIO[0] <= r_lo and r_hi <= SILK_RATIO[1],
+              f"ratios {r_lo:.3f}..{r_hi:.3f}"),
+        Check("silk glyph gap", gap_min, f">= {SILK_GAP_MIN:g}",
+              gap_min >= SILK_GAP_MIN - 2 * px,
+              f"{who_g}; true ink distance, raster tol 2px"),
+    ]
+
+
 def residual_checks(job: PcbJob, maps: BoardMaps, sheet: SheetStock,
                     res: simulate.CarveResult) -> list[Check]:
     """Remaining copper vs DESIGNED copper — the bridging-sliver incident
@@ -1579,6 +1813,19 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                 f"{split[name]} are unverified")
             continue
         rep = verify_program(job, name, programs[name], maps, flip=flip)
+        # design-side DFM checks ride the program that owns the feature
+        # (the 2026-07-31 hand-solder review): copper thermals on mill,
+        # aperture scrubbability on scrub, legend metrics on silk
+        if rep.program and "cu" in maps.layers:
+            if name == "mill":
+                rep = Report(rep.checks + thermal_checks(job, maps),
+                             rep.carve, program=rep.program)
+            elif name == "scrub":
+                rep = Report(rep.checks + scrubbability_checks(job, maps),
+                             rep.carve, program=rep.program)
+            elif name == "silk":
+                rep = Report(rep.checks + silk_metric_checks(job, maps),
+                             rep.carve, program=rep.program)
         # `rep.program` is set exactly when the bytes parsed — a fatal report
         # has nothing to simulate and simulating it would judge moves the
         # strict parse already refused
