@@ -37,7 +37,7 @@ from ..emit import assemble, assemble_laser
 from ..engine import OpResult, path_length
 from ..ops import drill
 from ..simulate import parse_line
-from . import boardmaps
+from . import boardmaps, pcbjob
 from .pcbjob import PIN_PHASES, PcbJob, programs_of
 
 _DROP = re.compile(r"^\s*$|^\(")
@@ -612,3 +612,219 @@ def _stroke_chains(gbr: Path) -> list[list[tuple]]:
     if len(chain) >= 2:
         chains.append(chain)
     return chains
+
+
+# ------------------------------------------------- side-2 annular scrub laps
+# The 2026-07-30 paint-across-bores finding (the twosided suite's tripwire,
+# now flipped): FlatCAM's `paint` fills mask apertures from the mask layer
+# alone and knows NOTHING about the Excellon, so on side 2 of a flipped board
+# — where every hole is already drilled — it drove the 0.3 spring tip
+# straight across each bore and the gate refused the program (flip.py's
+# annular-scrub laws, rim margin −0.60 on the fixture). The generator's fix
+# is an APERTURE-CLASS SPLIT:
+#
+#   * SMD apertures (no hole underneath) keep FlatCAM `paint`, fed a FILTERED
+#     mask (scrub_mask below) in which every hole-centred flash became a D02
+#     move — zero ink, modal state intact. Filtering an INPUT gerber is not a
+#     G-code emission; Article V is untouched.
+#   * hole-centred apertures get ANNULAR laps generated HERE, like the silk
+#     strokes: concentric segment polylines (no arcs — Article V refuses
+#     them) around the hole the Excellon declares, appended to the scrub op.
+#
+# A mask aperture that OVERLAPS a hole off-centre refuses: neither a disc nor
+# a concentric annulus scrubs it honestly. So does a non-circle aperture or
+# pad over a hole — Board B's hole-centred pads are circles, and the day an
+# oval DIP pad needs laps this refusal is where that work starts.
+SCRUB_LAP_CHORD = 0.01   # mm: max chord sagitta of a lap polyline — one
+#                          raster pixel at the lane's 2540dpi, so the polygon
+#                          and every raster reading of it agree
+SCRUB_LAP_MARGIN = 0.05  # mm engineered headroom over flip.py's bars: the
+#                          checks re-measure the bytes with their own EDT
+#                          (raster eps + SAMPLE_STEP/2 ≈ 0.012) and a lap
+#                          that needs this margin to pass is a lap on the
+#                          edge of levering a pad off
+SCRUB_WINDOW_MIN = 0.05  # the single-sided scrub-window bar (checks.py) —
+#                          a lap must also satisfy the laws side 1 lives by
+LAP_CONCENTRIC_TOL = 0.05  # "hole-centred" tolerance: pcbjob.GAUGE_MATCH_TOL
+#                          and flip.CONCENTRIC_TOL's artwork budget, restated
+#                          here only because both licensing modules sit above
+#                          this one in the import graph
+
+
+def _concentric(fl, x: float, y: float):
+    """The flashes within LAP_CONCENTRIC_TOL of (x, y) — 0 or 1 expected."""
+    return [f for f in fl if abs(f[0] - x) <= LAP_CONCENTRIC_TOL
+            and abs(f[1] - y) <= LAP_CONCENTRIC_TOL]
+
+
+def hole_apertures(job: PcbJob) -> list[dict]:
+    """Side 2's hole-centred scrub set, from DESIGN numbers only (gerber
+    flash text + the Excellon — no raster): one entry per drilled hole that
+    carries a mask aperture, with the hole, mask and copper-pad diameters the
+    lap band is computed from. Holes with no mask aperture (flip gauges, bare
+    bores) are legitimately not in the scrub set and are skipped."""
+    holes = boardmaps.excellon(job.files["drl"])
+    mfl = boardmaps.flashes(job.files["mask"])
+    cfl = boardmaps.flashes(job.files["cu"])
+    out: list[dict] = []
+    for hx, hy, hd in holes:
+        near = _concentric(mfl, hx, hy)
+        if not near:
+            for fx, fy, shape, fd in mfl:
+                if shape == "C" and fd is not None and \
+                        float(np.hypot(fx - hx, fy - hy)) < fd / 2 + hd / 2:
+                    raise ValueError(
+                        f"mask aperture at ({fx:.3f},{fy:.3f}) overlaps the "
+                        f"Ø{hd:g} hole at ({hx:.3f},{hy:.3f}) OFF-CENTRE — "
+                        f"neither paint nor a concentric annular lap scrubs "
+                        f"that honestly; move the aperture or drop it")
+            continue
+        if len(near) > 1:
+            raise ValueError(f"{len(near)} mask flashes at the hole at "
+                             f"({hx:.3f},{hy:.3f}) — one aperture per hole")
+        _, _, mshape, mdia = near[0]
+        if mshape != "C" or mdia is None:
+            raise ValueError(
+                f"mask aperture over the hole at ({hx:.3f},{hy:.3f}) is "
+                f"{mshape!r}, not a circle — annular laps only know "
+                f"circles, and a non-circular hole-centred aperture needs "
+                f"its own generator before it can be scrubbed")
+        pads = _concentric(cfl, hx, hy)
+        if not pads:
+            raise ValueError(
+                f"the hole at ({hx:.3f},{hy:.3f}) has a mask aperture but "
+                f"no copper flash in {job.files['cu'].name} — the lap band "
+                f"needs the DESIGN pad diameter, and a pad drawn some other "
+                f"way is a pad this generator refuses to guess at")
+        _, _, pshape, pdia = pads[0]
+        if pshape != "C" or pdia is None:
+            raise ValueError(
+                f"copper pad over the hole at ({hx:.3f},{hy:.3f}) is "
+                f"{pshape!r}, not a circle — see the mask refusal above")
+        out.append({"hx": hx, "hy": hy, "hole_d": hd,
+                    "mask_d": float(mdia), "pad_d": float(pdia)})
+    return out
+
+
+def scrub_mask(job: PcbJob, work_dir: Path) -> Path:
+    """The mask file `paint` should read for THIS job's scrub phase. On
+    anything but side 2 of a flipped board that is the export itself; on
+    side 2 it is a filtered copy beside the engine's Tcl, with every
+    hole-centred flash rewritten to a D02 move so paint never laps a bore."""
+    if job.side != pcbjob.SIDE_ORDER[1]:
+        return job.files["mask"]
+    hp = hole_apertures(job)
+    centres = [(h["hx"], h["hy"]) for h in hp]
+
+    def drop(x: float, y: float) -> bool:
+        return any(abs(x - cx) <= LAP_CONCENTRIC_TOL
+                   and abs(y - cy) <= LAP_CONCENTRIC_TOL
+                   for cx, cy in centres)
+
+    out = Path(work_dir) / "mask-scrub.gbr"
+    n = boardmaps.rewrite_flashes(job.files["mask"], out, drop)
+    if n != len(hp):
+        raise ValueError(f"filtered {n} mask flashes but classified "
+                         f"{len(hp)} hole-centred apertures — the two scans "
+                         f"disagree about the same file")
+    text = out.read_text()
+    if "D03*" not in text and "D01*" not in text:
+        raise ValueError(
+            "side 2's mask holds ONLY hole-centred apertures — paint would "
+            "run on an empty layer and FlatCAM's failure mode there is not "
+            "modeled; an all-annular side-2 scrub needs its own path the "
+            "day a real board asks for it")
+    return out
+
+
+def annular_laps(job: PcbJob,
+                 win: boardmaps.BoardWindow | None = None
+                 ) -> tuple[list[str], dict]:
+    """Side 2's annular laps as ready-to-append scrub-op lines (machine
+    frame, phase feeds, no arcs). -> (lines, stats).
+
+    Band per hole (tool radius r, everything else a design number):
+        rc_max = min(pad_r  − r − (INSIDE + MARGIN),          # stay ON copper
+                     mask_r − r − max(deflate, WINDOW+MARGIN))# and IN the window
+        rc_min =     hole_r + r + (RIM + MARGIN)              # stay OFF the rim
+    An empty band refuses by hole — a pad with no legal lap is a design
+    problem the operator must see, not a pad silently skipped (a skipped pad
+    would pass the gate: scrub COVERAGE deliberately has no bar).
+    One lap at the band's midpoint when the band is narrower than the
+    stepover; else evenly spaced laps no farther apart than the stepover."""
+    # flip.py owns the two bars but sits above this module in the import
+    # graph (flip → checks → reemit), so they are imported at call time
+    from .flip import SCRUB_ANNULAR_INSIDE, SCRUB_ANNULAR_RIM
+    if job.side != pcbjob.SIDE_ORDER[1]:
+        raise ValueError("annular laps are side 2's geometry — side 1 has "
+                         "no holes yet and paint's disc laps are right")
+    p = job.phases["scrub"]
+    tool = job.phase_tool("scrub")
+    r = tool.diameter / 2
+    win = win or boardmaps.extents(job.files["edge"])
+    off = boardmaps.machine_offset(win, job.anchor, job.mirror)
+    step = tool.diameter * (1.0 - float(p["overlap"]) / 100.0)
+    depth, feed, plunge = (float(p[k]) for k in ("depth", "feed", "plunge"))
+    inside_need = SCRUB_ANNULAR_INSIDE + SCRUB_LAP_MARGIN
+    rim_need = SCRUB_ANNULAR_RIM + SCRUB_LAP_MARGIN
+    window_need = max(float(p["offset"]), SCRUB_WINDOW_MIN + SCRUB_LAP_MARGIN)
+    lines: list[str] = []
+    nlaps = 0
+    pads = hole_apertures(job)
+    for h in pads:
+        pad_r, mask_r, hole_r = (h["pad_d"] / 2, h["mask_d"] / 2,
+                                 h["hole_d"] / 2)
+        rc_max = min(pad_r - r - inside_need, mask_r - r - window_need)
+        rc_min = hole_r + r + rim_need
+        if rc_min > rc_max + 1e-9:
+            raise ValueError(
+                f"no legal annular lap on the Ø{h['pad_d']:g} pad / "
+                f"Ø{h['mask_d']:g} aperture over the Ø{h['hole_d']:g} hole "
+                f"at ({h['hx']:.3f},{h['hy']:.3f}): the tool centre must "
+                f"stay ≤{rc_max:.3f} and ≥{rc_min:.3f} — a pad this tight "
+                f"cannot be scrubbed with a Ø{tool.diameter:g} tool")
+        band = rc_max - rc_min
+        n = 1 + int(band / step)
+        radii = ([0.5 * (rc_min + rc_max)] if n == 1
+                 else list(np.linspace(rc_min, rc_max, n)))
+        for rc in radii:
+            nseg = max(24, int(np.ceil(
+                np.pi / np.arccos(1.0 - SCRUB_LAP_CHORD / rc))))
+            t = np.linspace(0.0, 2.0 * np.pi, nseg + 1)
+            bx = h["hx"] + rc * np.cos(t)
+            by = h["hy"] + rc * np.sin(t)
+            bx[-1], by[-1] = bx[0], by[0]      # closed exactly, not to eps
+            mx, my = boardmaps.machine_xy(off, job.mirror, bx, by)
+            lines += [f"G0 Z2.0000",
+                      f"G0 X{mx[0]:.4f} Y{my[0]:.4f}",
+                      f"G1 Z{depth:.4f} F{plunge:g}",
+                      f"G1 X{mx[1]:.4f} Y{my[1]:.4f} F{feed:g}"]
+            lines += [f"G1 X{x:.4f} Y{y:.4f}"
+                      for x, y in zip(mx[2:], my[2:])]
+            nlaps += 1
+    lines.append("G0 Z2.0000")
+    return lines, {"pads": len(pads), "laps": nlaps,
+                   "margin": SCRUB_LAP_MARGIN, "chord": SCRUB_LAP_CHORD}
+
+
+def scrub_op(nc_path: Path, job: PcbJob,
+             win: boardmaps.BoardWindow | None = None) -> OpResult:
+    """The scrub phase's ONE op: FlatCAM's paint interchange strict-read
+    (read_phase, unchanged), and — on side 2 of a flipped board — the
+    annular laps appended in the same op: same tool, same feeds, same floor,
+    one stage marker. Anything single-sided or side-1 passes through
+    byte-identical to read_phase, which is why the coupon goldens cannot
+    move. This is the entry every side-2 scrub assembly must use; the paint
+    file it reads must have been generated against scrub_mask()'s filtered
+    input, or the gate will refuse the result exactly as it did the day the
+    tripwire was written."""
+    base = read_phase(nc_path, job, "scrub")
+    if job.side != pcbjob.SIDE_ORDER[1]:
+        return base
+    lap_lines, _ = annular_laps(job, win=win)
+    lines = base.lines + lap_lines
+    plen = path_length(lines)
+    return OpResult(label=base.label, kind=base.kind, tool=base.tool,
+                    lines=lines, path_len_mm=plen,
+                    est_min=plen / max(float(job.phases["scrub"]["feed"]),
+                                       1.0))

@@ -35,6 +35,11 @@ WHAT MUST HOLD
     re-derivation and falsified by a deliberately wrong mirror
   - the TCL is templated twice from one document: side A with no `mirror` line
     and no cutout, side B with the mirror and no drills
+  - side 2's scrub is the APERTURE-CLASS SPLIT (the paint-across-bores
+    finding, made law): `paint` reads a FILTERED mask in which hole-centred
+    flashes became D02 moves, and the hole-centred pads get in-repo annular
+    laps (reemit.scrub_op) that satisfy the same checks that refused paint's
+    disc laps the day the tripwire was written
   - the PIN BLOCK composes the shipped machinery: ops/drill.py's spot-face and
     peck, positions symmetric about the DERIVED mirror line, keep-out carried
     into every program of both setups
@@ -157,8 +162,14 @@ B_CU = flashes([(VIA_PAD, [V1, V2]), (GAUGE_PAD, [G1]), (SMD_PAD, [SMD])])
 # GAUGES get NO opening on purpose — orbit SPEC: they are not solderable and
 # not in the scrub set, and a Ø1.6 pad over a Ø1.0 hole has NO legal annular
 # lap (0.8 annulus needs the tool centre both <= 0.5 and >= 0.85: empty).
-F_MASK = flashes([(2.8, [V1, V2])])
-B_MASK = flashes([(2.8, [V1, V2]), (2.4, [SMD])])
+# Apertures EQUAL their pads: the mask is the scrub region's source, and an
+# aperture proud of its pad by more than (deflate 0.15 − plateau bar 0.05)
+# hands paint a lap ON the copper edge — this fixture originally carried
+# 2.8/2.4 over 2.6/2.0 pads and the live gate failed `scrub plateau margin`
+# on BOTH sides' paint the day the all-ten assertion landed. Real exports
+# (the coupon) open the mask at pad size; the fixture now does too.
+F_MASK = flashes([(VIA_PAD, [V1, V2])])
+B_MASK = flashes([(VIA_PAD, [V1, V2]), (SMD_PAD, [SMD])])
 F_SILK = strokes([((2.0, 8.5), (18.0, 8.5))])
 B_SILK = strokes([((2.0, 8.5), (18.0, 8.5)), ((3.0, 13.0), (9.0, 13.0))])
 B_PASTE = flashes([(1.8, [SMD])])
@@ -570,6 +581,138 @@ import inspect  # noqa: E402
 src = inspect.getsource(engine.run)
 check("engine.run resolves work_dir to absolute itself (the cwd fold-in)",
       "Path(work_dir).resolve()" in src and "cwd" in src)
+
+# ==================================== side 2's annular laps (no raster needed)
+# The paint-across-bores finding, FIXED by the aperture-class split: paint
+# keeps the SMD apertures (fed a filtered mask), hole-centred apertures get
+# in-repo annular laps. This section proves the split's design numbers with
+# no gerbv and no FlatCAM; the live section proves the gate passes the result.
+print("\nside 2's annular laps: the aperture-class split (no raster needed):")
+import copy  # noqa: E402
+import re  # noqa: E402
+
+mfl = bm.flashes(G / "stub2-B_Mask.gbr")
+check("the flash scan reads the mask's apertures as DESIGN numbers",
+      len(mfl) == 3
+      and sorted((round(d, 3), s) for _, _, s, d in mfl)
+      == [(2.0, "C"), (2.6, "C"), (2.6, "C")])
+same = TD / "silk-copy.gbr"
+bm.rewrite_flashes(G / "stub2-B_Silkscreen.gbr", same, lambda x, y: False)
+check("rewrite_flashes with nothing to drop is byte-identical "
+      "(draws untouched)",
+      same.read_text() == (G / "stub2-B_Silkscreen.gbr").read_text())
+hp = reemit.hole_apertures(back)
+check("hole-centred classification: the two vias and ONLY them (gauge has "
+      "no aperture, bore has no pad)",
+      [(h["hx"], h["hy"]) for h in hp] == [V1, V2]
+      and all(h["mask_d"] == VIA_PAD and h["pad_d"] == VIA_PAD
+              and h["hole_d"] == VIA_HOLE for h in hp))
+fmp = reemit.scrub_mask(back, TD)
+fmt_ = fmp.read_text()
+check("scrub_mask: via flashes became D02 MOVES (modal state intact), the "
+      "SMD flash still fires",
+      fmp.name == "mask-scrub.gbr" and fmt_.count("D03*") == 1
+      and f"X{gnum(V1[0])}Y{gnum(V1[1])}D02*" in fmt_
+      and f"X{gnum(V2[0])}Y{gnum(V2[1])}D02*" in fmt_
+      and f"X{gnum(SMD[0])}Y{gnum(SMD[1])}D03*" in fmt_)
+check("side 1 and a single-sided job get the export back untouched",
+      reemit.scrub_mask(front, TD) == front.files["mask"])
+check("render_tcl paints the OVERRIDE mask when handed one",
+      f"open_gerber {fmp} -outname mask"
+      in engine.render_tcl(back, win, TD / "work" / "back", mask_path=fmp))
+
+lap_lines, lstats = reemit.annular_laps(back, win=win)
+check("two hole-centred pads -> two laps (band 0.05 < stepover 0.165)",
+      lstats == {"pads": 2, "laps": 2, "margin": 0.05, "chord": 0.01},
+      lstats)
+_cre = re.compile(r"X([-\d.]+) Y([-\d.]+)")
+laps, _cur = [], []
+for ln in lap_lines:
+    if ln.startswith("G0 Z"):
+        if _cur:
+            laps.append(_cur)
+            _cur = []
+        continue
+    m2 = _cre.search(ln)
+    if m2:
+        _cur.append((float(m2.group(1)), float(m2.group(2))))
+if _cur:
+    laps.append(_cur)
+offb2 = bm.machine_offset(win, back.anchor, back.mirror)
+ok_geo = len(laps) == 2
+geo_note = []
+for lp in laps:
+    xs = np.array([q[0] for q in lp])
+    ys = np.array([q[1] for q in lp])
+    bx3, by3 = bm.board_xy(offb2, "x", xs, ys)
+    cx, cy = min((V1, V2),
+                 key=lambda c: math.hypot(bx3[0] - c[0], by3[0] - c[1]))
+    rr = np.hypot(bx3 - cx, by3 - cy)
+    rc = float(rr.mean())
+    ang = np.unwrap(np.arctan2(by3 - cy, bx3 - cx))
+    sag = rc * (1 - math.cos(float(np.abs(np.diff(ang)).max()) / 2))
+    ok_geo &= (float(np.abs(rr - rc).max()) < 1e-3
+               and abs(rc - 0.925) < 1e-3          # the band's midpoint
+               and lp[0] == lp[-1]                 # closed exactly
+               # the two flip bars, re-derived LONGHAND from design numbers
+               and VIA_PAD / 2 - (rc + 0.15)
+               >= flip.SCRUB_ANNULAR_INSIDE + 0.049
+               and (rc - 0.15) - VIA_HOLE / 2
+               >= flip.SCRUB_ANNULAR_RIM + 0.049
+               and sag <= 0.0101)                  # one raster pixel
+    geo_note.append(f"rc={rc:.4f} sag={sag:.4f}")
+check("every lap vertex ON its circle at the band midpoint, closed, both "
+      "bars hold with the engineered margin, chords under one pixel",
+      ok_geo, "; ".join(geo_note))
+_fw = set(re.findall(r"F([\d.]+)", "\n".join(lap_lines)))
+_zw = [float(z) for z in re.findall(r"G1 Z([-\d.]+)", "\n".join(lap_lines))]
+check("lap feeds are the phase's own pair and the floor is side 2's depth",
+      _fw == {"400", "200"} and bool(_zw)
+      and all(abs(z + 0.19) < 1e-9 for z in _zw))
+
+print("\n...and its refusals, each by name:")
+
+
+def with_files(sj, **repl):
+    b = copy.copy(sj)
+    b.files = {**sj.files, **repl}
+    return b
+
+
+(G / "v-mask-gauge.gbr").write_text(
+    flashes([(2.8, [V1, V2]), (2.4, [SMD]), (1.6, [G1])]))
+caught("a gauge handed a mask aperture refuses: a 0.35 ring has no legal lap",
+       lambda: reemit.annular_laps(
+           with_files(back, mask=G / "v-mask-gauge.gbr"), win=win),
+       "no legal annular lap")
+(G / "v-mask-ecc.gbr").write_text(
+    flashes([(2.8, [(V1[0] + 0.6, V1[1])]), (2.8, [V2]), (2.4, [SMD])]))
+caught("an aperture overlapping a hole OFF-CENTRE refuses",
+       lambda: reemit.hole_apertures(
+           with_files(back, mask=G / "v-mask-ecc.gbr")),
+       "OFF-CENTRE")
+(G / "v-mask-rect.gbr").write_text(
+    HDR + "%ADD10R,2.600000X2.600000*%\n%ADD11C,2.800000*%\n"
+    "%ADD12C,2.400000*%\nG01*\nD10*\n"
+    f"X{gnum(V1[0])}Y{gnum(V1[1])}D03*\nD11*\n"
+    f"X{gnum(V2[0])}Y{gnum(V2[1])}D03*\nD12*\n"
+    f"X{gnum(SMD[0])}Y{gnum(SMD[1])}D03*\nM02*\n")
+caught("a non-circle aperture over a hole refuses",
+       lambda: reemit.hole_apertures(
+           with_files(back, mask=G / "v-mask-rect.gbr")),
+       "not a circle")
+(G / "v-cu-nopad.gbr").write_text(
+    flashes([(VIA_PAD, [V2]), (GAUGE_PAD, [G1]), (SMD_PAD, [SMD])]))
+caught("a masked hole with no copper flash refuses (no pad number to trust)",
+       lambda: reemit.hole_apertures(
+           with_files(back, cu=G / "v-cu-nopad.gbr")),
+       "no copper flash")
+caught("annular laps on side 1 refuse (no holes there yet)",
+       lambda: reemit.annular_laps(front, win=win), "side 2")
+(G / "v-mask-lpc.gbr").write_text(
+    flashes([(2.8, [V1, V2])]).replace("%LPD*%", "%LPC*%"))
+caught("clear polarity refuses — a cleared flash is not ink",
+       lambda: bm.flashes(G / "v-mask-lpc.gbr"), "LPC")
 
 # ============================================================== the pin block
 print("\nthe pin block, composed from the shipped machinery:")
@@ -1152,12 +1295,23 @@ if live:
           and set(out["front"]) == {"iso", "clear", "scrub", "drills"}
           and set(out["back"]) == {"iso", "clear", "scrub", "cutout"},
           {s: sorted(out[s]) for s in out})
+    check("side 2's engine painted the FILTERED mask (the Tcl says so)",
+          (work / "back" / "mask-scrub.gbr").is_file()
+          and "mask-scrub.gbr" in (work / "back" / "engine.tcl").read_text()
+          and "mask-scrub" not in (work / "front"
+                                   / "engine.tcl").read_text())
     lprogs = {}
     for side in job.sides:
         sj = pcbjob.side_view(job, side)
         lprogs[side] = {}
-        ops = {ph: reemit.read_phase(nc, sj, ph)
+        ops = {ph: (reemit.scrub_op(nc, sj, win=ctx.tight)
+                    if ph == "scrub" else reemit.read_phase(nc, sj, ph))
                for ph, nc in out[side].items()}
+        if side == "front":
+            check("side 1: scrub_op IS read_phase, byte for byte (the "
+                  "single-sided/coupon path cannot move)",
+                  ops["scrub"].lines == reemit.read_phase(
+                      out[side]["scrub"], sj, "scrub").lines)
         check(f"{side}: every phase re-emits clean under the param-match law",
               all(o.lines for o in ops.values()),
               ", ".join(f"{k}:{len(v.lines)}" for k, v in sorted(ops.items())))
@@ -1180,34 +1334,25 @@ if live:
           "PASS",
           all(lreps[n].ok for n in lreps if not n.endswith("/scrub")),
           str({n: v for n, v in bad.items() if not n.endswith("/scrub")}))
-    # THE FINDING, asserted as the loud gap it is (Article II, not yet law):
-    # FlatCAM's `paint mask` fills each aperture with disc laps and knows
-    # nothing about the Excellon, so on side 2 — where every hole is already
-    # bored — it drives the spring tip straight across them. The gate refuses
-    # it, which is correct and which is the whole reason the check exists.
-    # When the annular-lap generator lands, THIS assertion is what tells the
-    # next agent to update it.
+    # THE TRIPWIRE, FLIPPED (2026-07-30, the paint-across-bores finding made
+    # law): `paint` used to lap straight across side 2's bores because the
+    # mask layer knows nothing about the Excellon — the gate refused it at
+    # rim margin −0.60 and THIS assertion was the loud TODO. The generator
+    # now splits by aperture class (reemit.scrub_mask filters what paint
+    # reads; reemit.scrub_op appends the annular laps), and the SAME checks
+    # that refused the old geometry now pass the new — with the hand-built
+    # disc-lap negative above still proving they can refuse.
     s2 = by_name(lreps["back/scrub"].checks)
-    check("KNOWN OPEN: FlatCAM's paint cannot make side 2's ANNULAR laps, and "
-          "the gate says so",
-          not lreps["back/scrub"].ok
-          and not s2["annular scrub clear of the hole rim"].ok,
-          f"annular rim {s2['annular scrub clear of the hole rim'].value:.4f} "
-          f"(>= {flip.SCRUB_ANNULAR_RIM}) — `paint` laps across the drilled "
-          f"holes")
-    print("  " + "=" * 68)
-    print("  TODO(engine) — SIDE 2's SCRUB GEOMETRY IS NOT GENERATED YET.")
-    print("  `paint mask` fills the mask apertures with disc laps from the")
-    print("  mask layer alone. On side 2 the holes are already drilled, and")
-    print("  orbit SPEC.md's scrub rule wants ANNULAR laps: tool edge >=")
-    print(f"  {flip.SCRUB_ANNULAR_INSIDE} inside copper AND >= "
-          f"{flip.SCRUB_ANNULAR_RIM} outside the hole rim. The check is")
-    print("  landed and refuses the wrong geometry; the GENERATOR is the")
-    print("  next piece of work (paint a mask minus the dilated holes, or")
-    print("  emit the laps in-repo like the silk strokes). Board B cannot")
-    print("  cut its side-2 scrub until it exists — which is the gate doing")
-    print("  its job, not a hole in it.")
-    print("  " + "=" * 68)
+    check("side 2's scrub PASSES the gate: paint kept off the bores, "
+          "annular laps on every hole-centred pad",
+          lreps["back/scrub"].ok,
+          f"inside {s2['annular scrub inside copper'].value:.4f} "
+          f"(>= {flip.SCRUB_ANNULAR_INSIDE}), rim "
+          f"{s2['annular scrub clear of the hole rim'].value:.4f} "
+          f"(>= {flip.SCRUB_ANNULAR_RIM})")
+    check(f"ALL {len(lreps)} live reports PASS — the flip generates, "
+          f"re-emits and verifies end to end",
+          all(lreps[n].ok for n in lreps), str(bad))
 
 print(f"\nPCB TWOSIDED {'FAIL: ' + ', '.join(fails) if fails else 'PASS'}")
 sys.exit(1 if fails else 0)

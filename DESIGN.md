@@ -1674,6 +1674,62 @@ BOTH CI jobs, raster sections skipping loudly without gerbv).
 `golden_mango` 5/5 EXACT MATCH; nothing in `tests/golden_pcb/` re-blessed,
 and the byte-identical re-assembly above is the proof rather than the claim.
 
+## 2026-07-31: side 2's scrub generator — the aperture-class split
+
+The WS8 tripwire is FLIPPED. `paint` drove the spring tip across side 2's
+bores because the mask layer knows nothing about the Excellon (previous
+entry: rim margin −0.60 on the fixture, the gate refusing correctly with no
+generator to pass it). The fix splits side 2's scrub by APERTURE CLASS, and
+no check moved to make it pass:
+
+- **SMD apertures keep FlatCAM `paint`** — fed a FILTERED mask
+  (`reemit.scrub_mask`, written beside the engine's Tcl) in which every
+  hole-centred flash is rewritten to a **D02 move**: zero ink, and the modal
+  X/Y state every later gerber line sees is bit-identical (deleting the line
+  would hand the next partially-worded coordinate a stale position).
+  Filtering an INPUT gerber is not a G-code emission; Article V is
+  untouched. `render_tcl` grew a `mask_path` override — the mask object's
+  only consumer in that script is `paint`.
+- **Hole-centred apertures get in-repo ANNULAR laps** (`reemit.annular_laps`
+  / `scrub_op`, the silk-strokes pattern): concentric segment polylines —
+  no arcs, Article V — around the hole the Excellon declares, appended to
+  the scrub op with the same tool, feeds and floor, one stage marker.
+  Classification reads DESIGN numbers only (gerber flash text +
+  `boardmaps.flashes`, new, plus the Excellon — no raster bias to argue
+  about). The lap band per hole, tool radius r:
+  `rc_max = min(pad_r − r − (0.15+0.05), mask_r − r − max(deflate, 0.05+0.05))`,
+  `rc_min = hole_r + r + (0.20+0.05)` — flip.py's two bars plus a 0.05
+  engineered margin (the checks re-measure the bytes with their own EDT,
+  ≈0.012 of eps + slop; a lap that needs the margin is a lap on the edge of
+  levering a pad off). Chord sagitta ≤ 0.01mm — one raster pixel — so the
+  polygon and every raster reading agree. An EMPTY band refuses BY HOLE:
+  scrub coverage deliberately has no bar, so a silently skipped pad would
+  pass the gate — the refusal is the only honest outcome. So do an aperture
+  overlapping a hole OFF-CENTRE, a non-circle aperture or pad over a hole,
+  clear polarity, and a side-2 mask left with nothing for paint to do.
+
+On the fixture: two laps at rc 0.925 (the band midpoint — the suite's own
+synthetic laps chose the same number independently), live gate margins
+**inside 0.2101 / rim 0.2621** against 0.15/0.20, and **ALL 10 live reports
+PASS** — the flip now generates, re-emits and verifies end to end. Side 1
+and the single-sided lane are passthrough by construction (`scrub_op` IS
+`read_phase` there, asserted byte-for-byte on the live output; the coupon
+goldens did not move).
+
+**The all-ten assertion immediately caught a second defect — in the
+FIXTURE:** its mask apertures were 0.2–0.4 proud of their pads (2.8/2.4
+over 2.6/2.0), which hands `paint` a deflated region whose lap edge lands ON
+or past the copper boundary — `scrub plateau margin` failed on BOTH sides'
+paint, a failure the old suite never asserted (it only pinned back/scrub's
+annular refusal; the agent's own 8-of-10 tally was this, unexamined). Real
+exports open the mask at pad size; the fixture now does too, with the
+lineage in its comment. The rule of thumb it leaves behind: an aperture may
+sit proud of its pad by at most (deflate − plateau bar) before paint scrubs
+the copper edge.
+
+13 suites green on both kernels; `golden_mango` 5/5 EXACT MATCH; nothing
+re-blessed.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

@@ -44,7 +44,7 @@ import subprocess
 import time
 from pathlib import Path
 
-from . import boardmaps, pcbjob
+from . import boardmaps, pcbjob, reemit
 from .pcbjob import PcbJob
 
 PINNED_COMMIT = "16e635abd411d49f69012c0d63317c53b0e39724"
@@ -71,7 +71,7 @@ def engine_phases(job: PcbJob) -> tuple[str, ...]:
 
 
 def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
-               work_dir: Path) -> str:
+               work_dir: Path, mask_path: Path | None = None) -> str:
     """The one Tcl this lane ever runs: templated, transform DERIVED.
 
     A double-sided document runs this TWICE — once per side view, each with
@@ -80,6 +80,13 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     all (side A is machined front-up and needs none), and the offset the
     transform derives from that mirror. The drills are bored in SIDE A's
     setup only, so the Excellon is opened only where a `drills` phase exists.
+
+    `mask_path` overrides the mask artwork `paint` reads (the ONLY consumer
+    of the mask object in this script): on side 2 run() hands in
+    reemit.scrub_mask()'s filtered copy, in which every hole-centred flash
+    is a D02 move, so paint never drives the spring tip across a bore (the
+    2026-07-30 paint-across-bores finding; the hole-centred pads get
+    in-repo annular laps at assembly instead).
     """
     dx, dy = boardmaps.machine_offset(win, job.anchor, job.mirror)
     ph = job.phases
@@ -95,9 +102,12 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
         + (f"; mirror {job.mirror}" if job.side else ""),
         f"set OUT {work_dir}",
     ]
+    sources = {"cu": job.files["cu"],
+               "mask": mask_path or job.files["mask"],
+               "edge": job.files["edge"]}
     objs = ["cu", "mask", "edge"]
     for name in objs:
-        L.append(f"open_gerber {job.files[name]} -outname {name}")
+        L.append(f"open_gerber {sources[name]} -outname {name}")
     if "drills" in gen:
         L.append(f"open_excellon {job.files['drl']} -outname drl")
         objs.append("drl")
@@ -223,8 +233,12 @@ def run(job: PcbJob, work_dir: Path) -> dict[str, Path]:
     work_dir = Path(work_dir).resolve()
     work_dir.mkdir(parents=True, exist_ok=True)
     win = boardmaps.extents(job.files["edge"])
+    # side 2 paints a FILTERED mask (hole-centred flashes -> D02 moves);
+    # everywhere else this is the export itself, byte-for-byte the same Tcl
+    # as before the split existed
+    mask_path = reemit.scrub_mask(job, work_dir)
     tcl = work_dir / "engine.tcl"
-    tcl.write_text(render_tcl(job, win, work_dir))
+    tcl.write_text(render_tcl(job, win, work_dir, mask_path=mask_path))
     log = work_dir / "engine.log"
     expected = {ph: work_dir / PHASE_NC[ph] for ph in engine_phases(job)}
     done = work_dir / SENTINEL_FILE

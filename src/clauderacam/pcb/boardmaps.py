@@ -162,6 +162,98 @@ def _scan_coords(gbr_path: Path):
     return np.array(pts), widest
 
 
+_AD_FULL = re.compile(r"%ADD(\d+)([A-Za-z_.$][A-Za-z0-9_.$]*?)"
+                      r"(?:,([^*]*))?\*%")
+_DSEL = re.compile(r"^(?:G54)?D(\d+)\*\s*$")
+
+
+def _flash_scan(gbr_path: Path):
+    """Shared strict scan for the two flash readers below: -> (text, lines,
+    events). Each event is (line_index, op_code, x, y, shape, dia) for every
+    D01/D02/D03 with a resolved modal position; shape is the selected
+    aperture's template letter ("C", "R", "O", "P") or macro name, dia its
+    first modifier (a circle's diameter) or None. Strictness matches
+    _scan_coords (MM, no trailing-zero suppression) plus two of its own:
+    %LPC*% (clear polarity) refuses — a cleared flash is NOT ink and a scan
+    that counted it would invent copper — and so does a line carrying more
+    than one D0n op, which the per-line rewrite below could not split."""
+    text = Path(gbr_path).read_text(errors="replace")
+    fs = _FS.search(text)
+    if not fs:
+        raise ValueError(f"{gbr_path}: no %FSLAX..*% format spec")
+    if "%FST" in text:
+        raise ValueError(f"{gbr_path}: trailing-zero suppression is not "
+                         f"supported — the gate does not guess digits")
+    mo = _MO.search(text)
+    if not mo or mo.group(1) != "MM":
+        raise ValueError(f"{gbr_path}: units are not MM — refuse rather "
+                         f"than convert blind")
+    if "%LPC*%" in text:
+        raise ValueError(f"{gbr_path}: %LPC*% clear polarity — a cleared "
+                         f"flash is not ink, and this scan refuses rather "
+                         f"than misread it as some")
+    xdiv = 10.0 ** int(fs.group(2))
+    ydiv = 10.0 ** int(fs.group(4))
+    defs: dict[str, tuple[str, float | None]] = {}
+    for m in _AD_FULL.finditer(text):
+        mods = m.group(3)
+        dia = None
+        if mods:
+            try:
+                dia = float(mods.split("X")[0])
+            except ValueError:
+                dia = None
+        defs[m.group(1)] = (m.group(2), dia)
+    lines = text.splitlines()
+    events = []
+    cur: dict[str, float | None] = {"X": None, "Y": None}
+    shape, dia = "", None
+    for k, line in enumerate(lines):
+        sel = _DSEL.match(line.strip())
+        if sel:
+            shape, dia = defs.get(sel.group(1), ("", None))
+            continue
+        ops = _OP.findall(line)
+        if not ops:
+            continue
+        if len(ops) > 1:
+            raise ValueError(f"{gbr_path}:{k + 1}: {len(ops)} draw/flash ops "
+                             f"on one line — the per-line scan cannot split "
+                             f"them")
+        for axis, digits in _COORD.findall(line):
+            cur[axis] = int(digits) / (xdiv if axis == "X" else ydiv)
+        if cur["X"] is None or cur["Y"] is None:
+            continue
+        events.append((k, ops[0], cur["X"], cur["Y"], shape, dia))
+    return text, lines, events
+
+
+def flashes(gbr_path: Path) -> list[tuple[float, float, str, float | None]]:
+    """Every D03 flash in a gerber: (x, y, shape, dia). The scrub lane's
+    aperture-class split reads pads and mask openings from here — flash
+    positions and circle diameters are DESIGN numbers straight from the
+    file's text, with no raster bias to argue about."""
+    _, _, events = _flash_scan(gbr_path)
+    return [(x, y, shape, dia) for _, op, x, y, shape, dia in events
+            if op == "3"]
+
+
+def rewrite_flashes(gbr_path: Path, out_path: Path, drop) -> int:
+    """Copy a gerber, turning every D03 flash for which drop(x, y) is true
+    into a D02 MOVE to the same point: zero ink, and the modal X/Y state
+    every later line sees is bit-identical (deleting the line outright would
+    hand the next partially-worded coordinate a stale position). Everything
+    else passes through byte-identical. -> count rewritten."""
+    _, lines, events = _flash_scan(gbr_path)
+    n = 0
+    for k, op, x, y, _, _ in events:
+        if op == "3" and drop(x, y):
+            lines[k] = lines[k].replace("D03*", "D02*")
+            n += 1
+    Path(out_path).write_text("\n".join(lines) + "\n")
+    return n
+
+
 def extents(edge_gbr: Path, dpi: int = DPI_DEFAULT,
             cross_check: bool = True) -> BoardWindow:
     """Board window from Edge.Cuts centerline extents. With cross_check
