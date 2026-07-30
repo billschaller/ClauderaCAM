@@ -69,8 +69,26 @@ def _pth(fp, num, x, y, dia, drill, npth=False):
     pad.SetShape(pcbnew.PAD_SHAPE_CIRCLE)
     pad.SetSize(VECTOR2I(NM(dia), NM(dia)))
     pad.SetDrillSize(VECTOR2I(NM(drill), NM(drill)))
-    pad.SetLayerSet(pcbnew.LSET.AllCuMask() if not npth
-                    else pcbnew.LSET(pcbnew.LSET.AllCuMask()))
+    # LSET.AllCuMask() is the bit-mask of all COPPER layers — the name does
+    # not mean "Cu + Mask". Shipping it bare left every hand-built PTH pad
+    # (JP1-7, SW1) with no solder-mask aperture: 17 pads the scrub phase
+    # could never reach (bench-found 2026-07-30, Bill's loupe). Soldered
+    # pads open both masks, like every library footprint's "*.Cu" "*.Mask".
+    # NPTH (M3 bores) stays copper-only ON PURPOSE: a mask aperture there
+    # would send the spring tool across a future bore (the side-2
+    # paint-across-bores class) for a hole nothing solders to.
+    # The LSET() COPY below is load-bearing: AllCuMask() hands back the
+    # shared static itself, and AddLayer on it poisons every later caller
+    # IN-PROCESS — measured 2026-07-30: the serializer compares pad sets
+    # against that static to choose the "*.Cu" shorthand, so one mutated
+    # static silently wrote ALL 35 THT pads (library ones included) as
+    # copper-only while the pre-save assert read the live objects and
+    # passed. Mutate a copy, never the static.
+    lset = pcbnew.LSET(pcbnew.LSET.AllCuMask())
+    if not npth:
+        lset.AddLayer(pcbnew.F_Mask)
+        lset.AddLayer(pcbnew.B_Mask)
+    pad.SetLayerSet(lset)
     pad.SetPos(VECTOR2I(NM(x), NM(y)))
     fp.Add(pad)
     return pad
@@ -668,8 +686,14 @@ def assert_masks_and_pads(board):
             assert pad.GetLocalSolderMaskMargin() in (None, 0)
             if pad.GetAttribute() == pcbnew.PAD_ATTRIB_NPTH:
                 continue
-            if not pad.IsOnLayer(pcbnew.B_Mask):
-                continue
+            # Every solderable pad on this single-sided board MUST open
+            # B.Mask. The old form of this loop SKIPPED pads that weren't
+            # on B.Mask — which is exactly the defect it existed to refuse:
+            # 17 mask-blind PTH pads (JP1-7, SW1) sailed through the skip
+            # and shipped under solder mask (bench-found 2026-07-30).
+            assert pad.IsOnLayer(pcbnew.B_Mask), \
+                f"mask-blind pad {fp.GetReference()}.{pad.GetNumber()}: " \
+                f"solderable but opens no B.Mask aperture"
             s = pad.GetSize(pcbnew.B_Cu)
             narrow = min(s.x, s.y) / 1e6
             if narrow < smallest[0]:

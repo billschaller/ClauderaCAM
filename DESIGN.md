@@ -1848,6 +1848,71 @@ untouched. The OLD golden board was the live negative for two of the new
 laws — its solid jumper annuli and 0.60 apertures failed them on first
 contact, which is the incidents-make-law loop closing in one commit.
 
+## 2026-07-30: the mask-blind pad incident — 17 sealed pads the loupe found
+
+**The bench found what the gate could not see.** Mid-run on Board A —
+mill done, mask cured, silk lasered, scrub run — Bill's loupe: "some of
+the through-hole pads did not get cleared." Measured against the shipped
+scrub program: every mask aperture HAD strokes; the 17 pads that stayed
+sealed (JP1–JP7 both ends, SW1 all three) had **no B.Mask aperture in
+the artwork at all**. The scrub phase paints mask apertures — it cannot
+clear an opening the design never drew. `checks.py`'s own comment had
+deferred scrub COVERAGE "until Board A's scrubbed pads are inspected
+under the loupe"; this was that inspection.
+
+**Root cause #1 — the name trap.** `tools-layout.py`'s `_pth()` set
+hand-built pads' layers to `pcbnew.LSET.AllCuMask()` — which means "the
+set of all copper layers", not "Cu + Mask". Every library footprint pad
+carried `"*.Cu" "*.Mask"`; every hand-built PTH pad (jumpers, SW1)
+carried `"*.Cu"` alone. KiCad DRC has no rule for an unmasked THT pad,
+and the layout script's own `assert_masks_and_pads` **skipped** pads not
+on B.Mask — the exact defect it existed to refuse walked through its
+escape hatch. Both fixed: PTH pads now open F.Mask+B.Mask (NPTH stays
+copper-only on purpose — a mask aperture over an M3 bore would send the
+spring tool across a future hole for nothing), and the skip is now a
+hard `mask-blind pad` assert.
+
+**Root cause #2 — the static-aliasing trap (worse).** The first fix
+called `AddLayer` directly on `AllCuMask()`'s return — which is the
+shared static itself, not a copy. One mutation poisoned every later
+caller in-process: KiCad's serializer compares pad layer sets against
+that static to choose the `"*.Cu"` shorthand, so the saved board wrote
+ALL 35 THT pads — library footprints included — as copper-only, while
+the pre-save assert read the live objects and passed. 39 mask-blind
+pads, from code that meant to fix 17. `pcbnew.LSET(pcbnew.LSET.
+AllCuMask())` (the copy constructor) isolates the static; the comment in
+`_pth` now carries both traps.
+
+**Closure discipline (the board was already milled).** DRC 0 ×2 after
+rebuild; gerber re-export; raster closure against the pre-fix set:
+B_Cu / B_Paste / B_Silkscreen **0 differing pixels**, Excellon identical
+mod dates, B_Mask lost 0 px and gained exactly 17 clusters, each a full
+Ø2.1 disc at a JP/SW1 pad centre (two clip against neighbouring
+apertures they butt — JP5/C1). Live engine re-run, re-emit, full gate
+PASS — and **mill / silk / holes came out byte-identical to golden**, so
+the programs that already cut the bench board are exactly the programs
+the fixed board yields; only scrub changed (5392 lines, strokes over the
+17 new apertures). Silk byte-identical also proves no legend stroke ever
+landed near those pads — nothing cured white on them. Bench rescue is
+therefore one file: re-run the new program C with the board still
+fixtured (same G54 zero; re-scrubbing already-clear pads is a burnish,
+not a cut).
+
+**The law (Article II):** `mask_blind_checks` in `checks.py`, appended
+to the scrub program's report. Raster-judged so any pad spelling counts:
+a copper ring around a drilled hole (band hole+0.05..+0.30, inside the
+0.6 annular law) means SOLDERED; a soldered ring whose mask fraction is
+< 0.95 is a refusal. Exemptions, both because nothing solders there:
+bare bores (no copper ring — the M3 mounts), and **declared flip
+gauges** (`[[rules.gauge]]`, which the grammar already forces to name a
+real hole and carry a written reason — the twosided fixture's G1 gauge
+is the living specimen). A board with no copper-ringed holes passes
+vacuously. Negatives: sealing JP1.1's aperture on a copy of the blessed
+rasters is CAUGHT; the blessed board's 35 soldered rings PASS; the
+scrubbability negative's specimen moved to (112.0,−104.5) because its
+old spot merged with SW1.3's new aperture — the fixed board un-narrowed
+it.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

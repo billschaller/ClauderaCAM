@@ -126,7 +126,8 @@ from ..simulate import OP_MARK, GcodeError, MoveMetrics, parse_line
 from ..twosided import PIN_CLEAR
 from ..verify import Check, Report, contact_limit
 from . import boardmaps
-from .pcbjob import (PIN_PHASES, PROGRAM_PHASES,  # noqa: F401 (re-exported:
+from .pcbjob import (GAUGE_MATCH_TOL, PIN_PHASES,  # noqa: F401 (re-exported:
+                     PROGRAM_PHASES,
                      PcbJob, programs_of)         # the split moved to the
 #                                             grammar, checks.PROGRAM_PHASES
 #                                             stays a valid name for readers)
@@ -1559,6 +1560,71 @@ def scrubbability_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
                   f"{who} of {n} apertures; raster tol 2px")]
 
 
+MASK_RING_BAND = (0.05, 0.30)   # ring probed just outside the hole wall; the
+                                # outer 0.30 sits inside the 0.6 annular law,
+                                # so a pad's ring is always fully pad copper
+MASK_RING_OPEN = 0.95           # and its aperture (== pad, expansion 0
+                                # asserted board-side) must expose ~all of it
+
+
+def mask_blind_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
+    """Every drilled hole that carries a copper pad must open a mask
+    aperture over that pad's ring. Bench incident 2026-07-30: 17 THT pads
+    (JP1-7 both ends, SW1 all three) shipped with copper-only layer sets —
+    pcbnew's LSET.AllCuMask() means "the set of all Cu layers", not
+    "Cu + Mask", and the layout script's own mask assert SKIPPED pads that
+    weren't on B.Mask, the exact defect it existed to refuse. The cured
+    mask sealed all 17 pads; the scrub phase paints mask apertures, so it
+    had nothing to paint there, and the operator's loupe — not the gate —
+    found the sealed pads. Raster-judged so any pad spelling counts: a
+    copper ring around a hole means SOLDERED, and a soldered ring the mask
+    does not expose is a refusal. Two exemptions, both because nothing
+    solders there: bare bores (no copper ring — the M3 mounts), and
+    DECLARED flip gauges — [[rules.gauge]] entries, which the grammar
+    already forces to name a real hole and carry a written reason. An
+    undeclared sealed ring stays a refusal; the gauge declaration is the
+    one honest way out."""
+    cu, mask = maps.layers["cu"], maps.layers["mask"]
+    H, W = cu.shape
+    r_lo, r_hi = MASK_RING_BAND
+    gauge_xy = [(float(gx), float(gy))
+                for g in job.rules.get("gauge", [])
+                for gx, gy in g.get("positions", [])]
+    worst, who, blind, ringed = 2.0, "", [], 0
+    for hx, hy, hd in maps.holes:
+        if any(abs(hx - gx) <= GAUGE_MATCH_TOL
+               and abs(hy - gy) <= GAUGE_MATCH_TOL for gx, gy in gauge_xy):
+            continue                 # a declared, reasoned flip gauge
+        i, j = maps.win.world_to_px(np.array([hx]), np.array([hy]))
+        i, j = int(round(float(i[0]))), int(round(float(j[0])))
+        R = int(np.ceil((hd / 2 + r_hi) * maps.win.ppmm)) + 1
+        i0, i1 = max(0, i - R), min(H, i + R + 1)
+        j0, j1 = max(0, j - R), min(W, j + R + 1)
+        ii, jj = np.mgrid[i0:i1, j0:j1]
+        d = np.hypot(ii - i, jj - j) / maps.win.ppmm
+        ring = (d >= hd / 2 + r_lo) & (d <= hd / 2 + r_hi)
+        if not ring.any() or cu[i0:i1, j0:j1][ring].mean() < 0.5:
+            continue                       # bare bore: nothing solders here
+        ringed += 1
+        frac = float(mask[i0:i1, j0:j1][ring].mean())
+        if frac < worst:
+            worst, who = frac, f"hole Ø{hd:g} at ({hx:.2f},{hy:.2f})"
+        if frac < MASK_RING_OPEN:
+            blind.append(f"({hx:.2f},{hy:.2f})Ø{hd:g}")
+    if ringed == 0:
+        # vacuously true: nothing solders through this board's holes (an
+        # SMD-only or bare-bore board), so there is no ring to seal. A
+        # MISSING hole schedule cannot land here — the grammar requires
+        # the Excellon and hole_checks counts the bores.
+        return [Check("mask-blind pads", 1.0, f">= {MASK_RING_OPEN:g}",
+                      True, "no copper-ringed holes — nothing to seal")]
+    note = (f"{ringed} soldered rings; sealed: {', '.join(blind[:6])}"
+            + (" ..." if len(blind) > 6 else "") if blind
+            else f"{ringed} soldered rings, every one exposed; worst {who}")
+    return [Check("mask-blind pads", worst, f">= {MASK_RING_OPEN:g}",
+                  not blind, note)]
+
+
 def silk_metric_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
     """Legend metrics on the silk ink (dfm-notes §9, JLCPCB floors): text
     height >= 1.0, stroke:height inside the 1:7.5..1:3.5 band around
@@ -1821,7 +1887,8 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                 rep = Report(rep.checks + thermal_checks(job, maps),
                              rep.carve, program=rep.program)
             elif name == "scrub":
-                rep = Report(rep.checks + scrubbability_checks(job, maps),
+                rep = Report(rep.checks + scrubbability_checks(job, maps)
+                             + mask_blind_checks(job, maps),
                              rep.carve, program=rep.program)
             elif name == "silk":
                 rep = Report(rep.checks + silk_metric_checks(job, maps),

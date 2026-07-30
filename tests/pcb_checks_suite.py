@@ -905,9 +905,12 @@ if GOLDEN.is_dir() and (GOLDEN / "coupon.toml").is_file():
           f"{t['thermal solid connect'].value:.2f} of the ring is copper")
     m2.release()
 
-    # 2. scrubbability: a 0.5-wide aperture the spring tool cannot lap
+    # 2. scrubbability: a 0.5-wide aperture the spring tool cannot lap.
+    # (112.0,-104.5) is bare mask on the FIXED board — the old spot
+    # (110.0,-130.0) merged with SW1.3's aperture once the mask-blind
+    # incident gave SW1 its openings, and the merged region isn't narrow.
     mask2 = dmaps.layers["mask"].copy()
-    i0, j0 = dmaps.win.world_to_px(np.array([110.0]), np.array([-130.0]))
+    i0, j0 = dmaps.win.world_to_px(np.array([112.0]), np.array([-104.5]))
     ii, jj = int(i0[0]), int(j0[0])
     half_w = int(0.25 * dmaps.win.ppmm)
     half_h = int(1.0 * dmaps.win.ppmm)
@@ -934,6 +937,24 @@ if GOLDEN.is_dir() and (GOLDEN / "coupon.toml").is_file():
     check("silk text height CATCHES a 0.8 legend line",
           not sm["silk text height"].ok, f"min {sm['silk text height'].value:.2f}")
     m4.release()
+
+    # 4. mask-blind pad: seal JP1.1's aperture back over its copper ring —
+    # the bench incident (2026-07-30, 17 sealed THT pads) in miniature. The
+    # blessed board is the fixed one, so the law must FAIL a copy whose
+    # mask forgets the pad again.
+    mask5 = dmaps.layers["mask"].copy()
+    _paint(mask5, dmaps.win, 142.50, -111.24, 0.0, 1.2, value=False)
+    m5 = dataclasses.replace(dmaps, layers={**dmaps.layers, "mask": mask5},
+                             _cache={})
+    mb = {c.name: c for c in checks.mask_blind_checks(dj, m5)}
+    check("mask-blind pads CATCHES a sealed THT pad",
+          not mb["mask-blind pads"].ok,
+          f"ring open {mb['mask-blind pads'].value:.2f}")
+    # and the blessed board itself passes: 35 soldered rings, all exposed
+    mb0 = {c.name: c for c in checks.mask_blind_checks(dj, dmaps)}
+    check("mask-blind pads PASSES the blessed board",
+          mb0["mask-blind pads"].ok, mb0["mask-blind pads"].detail[:60])
+    m5.release()
     dmaps.release()
 else:
     print("  SKIP: no blessed coupon to corrupt")
