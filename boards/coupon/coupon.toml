@@ -180,16 +180,20 @@ plunge = 200
 # reason. SPEC.md: "whole B side masked, pads scrubbed (deflate -0.10)".
 
 # --- phase 4: silk legend (laser) ------------------------------------------
-# dose S0.06 is OPERATOR-DIRECTED (Bill, 2026-07-30): bench bracketing on
-# this board's run — the field-validated S0.03/F100 pair of 2026-07-19 was
-# raised to S0.10, which proved TOO HOT at the bench, so the bracket
-# narrowed to S0.06 (emit.LASER_DOSE_DEFAULT / LASER_FEED_DEFAULT still
-# carry the field pair); the ceiling stays S0.30. clearance 0.3 is the mask guide S5 law that
-# SPEC.md restates ("strokes >= 0.3 from solderable pads") — cured white on
-# a pad repels solder. The grammar refuses anything below 0.3.
+# dose S0.04 is OPERATOR-DIRECTED (Bill, 2026-07-30, post-run debrief):
+# the bracket's history — field-validated S0.03/F100 (2026-07-19) →
+# S0.10 (TOO HOT at the bench) → S0.06 (cut the board) → S0.04, because
+# the S0.06 setting was compensating for a TOO-THICK white coat: "minor
+# fuckups in applying the white UV ink too thickly … dial back to 4%
+# power and I just apply a thinner coat". Dose and coat thickness move
+# together — re-bracket on scrap if the coat changes again.
+# (emit.LASER_DOSE_DEFAULT / LASER_FEED_DEFAULT still carry the field
+# pair; the ceiling stays S0.30.) clearance 0.3 is the mask guide S5 law
+# that SPEC.md restates ("strokes >= 0.3 from solderable pads") — cured
+# white on a pad repels solder. The grammar refuses anything below 0.3.
 [phases.silk]
 clearance = 0.3
-dose = 0.06
+dose = 0.04
 feed = 100
 
 # --- phase 5: pad scrub (spring tool) --------------------------------------
