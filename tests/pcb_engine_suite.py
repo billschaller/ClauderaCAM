@@ -244,6 +244,15 @@ tcl = engine.render_tcl(j, win, TD / "work")
 check("derived offset in the tcl (ax+x1, ay-y0)",
       "offset cu -x 30 -y 5" in tcl)
 check("iso cuts with the TIP diameter", "isolate cu -dia 0.2" in tcl)
+# ... and the iso CNCJOB carries the tip too, not the cone's 3.175 shank:
+# the -dia the cncjob gets is only a header annotation (re-emission drops
+# it), but fc-1-iso.nc printing "TOOL DIAMETER: 3.175" is a lie in a file
+# an operator can open (2026-07-30, found on Board A's first live run; the
+# assembled mill program was byte-identical across the fix, proving it
+# geometry-free)
+check("iso cncjob header dia is the TIP, not the shank",
+      "cncjob iso_geo -dia 0.2 " in tcl
+      and "cncjob iso_geo -dia 3.175" not in tcl)
 check("scrub painted at the modeled flat width",
       "paint mask -tooldia 0.3" in tcl)
 # the sentinel is a FILE, written last: FlatCAM's embedded Tcl interpreter

@@ -214,9 +214,12 @@ def lint_laser(lines: list[str], s_max: float = LASER_S_MAX) -> list[str]:
 def assemble_laser(name: str, strokes: list[list[tuple]], *,
                    dose_s: float = LASER_DOSE_DEFAULT,
                    feed: float = LASER_FEED_DEFAULT,
-                   s_max: float = LASER_S_MAX) -> str:
+                   s_max: float = LASER_S_MAX,
+                   header: list[str] | None = None) -> str:
     """Emit a silk-legend laser program: one G0 hop + G1 chain per stroke.
-    Refuses to emit outside its own law, same posture as assemble()."""
+    Refuses to emit outside its own law, same posture as assemble().
+    `header` = optional COMMENT lines after the banner (run-sheet context),
+    linted with everything else; None emits byte-identically to before."""
     if dose_s <= 0 or dose_s > s_max:
         raise ValueError(
             f"laser dose S{dose_s:g} outside (0, {s_max:g}] — the "
@@ -225,6 +228,7 @@ def assemble_laser(name: str, strokes: list[list[tuple]], *,
     out = [f"(clauderacam laser: {name})",
            f"(silk legend: dose S{dose_s:g} F{feed:g}; cures white mask, "
            f"wipe uncured with IPA)",
+           *(header or []),
            "G90 G94", "G17", "G21", "G54",
            "M321",
            "G0 Z0",
@@ -247,12 +251,20 @@ def assemble_laser(name: str, strokes: list[list[tuple]], *,
     return "\n".join(out) + "\n"
 
 
-def assemble(job: Job, ops: list[OpResult]) -> str:
+def assemble(job: Job, ops: list[OpResult],
+             header: list[str] | None = None) -> str:
+    """`header` is an optional block of COMMENT lines placed right after the
+    job banner — the [pcb] lane uses it for the run-sheet context, tool table
+    and floor echo the operator reads at the machine (reemit.program_header
+    composes it). Every header line goes through the same strict parse and
+    lint as the rest of the program, and header=None emits byte-identically
+    to before the parameter existed — the [job] goldens prove it."""
     from .simulate import parse_line  # deferred: emit is imported by verify
 
     out: list[str] = []
-    out += [f"(clauderacam job: {job.name})",
-            "G90 G94", "G17", "G21", "G54"]
+    out += [f"(clauderacam job: {job.name})"]
+    out += header or []
+    out += ["G90 G94", "G17", "G21", "G54"]
     for r in ops:
         tool = job.tool(r.tool)
         out += ["M05",

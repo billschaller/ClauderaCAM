@@ -1,4 +1,9 @@
 (clauderacam job: coupon)
+(program C of 4 - scrub: pcb-scrub)
+(before: legend wiped, spring tool fitted; same G54 zero - the board has not moved)
+(tools: T5 scrub d0.3 S6000)
+(floors: pcb-scrub Z-0.21 - spring PRELOAD, not cut depth)
+(after: program D holes - no operator step between)
 G90 G94
 G17
 G21

@@ -206,18 +206,37 @@ feed = 400
 plunge = 200
 
 # --- phase 6a: holes (milled, not drilled) ---------------------------------
-# zigbee tcl line 40 verbatim: milldrills with the 0.8 corn, -diatol 5,
-# z_cut -1.7 (1.5 blank + 0.2 breakthrough into the spoilboard — the guide's
-# number), -dpp 0.5, F300, plunge 200. Every hole is helically bored; the
-# PCB twist-drill set is deliberately ABSENT from the crib (its reach was
-# never measured), so milldrills is not a preference here, it is the only
-# honest option (Article XI).
+# zigbee tcl line 40: milldrills with the 0.8 corn, -diatol 5, z_cut -1.7
+# (1.5 blank + 0.2 breakthrough into the spoilboard — the guide's number).
+# Every hole is helically bored; the PCB twist-drill set is deliberately
+# ABSENT from the crib (its reach was never measured), so milldrills is not
+# a preference here, it is the only honest option (Article XI).
+#
+# F250 / dpp 0.4 / plunge 150 — the drills stage is gentled from the field
+# job's 300/0.5/200, the second deviation in this file, for the same class
+# of reason as the clearing offset above: at the field numbers the stage
+# reads 0.00575 of the fr4 model's 0.00576 mm3/tooth sustained chip-load
+# limit (99.8% — the number that predicts burnt bore walls), and a stage
+# that asks for exactly a model bar is a coin flip against the model's own
+# quantization. Measuring (not guessing) found TWO windows at the bar, so
+# one knob cannot fix it: the M3 bore's full-slot orbit (chip/tooth =
+# feed x dpp x dia / tooth-rate — F250+dpp0.5 measured 86%, F300+dpp0.4
+# measured 86%) and the step-down plunge (a full-face 0.8 drill bite set
+# by the plunge rate alone). F250 and dpp 0.4 tame the orbit together;
+# plunge 150 is the slow end of the mango-coin validated plunge envelope
+# (physics.py anchor: "plunges 150-200 mm/min", metal evidence 2026-07-28)
+# and tames the bite. Measured together: the drills stage lands at 67.2%
+# of the bar (0.00387), below even the untouched field-validated cutout
+# stage's own 73.2%, for +1.4 min of machine time. The limit
+# itself is untouched (Article IX: the model changes only with metal
+# evidence; a JOB is always free to be more conservative than the model
+# allows).
 [phases.drills]
 tool = 3
 depth = -1.7
-dpp = 0.5
-feed = 300
-plunge = 200
+dpp = 0.4
+feed = 250
+plunge = 150
 
 # --- phase 6b: edge cut ----------------------------------------------------
 # zigbee tcl line 44 verbatim: 1.0 corn, -margin 0, 4 tabs of 1.5mm,

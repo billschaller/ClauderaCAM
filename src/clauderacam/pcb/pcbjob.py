@@ -33,6 +33,14 @@ from ..job import Tool, parse_tools, resolve_machine, resolve_material
 # a config-supplied order
 PHASE_ORDER = ("iso", "clear", "mask", "silk", "scrub", "drills", "cutout")
 
+# The canonical program split (the module docstring above is the law). It
+# lives HERE because the split is a fact about the job, not about any one
+# consumer: the gate (checks.py) iterates it, re-emission (reemit.py) writes
+# its letters into program headers, and the viewer (session.py) keys its
+# sessions by it — one definition, three readers.
+PROGRAM_PHASES = {"mill": ("iso", "clear"), "silk": ("silk",),
+                  "scrub": ("scrub",), "holes": ("drills", "cutout")}
+
 # scrub preload band: Makera stock DOC -0.2; field-tuned -0.21 (2026-07-19,
 # with deflated regions + full tape); -0.25 peeled traces on a bowed blank.
 SCRUB_Z_MIN, SCRUB_Z_MAX = -0.25, -0.18

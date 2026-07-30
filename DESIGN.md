@@ -1383,6 +1383,69 @@ path — in ~35s, and the whole sheet sim costs 0.4s on the Rust kernel and
 2.5s on the pure-Python one). Board A still has not been cut: these are
 verified files with a truthful preview, not verified copper.
 
+## 2026-07-30 (late night): four debts paid — the gate adopts the sheet, the bytes carry the bench, the drills back off the bar
+
+Four items the WS6 review and the live run left open, closed in one pass
+(commit: the debts commit). Every one traces to a written finding above.
+
+**1. `verify_pcb` adopted the sheet stock simulation.** WS6 built the
+thin-sheet model for the viewer, which left a bare `checks.verify_pcb()`
+— the call CI, the CLI and the MCP tools make — proving LESS than a
+viewer session a human happened to open. The gate must be the strictest
+reader, so the model's definitions (`SheetStock`, `sheet_stock`,
+`SheetJob`, `carve_program`, `sheet_checks`, the CARVING/OVERLAY_ONLY
+split) moved into checks.py, `verify_pcb` runs the sim on the CARVING
+programs itself (mill 12→26 checks, holes 14→28; silk/scrub stay exempt
+with their stated Article VI/IX reasons), and each Report now carries its
+CarveResult so session.py serves the SAME simulation the gate judged
+instead of running a second one that could drift from the verdict. The
+program split itself (`PROGRAM_PHASES`) moved to pcbjob.py where the
+chain law lives — one definition, three readers (gate, re-emitter,
+viewer). The gateless viewer path still shows the sheet checks with
+`ok = None`: information, never a verdict (Article I).
+
+**2. Assembled [pcb] programs carry their own bench context.** The WS6
+review's parting point: a run-sheet card in a viewer is not a substitute
+for a comment in the bytes the operator posts. `emit.assemble` and
+`assemble_laser` grew an optional `header` block (comment lines after the
+banner, inside the same strict parse and lint — header=None emits
+byte-identically, and golden_mango's 5/5 EXACT MATCH proves the [job]
+path untouched); `reemit.program_header` composes it from the job and the
+split: program letter and position in the chain, the operator step BEFORE
+and AFTER, the tool table, the M6-pause order, and the floor echo (with
+the spring-PRELOAD note on scrub). `reemit.assemble_program` is now the
+one way a split program gets assembled, and it refuses ops that are not
+exactly that program's phases.
+
+**3. The drills stage backed off the chip-load bar — and the measurement
+chose the knob.** The live run's "tightest margin in the lane" (0.00575
+of fr4's 0.00576 mm³/tooth, 99.8%) predicted burnt bore walls. The first
+two knobs tried were WRONG and the model said so: F250 measured 85.9%,
+F240 85.6%, dpp 0.4 alone 85.6% — near-flat, because the worst 0.25s
+windows sit on the M3 bore's full-slot orbit (chip ∝ feed × dpp) AND the
+step-down plunge (a full-face 0.8 drill bite, set by the plunge rate
+alone), and the raster's volume quantization keeps a burst floor under
+both. The landed job (boards/coupon/coupon.toml, provenance in-file):
+F250 + dpp 0.4 + plunge 150 — the plunge at the slow end of the
+mango-coin validated 150–200 envelope — measures **67.2%** on the drills
+stage, now below even the untouched field-validated cutout stage's 73.2%,
+for +1.4 min of machine time. No limit moved (Article IX): the model
+changes only with metal evidence; a job is always free to be more
+conservative than the model allows.
+
+**4. A regression guard for the lying header** (the `-dia` cosmetic from
+the ring-fix commit): pcb_engine_suite now asserts the iso phase's cncjob
+Tcl carries the vee TIP diameter, not the 3.175 shank.
+
+Re-blessing (Article III, one bless covering 2+3): mill, silk and scrub
+changed by their HEADER BLOCK ONLY — non-comment bodies asserted
+line-identical to the committed goldens; holes additionally regenerated
+its drills stage (5,458 → 6,812 body lines: more z levels at dpp 0.4,
+F250/F150 words) with the cutout stage asserted line-identical. A second
+engine run regenerates the new holes program byte-identically. All four
+programs PASS the grown gate (26/5/7/28 checks); 12 suites green on both
+kernels.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

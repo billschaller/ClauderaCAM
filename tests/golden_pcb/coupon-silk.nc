@@ -1,5 +1,9 @@
 (clauderacam laser: coupon silk)
 (silk legend: dose S0.03 F100; cures white mask, wipe uncured with IPA)
+(program B of 4 - silk: pcb-silk)
+(before: mask cured + white coated; fit the 455nm module, M323 test-fire on scrap first)
+(laser: 455nm module - the head stays at the Z0 focal plane; the only Z word is the focus move)
+(after: wipe uncured white off with IPA, refit spindle + spring tool, then program C scrub)
 G90 G94
 G17
 G21

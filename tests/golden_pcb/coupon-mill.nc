@@ -1,4 +1,10 @@
 (clauderacam job: coupon)
+(program A of 4 - mill: pcb-iso + pcb-clear)
+(before: blank on FULL tape, copper up, auto-leveled, Z0 = copper top, G54 = board SW corner)
+(tools: T2 vee d3.175 tip 0.2 S12000 | T3 flat d0.8 S12000)
+(1 M6 tool-change pause inside: T2 then T3 - the spindle stops before each change)
+(floors: pcb-iso Z-0.15 | pcb-clear Z-0.15)
+(after: squeegee + UV-cure the solder mask, coat white, then program B silk)
 G90 G94
 G17
 G21

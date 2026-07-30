@@ -10,20 +10,21 @@ the gate's checks, and the verified bytes to download.
 Two things are new here, and both exist because half this chain does not
 carve:
 
-  THE SHEET STOCK MODEL (the WS5 debt, paid).  `verify.verify()` needs a
-  target mesh and a square coin blank; a PCB has neither. What the
-  geometric machinery actually needs is smaller: a stock plane, a grid,
-  and a tool table. `sheet_stock()` defines it — thickness from the
-  blank, XY window DERIVED from the Edge.Cuts board window in machine
-  frame (boardmaps.machine_offset, the 154/124 law) grown by the widest
-  off-board reach the job configures, exactly the way checks.board_maps
-  pads its raster window. With that, the MILL and HOLES programs ride
-  simulate.carve() unchanged: real per-move volume, contact, engagement,
-  shank clearance, rapid-vs-stock and depth-vs-spoilboard on the actual
-  bytes — the checks checks.py's docstring lists as "deliberately not
-  checked here ... needs a thin-sheet stock model the [pcb] grammar does
-  not build yet". They are ADDED to what the PCB gate already proves;
-  nothing is relaxed to make room for them.
+  THE SHEET STOCK MODEL (the WS5 debt, paid — and since 2026-07-30 OWNED
+  BY THE GATE).  `verify.verify()` needs a target mesh and a square coin
+  blank; a PCB has neither. What the geometric machinery actually needs
+  is smaller: a stock plane, a grid, and a tool table. `sheet_stock()`
+  defines it — thickness from the blank, XY window DERIVED from the
+  Edge.Cuts board window in machine frame (boardmaps.machine_offset, the
+  154/124 law) grown by the widest off-board reach the job configures,
+  exactly the way checks.board_maps pads its raster window. With that,
+  the MILL and HOLES programs ride simulate.carve() unchanged: real
+  per-move volume, contact, engagement, shank clearance, rapid-vs-stock
+  and depth-vs-spoilboard on the actual bytes. WS6 built the model here
+  for the viewer; checks.verify_pcb has since ADOPTED it (the gate must
+  be the strictest reader), so the definitions live in checks.py, the
+  gate's Reports carry the CarveResult, and this module serves the SAME
+  simulation the gate judged instead of running a second one.
 
   Three honesty notes, stated because they are load-bearing:
     * the kernel's grid is square and centred on the machine origin
@@ -76,25 +77,16 @@ from pathlib import Path
 import numpy as np
 
 from .. import simulate, stages as stagesmod
-from ..physics import physics_checks
-from ..verify import Check, Report, contact_limit
+from ..verify import Report
 from . import boardmaps, checks
+# The sheet stock model MOVED to checks.py (2026-07-30): a bare verify_pcb()
+# used to prove less than a viewer session, and the gate must be the
+# strictest reader. The names are re-imported here because this module and
+# its tests are the model's other reader — same definitions, one home.
+from .checks import (CARVING, OVERLAY_ONLY, SHEET_PPM,  # noqa: F401
+                     SheetJob, SheetStock, carve_program, sheet_checks,
+                     sheet_job, sheet_stock)
 from .pcbjob import PcbJob
-
-# The sheet sim runs at the gate's own resolution — carve_check's 12.5
-# px/mm — so a [pcb] number and a mill number mean the same thing.
-SHEET_PPM = 12.5
-# Window pad: the same rule checks.board_maps uses for its raster window
-# (CHECK_PAD_BASE + the widest off-board reach the job configures). Board A
-# measured: mill spans -0.400..55.400 / -0.580..40.400 and holes
-# -0.550..55.550 / -0.550..40.550 on a 55x40 board, so the reach is real.
-SHEET_PAD_BASE = checks.CHECK_PAD_BASE
-
-# Which programs of the split carve, and which are overlay-only. This is not
-# a preference: `silk` is a laser program (simulate.parse_line refuses M321
-# by law) and `scrub` drives a tool whose kernel footprint is empty.
-CARVING = ("mill", "holes")
-OVERLAY_ONLY = ("silk", "scrub")
 
 _LASER_XY = re.compile(r"^(G0?[01])\b")
 
@@ -109,125 +101,6 @@ def is_pcb(path) -> bool:
         return False
 
 
-# --------------------------------------------------------------- sheet stock
-@dataclass(frozen=True)
-class SheetStock:
-    """The thin-sheet stock model of a [pcb] job, in MACHINE frame.
-
-    (x0,y0)..(x1,y1) is the modelled sheet: the board window grown by `pad`.
-    (bx0,by0)..(bx1,by1) is the board itself. `half`/`n`/`ppm` are the carve
-    grid (Article IV's square, centred on the machine origin); i_off/j_off
-    and nx/ny are the crop of that grid down to the modelled sheet."""
-    x0: float
-    y0: float
-    x1: float
-    y1: float
-    bx0: float
-    by0: float
-    bx1: float
-    by1: float
-    pad: float
-    thickness: float
-    spoil: float
-    ppm: float
-    half: float
-    n: int
-    i_off: int
-    j_off: int
-    nx: int
-    ny: int
-
-    def crop(self, grid: np.ndarray) -> np.ndarray:
-        return grid[self.i_off:self.i_off + self.ny,
-                    self.j_off:self.j_off + self.nx]
-
-    def outside_min(self, grid: np.ndarray) -> float:
-        """Lowest stock value anywhere OUTSIDE the crop. 0.0 means the crop
-        holds every cut the program made — which is what makes serving the
-        crop instead of the whole grid honest rather than convenient."""
-        i1, j1 = self.i_off + self.ny, self.j_off + self.nx
-        bands = [grid[:self.i_off, :], grid[i1:, :],
-                 grid[self.i_off:i1, :self.j_off], grid[self.i_off:i1, j1:]]
-        return min([float(b.min()) for b in bands if b.size] or [0.0])
-
-    def as_meta(self) -> dict:
-        return {"x0": self.x0, "y0": self.y0, "x1": self.x1, "y1": self.y1,
-                "board": [self.bx0, self.by0, self.bx1, self.by1],
-                "pad": self.pad, "thickness": self.thickness,
-                "spoil": self.spoil}
-
-
-def sheet_stock(job: PcbJob, ppm: float = SHEET_PPM) -> SheetStock:
-    """DERIVE the sheet stock of a [pcb] job. No hand-typed geometry: the
-    board window comes from the Edge.Cuts coordinate words and the transform
-    from boardmaps.machine_offset, the same pair the templated Tcl and the
-    gate both use.
-
-    The arc cross-check in boardmaps.extents is the GATE's job (board_maps
-    runs it with gerbv); this window is derived without it so a session can
-    still show the sheet on a box with no gerbv, where the gate itself
-    refuses to run and the session says so.
-    """
-    tight = boardmaps.extents(job.files["edge"], cross_check=False)
-    dx, dy = boardmaps.machine_offset(tight, job.anchor)
-    # single-sided back copper: mirror x then offset (checks.BoardMaps.to_board
-    # is the inverse of exactly this)
-    bx0, bx1 = dx - tight.x1, dx - tight.x0
-    by0, by1 = tight.y0 + dy, tight.y1 + dy
-    pad = SHEET_PAD_BASE + max(float(job.phases["clear"]["margin"]),
-                               job.phase_tool("cutout").diameter)
-    x0, y0, x1, y1 = bx0 - pad, by0 - pad, bx1 + pad, by1 + pad
-    half = max(abs(x0), abs(x1), abs(y0), abs(y1))
-    n = int(half * 2 * ppm)
-    # the crop, in the ONE mapping (simulate.py's docstring, Article IV):
-    # i = round((half - y) * ppm), j = round((x + half) * ppm)
-    i_off = max(0, int(round((half - y1) * ppm)))
-    j_off = max(0, int(round((x0 + half) * ppm)))
-    i_hi = min(n, int(round((half - y0) * ppm)) + 1)
-    j_hi = min(n, int(round((x1 + half) * ppm)) + 1)
-    return SheetStock(x0=x0, y0=y0, x1=x1, y1=y1, bx0=bx0, by0=by0,
-                      bx1=bx1, by1=by1, pad=pad, thickness=job.thickness,
-                      spoil=job.spoil_thickness, ppm=ppm, half=half, n=n,
-                      i_off=i_off, j_off=j_off,
-                      nx=j_hi - j_off, ny=i_hi - i_off)
-
-
-@dataclass
-class SheetJob:
-    """A [pcb] job wearing just enough of Job's shape for the simulation
-    machinery: simulate.carve needs stock_half + tools + machine, and
-    stages.stage_stats / physics.physics_checks need material + tool().
-
-    Deliberately NOT a Job: there is no model mesh, no keep-out disc and no
-    skim plane on a PCB, so verify.verify() (which needs all three) must not
-    be callable on one by accident. The PCB gate is checks.verify_pcb; this
-    type carries the stock simulation to it, it does not replace it."""
-    path: Path
-    name: str
-    out: Path
-    stock_size: float
-    stock_thickness: float
-    spoil_thickness: float
-    material: dict
-    machine: dict
-    tools: dict = field(default_factory=dict)
-
-    @property
-    def stock_half(self) -> float:
-        return self.stock_size / 2.0
-
-    def tool(self, num):
-        return self.tools[num]
-
-
-def sheet_job(job: PcbJob, sheet: SheetStock) -> SheetJob:
-    return SheetJob(path=job.path, name=job.name, out=job.out_dir,
-                    stock_size=2 * sheet.half,
-                    stock_thickness=sheet.thickness,
-                    spoil_thickness=sheet.spoil, material=job.material,
-                    machine=job.machine, tools=job.tools)
-
-
 def program_paths(job: PcbJob) -> dict[str, Path]:
     """{program: path} for the canonical split. The engine writes into
     `out_dir`; a blessed asset set (tests/golden_pcb) keeps the programs
@@ -240,84 +113,6 @@ def program_paths(job: PcbJob) -> dict[str, Path]:
             if cand.is_file():
                 out[name] = cand
                 break
-    return out
-
-
-# ------------------------------------------------------------- the sheet sim
-def carve_program(sj: SheetJob, sheet: SheetStock,
-                  nc_path) -> simulate.CarveResult:
-    """Simulate one MILL-dialect [pcb] program on the sheet. Same strict
-    parser, same kernel, same measurements as any other job — the whole point
-    of defining the sheet stock was to stop needing a special path."""
-    return simulate.carve(nc_path, sj, ppm=sheet.ppm, extra_half=0.0,
-                          step=0.06, check=True)
-
-
-def sheet_checks(job: PcbJob, sheet: SheetStock, sj: SheetJob,
-                 res: simulate.CarveResult) -> list[Check]:
-    """The geometric + physics checks the PCB gate could not run before the
-    sheet existed (checks.py's "deliberately not checked here" list). Named
-    with a `sheet ` prefix so a PCB report never confuses them with the
-    board-map checks, and every one of them is an ADDITION.
-    """
-    m = res.metrics
-    out: list[Check] = [
-        Check("sheet rapid-vs-stock", res.worst_rapid, "must be 0",
-              res.worst_rapid <= 1e-4,
-              f"at {res.rapid_at}" if res.rapid_at else
-              "no rapid touches remaining stock"),
-    ]
-    for t in sorted(res.contact):
-        if not (m.tool_num == t).any():
-            continue                     # a tool this program never selects
-        tool = sj.tool(t)
-        limit = contact_limit(tool)
-        c = res.contact[t]
-        out.append(Check(
-            f"sheet T{t} {tool.type} contact", c.max, f"< {limit:g}",
-            c.max < limit,
-            f"at {c.at}, {c.samples} contact samples" if c.at
-            else "no engagement measured (empty footprint by law)"
-            if tool.type == "scrub" else ""))
-    out.append(Check("sheet shank clearance", res.shank_worst, "must be 0",
-                     res.shank_worst <= 1e-6,
-                     f"at {res.shank_at[:2]}, line {res.shank_at[2]}"
-                     if res.shank_at else ""))
-    # depth: the blank plus the guide's breakthrough, never near the bed. The
-    # grammar already refuses a configured depth outside that band; this
-    # measures the SIMULATED floor of the bytes (the two disagree exactly
-    # when a program is not the program the config describes).
-    floor = min(res.min_cut_z, float(res.stock.min()))
-    limit = -(sheet.thickness + 0.5)      # verify.MAX_OVERCUT, same number
-    out.append(Check("sheet depth floor", floor, f">= {limit:.3f}",
-                     floor >= limit,
-                     f"{sheet.thickness}mm blank + 0.5 breakthrough "
-                     f"allowance"))
-    bed = -(sheet.thickness + sheet.spoil - 2.0)
-    out.append(Check("sheet clear of machine bed", floor, f">= {bed:.3f}",
-                     floor >= bed,
-                     f"{sheet.spoil}mm spoilboard under the blank"))
-    # containment: every cutting move inside the modelled sheet. The crop the
-    # viewer is served is only honest if nothing was cut outside it.
-    esc = 0.0
-    lines: list[int] = []
-    cut = m.motion == 1
-    if cut.any():
-        for xs, ys in ((m.x0[cut], m.y0[cut]), (m.x1[cut], m.y1[cut])):
-            e = np.maximum.reduce([sheet.x0 - xs, xs - sheet.x1,
-                                   sheet.y0 - ys, ys - sheet.y1])
-            k = int(e.argmax())
-            if float(e[k]) > esc:
-                esc = float(e[k])
-                lines = [int(m.lineno[cut][k])]
-    out.append(Check("sheet containment", max(esc, 0.0), "<= 0",
-                     esc <= 0.0,
-                     f"worst at line {lines[0]}" if lines and esc > 0 else
-                     f"window {sheet.x0:.2f},{sheet.y0:.2f} .. "
-                     f"{sheet.x1:.2f},{sheet.y1:.2f}"))
-    for pc in physics_checks(sj, m):
-        out.append(Check(f"sheet {pc.name}", pc.value, pc.limit, pc.ok,
-                         pc.detail))
     return out
 
 
@@ -821,7 +616,13 @@ def build(job: PcbJob, programs: dict[str, Path] | None = None,
     for name, path in progs.items():
         texts[name] = Path(path).read_text()
         if name in CARVING:
-            res = carve_program(sj, sheet, path)
+            # the gate already simulated this program (verify_pcb carries the
+            # CarveResult on its Report since it adopted the sheet checks) —
+            # serve the SAME simulation it judged rather than running a
+            # second one that could drift from the verdict
+            rep = reports.get(name)
+            res = (rep.carve if rep is not None and rep.carve is not None
+                   else carve_program(sj, sheet, path))
             outside = sheet.outside_min(res.stock)
             if outside < -1e-6:
                 raise ValueError(
@@ -855,7 +656,10 @@ def build(job: PcbJob, programs: dict[str, Path] | None = None,
         rep = reports.get(name)
         chk = list(rep.checks) if rep else []
         res = carves.get(name)
-        if res is not None:
+        if res is not None and rep is None:
+            # the gateless path (no gerbv): the gate's report would already
+            # carry the sheet checks; without it the session still shows
+            # them — with ok = None below, never as a verdict
             chk += sheet_checks(job, sheet, sj, res)
         # a verdict ONLY when the gate itself ran: the sheet sim is an
         # ADDITION to the PCB gate, never a substitute for it, so a session

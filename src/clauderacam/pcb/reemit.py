@@ -33,11 +33,11 @@ from pathlib import Path
 import numpy as np
 from scipy import ndimage
 
-from ..emit import assemble_laser
+from ..emit import assemble, assemble_laser
 from ..engine import OpResult, path_length
 from ..simulate import parse_line
 from . import boardmaps
-from .pcbjob import PcbJob
+from .pcbjob import PROGRAM_PHASES, PcbJob
 
 _DROP = re.compile(r"^\s*$|^\(")
 _COMMENT = re.compile(r"\([^)]*\)|;.*")
@@ -138,6 +138,93 @@ def read_phase(nc_path: Path, job: PcbJob, phase: str) -> OpResult:
     return OpResult(label=f"pcb-{phase}", kind=phase, tool=tool.num,
                     lines=keep, path_len_mm=plen,
                     est_min=plen / max(float(p["feed"]), 1.0))
+
+
+# ------------------------------------------------------- program assembly
+# The operator steps BEFORE and AFTER each program of the split, as one
+# header line each. The full provenance-traced card is session.run_sheet();
+# these are the same steps compressed to what the operator reads inside the
+# file at the machine — the WS6 review's point: a run-sheet card in a viewer
+# is not a substitute for a comment in the bytes the operator posts.
+_PROGRAM_STEPS = {
+    "mill": ("blank on FULL tape, copper up, auto-leveled, Z0 = copper "
+             "top, G54 = board SW corner",
+             "squeegee + UV-cure the solder mask, coat white, then "
+             "program B silk"),
+    "silk": ("mask cured + white coated; fit the 455nm module, M323 "
+             "test-fire on scrap first",
+             "wipe uncured white off with IPA, refit spindle + spring "
+             "tool, then program C scrub"),
+    "scrub": ("legend wiped, spring tool fitted; same G54 zero - the "
+              "board has not moved",
+              "program D holes - no operator step between"),
+    "holes": ("same setup; every hole helically bored, then the outline "
+              "cut with tabs",
+              "snap the {gaps} tabs of {gapsize}mm, file the stubs; "
+              "stencil/paste/reflow happens off-machine"),
+}
+
+
+def program_header(job: PcbJob, name: str,
+                   ops: list[OpResult] | None = None) -> list[str]:
+    """The run-sheet header of ONE program of the split: position in the
+    chain, the operator step on each side, the tool table, and the floor
+    echo — all COMMENT lines, all inside emit's own lint (the 128-char law
+    included). Exists because the M6-pause instructions used to live only in
+    the viewer's card and the laser banner (the 2026-07-30 WS6 review):
+    the bytes the operator posts must carry their own bench context."""
+    letter = "ABCDEFGH"[list(PROGRAM_PHASES).index(name)]
+    phases = PROGRAM_PHASES[name]
+    lines = [f"(program {letter} of {len(PROGRAM_PHASES)} - {name}: "
+             + " + ".join(f"pcb-{p}" for p in phases) + ")"]
+    before, after = _PROGRAM_STEPS[name]
+    if name == "holes":
+        c = job.phases["cutout"]
+        after = after.format(gaps=int(c["gaps"]), gapsize=f"{c['gapsize']:g}")
+    lines.append(f"(before: {before})")
+    if name == "silk":
+        lines.append("(laser: 455nm module - the head stays at the Z0 "
+                     "focal plane; the only Z word is the focus move)")
+    else:
+        seen: list[int] = []
+        for r in ops or []:
+            if r.tool not in seen:
+                seen.append(r.tool)
+        descs = []
+        for num in seen:
+            t = job.tool(num)
+            d = f"T{t.num} {t.type} d{t.diameter:g}"
+            if t.type == "vee":
+                d += f" tip {t.tip_diameter:g}"
+            descs.append(d + f" S{t.rpm:g}")
+        lines.append("(tools: " + " | ".join(descs) + ")")
+        pauses = len(ops or []) - 1
+        if pauses > 0:
+            lines.append(f"({pauses} M6 tool-change pause"
+                         + ("s" if pauses > 1 else "") + " inside: "
+                         + " then ".join(f"T{r.tool}" for r in ops)
+                         + " - the spindle stops before each change)")
+        floors = " | ".join(
+            f"pcb-{p} Z{job.phases[p]['depth']:g}" for p in phases)
+        note = " - spring PRELOAD, not cut depth" if name == "scrub" else ""
+        lines.append(f"(floors: {floors}{note})")
+    lines.append(f"(after: {after})")
+    return lines
+
+
+def assemble_program(job: PcbJob, name: str, ops: list[OpResult]) -> str:
+    """Assemble ONE program of the canonical split, with its run-sheet
+    header, through emit.assemble (Article V — same parser, same lint).
+    The ops must BE the split's phases for that program, in order: a
+    program carrying some other phase set is a different process and
+    refuses here before the gate ever has to catch it."""
+    want = PROGRAM_PHASES.get(name)
+    got = tuple(r.kind for r in ops)
+    if want is None or got != want:
+        raise ValueError(
+            f"program {name!r} must carry phases {want}, got {got} — the "
+            f"split is the job (pcbjob.PROGRAM_PHASES)")
+    return assemble(job, ops, header=program_header(job, name, ops))
 
 
 # ----------------------------------------------------------- the silk clip
@@ -378,7 +465,8 @@ def silk_program(job: PcbJob, win: boardmaps.BoardWindow,
                          "program")
     silk = job.phases["silk"]
     return assemble_laser(f"{job.name} silk", rep.strokes,
-                          dose_s=silk["dose"], feed=silk["feed"]), rep
+                          dose_s=silk["dose"], feed=silk["feed"],
+                          header=program_header(job, "silk")), rep
 
 
 def _stroke_chains(gbr: Path) -> list[list[tuple]]:
