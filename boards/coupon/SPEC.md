@@ -16,7 +16,7 @@ species and package size the bench holds.
 | copper | **B.Cu ONLY**, single-sided blank | SMD mounts on copper (back) side; THT inserts from front, solders on back |
 | clearance | ≥ 0.4 mm | one pass of the 0.2mm-tip engraver clears 0.4 gaps from both sides |
 | track | ≥ 0.5 mm min; 0.6 signal / 0.8–1.2 power | conservative, hand-solderable |
-| vias | NONE | unplated holes; this board needs no jumpers by design |
+| jumpers | unplated wire links, front side | no plated vias; where flat routing would contort the board, a bare wire link (JPn) hops on the component side -- expected practice on a single-sided milled board |
 | THT annular | ≥ 0.6 mm | milled pads lift easier than plated |
 | copper-to-edge | ≥ 0.4 mm | edge cut is separate |
 | drills | ≤ 1.2 straight; larger helical-bored (0.8 corn) | drill set 0.3–1.2; 3.4 (M3) bores fine |
@@ -102,6 +102,7 @@ must render.
 | SW1 | SS-12D00-class slide SPDT | THT 2.54 | THT bins — **bench-confirm footprint** |
 | S2 | 6×6 tactile | THT | THT bins — **bench-confirm** |
 | PAD± | wire pads | 1.5 mm drill | copper + wire |
+| JP1–JP6 | wire links (10.16 / 12.7 / 15.24 mm spans) | 0.9 mm drill | operator wire stock |
 | H1–H4 | M3 mounting holes | 3.4 mm bore | no hardware in BOM |
 | TP1–TP6 | ladder probe pads | bare copper ~2 mm | none |
 
@@ -109,6 +110,21 @@ Species audit: R in 0603/0805/1206 ✓, C in 0603/0805/1206 ✓, L ✓,
 SMA diode ✓, SOT-23 BJT ✓, 0805 LEDs ✓, SOP-8 IC ✓, DIP-8 socketed ✓,
 THT LED/switch/button ✓. KOKISO's deeper roster (duals, FETs) is Board
 B's job.
+
+## Jumpers (board-only, front-side wire links)
+
+Six unplated wire links, all on the component side, pads 2.1 mm / drill
+0.9 mm (annular 0.6), spans limited to 10.16 / 12.7 / 15.24 mm so the
+operator can bend wire on a jig. JP1 carries N_DISCH across the
+TRIG_THR wall to S2; JP2 and JP3 stitch the VCC tree across the LED and
+power belts; JP4–JP6 drop GND into the three pour pockets that
+single-sided routing fences off. **Bench notes**: JP6 crosses the JP2
+wire run — use insulated wire for JP6 (or bend it per the fab-layer
+dogleg); JP3's wire passes ~0.3 mm from the U1 socket's west edge —
+dress it tight to the board. Jumper footprints are board-only (not in
+the schematic); KiCad models each wire as an F.Cu track inside the
+footprint so connectivity and DRC see the link — F.Cu is never
+exported or milled.
 
 ## Coupon block (layout artifacts, no schematic presence)
 
