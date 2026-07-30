@@ -436,6 +436,39 @@ Still unmeasured from the bench: front-to-back art registration on the
 finished coin — the number that turns the pin-slop estimate into
 calibration fact.
 
+## 2026-07-29 (night): the PCB lane opens — WS0, the geometry engine is pinned
+
+The PCB lane (green-lit; execution plan in PCB-PLAN.md until its
+workstreams fold in here) uses a patched FlatCAM EVO as a headless
+geometry engine. Until tonight its three headless-Tcl fixes lived as
+uncommitted diffs in a local checkout — one `git checkout .` from gone.
+Now pinned:
+
+- **Fork**: github.com/billschaller/flatcam, branch
+  `clauderacam-headless-tcl`, commit
+  `16e635abd411d49f69012c0d63317c53b0e39724` (parent `b6e87db` on the
+  dwrobel/flatcam `mstanciu_Beta_1.0` line). The `[pcb]` machine config
+  (WS3) must reference this pin; a different FlatCAM is a different
+  generator and its output is unblessed.
+- **The three patches** (all: the Tcl layer predates the app's MVC
+  split and headless mode never runs the GUI plugin install):
+  TclCommandPaint constructs the PaintGen model lazily and routes
+  `paint_poly*` through it; TclCommandCopperClear does the same for
+  NccGen; PaintGen's non-threaded path (the one Tcl uses) bound its
+  `proc` like the threaded path instead of referencing it unbound.
+- **Non-code setup**: exactly two keys differ from factory defaults in
+  `~/.FlatCAM/current_defaults_Unstable.FlatConfig` —
+  `geometry_circle_steps` 32→64 and `gerber_circle_steps` 16→64
+  (arc fidelity: FlatCAM approximates arcs with segments and the
+  emitter refuses real arcs, Article V, so the segments must be fine
+  enough to hold tolerance). `set_sys` is broken in this fork, so the
+  file is edited directly; WS3's runner should assert-or-write these
+  two keys before every launch so the setup heals itself instead of
+  living in one dotfile.
+
+Local checkout `~/scratch/carvera/flatcam` sits on the branch with a
+clean tree, remote `fork` = the pin.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
