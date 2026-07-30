@@ -10,7 +10,7 @@ Board A proved one side of the six-phase chain. Board B proves the FLIP.
 Its three jobs:
 
 1. **A reflex game that works** — a 12-LED charlieplexed ring chases,
-   ramping, and you catch it at the marker with a button; the piezo
+   ramping, and you catch it at the marker with a button; the buzzer
    scores you. Firmware IS the functional verification.
 2. **The via lane** — there is no plating on this machine. Vias are
    unplated holes stitched with wire, soldered on BOTH faces, by hand.
@@ -37,7 +37,7 @@ rows marked **NEW** exist only because this board flips.
 | copper-to-edge | ≥ 0.4 mm, both sides | edge cut is a separate phase |
 | tab-zone copper **NEW** | ≥ 1.0 mm clear of every cutout tab, both sides | tabs are snapped by hand; a tab that bridges copper tears it off the laminate |
 | drills **Δ** | **ALL holes helical-bored with the 0.8 corn**; min hole Ø1.0 (tool + 0.2); classes 1.0 / 1.1 / 1.2 / 1.5 / 3.4 | Article XI: the PCB drill set (0.3–1.2) is NOT in `jobs/inventory.toml` — reach unmeasured, so it does not exist. A 0.8 tool cannot bore its own diameter |
-| registration holes **NEW** | 2 × Ø2.0, `Twist Drill 2x12 (Spare Tools)`, peck 0.8, through the blank into the spoilboard | the pins law, unchanged from the coin jobs |
+| registration holes **NEW** | 2 × Ø2.0, `Twist Drill 2x12 (Spare Tools)`, peck 0.8, **feed F100**, through the blank into the spoilboard | the pins law from the coin jobs; F100 not the coin's F120 — that is a brass number reading 107 % of fr4's chip limit, F100 lands at 89 % (Decision Q12) |
 | footprints | hand-solder variants everywhere; SOIC-8 (1.27 pitch) is the finest pitch on the board | stenchill stencils are happiest at 0603+ and large-pitch ICs |
 | paste **Δ** | **B.Paste only** — one stencil, back side. Vias, THT pads and ISP pads carry NO aperture | vias are soldered after reflow; a pasted via hole wicks solder and blocks the wire |
 | solder mask **Δ** | BOTH sides masked, cured and scrubbed — two squeegee/cure/scrub cycles, one per setup | there is no second way to reach the down-facing side |
@@ -50,11 +50,13 @@ rows marked **NEW** exist only because this board flips.
 **Deliberate exceptions** (confined to named rule areas in
 `orbit.kicad_dru`; nothing else is exempt):
 
-- **Flip gauges** (4): Ø1.0 hole with a Ø1.6 pad — a 0.3 mm annulus,
-  violating the 0.7 rule on purpose. They are NOT solderable and NOT in
-  the scrub set; they are read with a loupe at the machine, after side-2
-  iso and BEFORE the mask squeegee. A thin annulus is what makes them
-  sensitive.
+- **Flip gauges** (4): Ø1.0 hole with a Ø1.7 pad — a 0.35 mm annulus
+  DECLARED at 0.3 (0.05 of raster margin, Decision Q13: the earlier Ø1.6
+  sat exactly at its own bar and read 0.29 — a gauge that fails its own
+  check on a perfect flip gauges nothing), violating the 0.7 rule on
+  purpose. They are NOT solderable and NOT in the scrub set; they are
+  read with a loupe at the machine, after side-2 iso and BEFORE the mask
+  squeegee. A thin annulus is what makes them sensitive.
 - Those four pads are floating copper islands by design (no net, 0.4 mm
   clear of the pour on both sides) — DRC "unconnected" is expected there
   and only there.
@@ -81,8 +83,9 @@ soldered straight in (Board A's convention).
   16.6 mA — inside the ATtiny85's 20 mA per-pin limit with margin. That
   margin is why the resistor is 560 Ω and not 470 Ω.
 - **MCU**: ≈5 mA at 8 MHz / 5 V (datasheet-class estimate, not measured).
-- **Piezo**: ≤30 mA while sounding (element bench-unconfirmed), duty
-  <5 % → ~1.5 mA average.
+- **Buzzer**: Cylewet CYT1036, 5 V ACTIVE magnetic (internal
+  oscillator); ≤30 mA while sounding (listing-class number,
+  bench-confirm), duty <5 % → ~1.5 mA average.
 - **Totals**: ~10 mA typical during play, ~55 mA peak (chirp + full ring
   slot). Sleep (power-down, pin-change wake, all lines input-pullup):
   MCU <1 µA + FET leakage; SW1 is belt-and-braces on top of that.
@@ -103,7 +106,7 @@ and no HV programmer is a brick). Nothing is spare:
 |---|---|---|
 | 1 PB5 / RESET | RESET | ISP only. R13 10k pull-up, C4 10nF filter |
 | 2 PB3 / ADC3 | L3 + S1 | charlieplex line 3; button S1 (CATCH) read in the display blanking window |
-| 3 PB4 / OC1B | SND | piezo drive → Q2 base resistor. Tone from Timer1 OC1B (hardware PWM on this exact pin) |
+| 3 PB4 / OC1B | SND | buzzer gate → Q2 base resistor. BZ1 is ACTIVE (self-oscillating), so PB4 gates beep patterns — no pitch control. Timer1 OC1B on this exact pin is unused headroom, kept in case BZ1 is ever swapped for a passive element |
 | 4 GND | GND | |
 | 5 PB0 / MOSI | L0 | charlieplex line 0; ISP MOSI |
 | 6 PB1 / MISO | L1 | charlieplex line 1; ISP MISO |
@@ -112,7 +115,7 @@ and no HV programmer is a brick). Nothing is spare:
 
 **Buttons share the charlieplex lines, deliberately.** Each button sits
 between its line and GND through a 4.7 kΩ series resistor. Twelve LEDs
-need four lines and the piezo needs the fifth; there is no sixth pin, so
+need four lines and the buzzer needs the fifth; there is no sixth pin, so
 the buttons are read in the ~10 µs blanking window between display
 slots: all four lines to input, the line under test to input-pullup,
 read, restore. With the internal pull-up (20–50 kΩ) against 4.7 kΩ the
@@ -190,20 +193,27 @@ the rail feeds a digital toy with a pulsed LED load, where a series L
 makes ripple rather than removing it. Board A exercised the LC pi filter
 and the SMA Schottky; adding either here would be decoration.
 
-### Piezo cell
+### Buzzer cell (BZ1)
+
+BZ1 is IDENTIFIED (Decision Q2): **Cylewet CYT1036**, a 5 V ACTIVE
+magnetic buzzer with an internal oscillator, from the operator's stock
+(Amazon B01N7NHSY6, pack of 10 per the listing — count, body Ø (~12)
+and pin pitch (~7.6) are calipers rows on the bench inventory sheet,
+not assertions here).
 
 PB4 → R14 2.2 kΩ → Q2 MMBT2222A (NPN, SOT-23) base; emitter GND;
-collector sinks BZ1 from VCC. D1 BAV99 clamps the collector node to both
-rails (its series pair is exactly a rail-to-rail clamp: common pin to the
-collector, one diode to VCC, one to GND). C3 1 µF sits local to the cell
-as the switching reservoir.
+collector sinks BZ1 from VCC. D1 BAV99 clamps the collector node to
+both rails (its series pair is exactly a rail-to-rail clamp: common pin
+to the collector, one diode to VCC, one to GND) — with a magnetic coil
+on the collector this clamp is the **mandatory flyback**, no hedging
+needed now that the element is known. C3 1 µF sits local to the cell as
+the switching reservoir.
 
-The clamp is not optional even though "a piezo is capacitive": the
-element is a bench-unconfirmed part out of an uncatalogued bin. If it is
-a piezo disc, the clamp catches its ring-down; if it is a magnetic
-buzzer, the clamp is the mandatory flyback. One part covers both
-outcomes, which is the only honest way to specify a part nobody has
-measured. MMBT2222A's 600 mA rating covers either element with room.
+ACTIVE means the drive is a GATE, not a tone: firmware patterns beeps
+and chirps by switching Q2; the pitch is the buzzer's own. The plan's
+BJT cell stands (Decision Q1, MMBT2222A + 2.2 k), and the v2 bridge
+idea is dead — a bridge driver does nothing for a self-oscillating
+element. MMBT2222A's 600 mA rating covers the ≤30 mA coil with room.
 
 ### ISP — bare pads, no connector
 
@@ -247,24 +257,24 @@ whose whole front face already shows that it is powered.
 | R16 | 4.7 kΩ S2 series | 0603 | egscst-0603 |
 | C1 | 10 µF 25 V X5R bulk | 0805 | egscst-0805 (**only** 10 µF source) |
 | C2 | 100 nF U1 decoupling | 0805 | egscst-0805 (**only** ≥100 nF source) |
-| C3 | 1 µF piezo-cell reservoir | 0603 | egscst-0603 (its top value) |
+| C3 | 1 µF buzzer-cell reservoir | 0603 | egscst-0603 (its top value) |
 | C4 | 10 nF RESET filter | 1206 | egscst-1206 (its top value) |
-| LED1–LED12 | 5 mm THT, one colour, Vf ≈2.0–2.2 V | THT | THT bins — **bench-confirm** colour, Vf, 2.54 lead pitch |
+| LED1–LED12 | 5 mm THT (Decision Q9), one colour, Vf ≈2.0–2.2 V | THT | THT bins — **bench-confirm** colour, Vf, 2.54 lead pitch |
 | S1, S2 | 6×6 tactile | THT | THT bins — **bench-confirm** footprint (2-leg vs 4-leg) |
 | SW1 | SS-12D00-class slide SPDT | THT 2.54 | THT bins — **bench-confirm** footprint |
-| BZ1 | piezo disc or magnetic buzzer | THT 2 lead | THT bins — **bench-confirm** type and lead pitch |
+| BZ1 | Cylewet CYT1036, 5 V ACTIVE magnetic buzzer (Decision Q2) | THT 2 lead | operator stock (Amazon B01N7NHSY6, ×10 per listing) — **bench-confirm** count, body Ø (~12), pin pitch (~7.6) |
 | V1–V6 | via wire, 22 AWG solid (0.64) or a clipped 0.5 mm component lead | — | consumable, **not a crib part** — bench-confirm the gauge passes a Ø1.0 hole |
 | PAD+, PAD− | wire pads | Ø1.5 hole, Ø3.6 pad both sides | copper + wire |
 | TP1–TP6 | ISP pads | bare Ø1.8, B.Cu | none |
-| G1–G4 | flip gauges | Ø1.0 hole, Ø1.6 pad both sides | copper artifact, no net |
+| G1–G4 | flip gauges | Ø1.0 hole, Ø1.7 pad both sides (Decision Q13) | copper artifact, no net |
 | H1–H4 | M3 mounting holes | Ø3.4 bore | no hardware in BOM |
 
 **Species audit — what this board exercises that Board A did not.**
 
 | species | part | crib | its honest job |
 |---|---|---|---|
-| SOT-23 dual diode | BAV99 | kokiso-smd | both diodes used: rail-to-rail clamp on the piezo node |
-| SOT-23 MMBT BJT | MMBT2222A | kokiso-smd | piezo low-side driver (plan's "SOT-23 + base R") |
+| SOT-23 dual diode | BAV99 | kokiso-smd | both diodes used: rail-to-rail flyback clamp on the buzzer node |
+| SOT-23 MMBT BJT | MMBT2222A | kokiso-smd | buzzer low-side driver (plan's "SOT-23 + base R") |
 | SOT-23 P-FET, high-side | AO3401 | kokiso-smd | reverse-polarity guard on wire-pad power |
 | SOIC-8 | ATtiny85 | *uncatalogued* | the brain; finest pitch on the board (1.27) |
 | R in 0603 / 0805 / 1206 | 560 Ω ×12 + 4 more | all three books | ring drive — same value, same job, three sizes, one stencil: a controlled reflow comparison |
@@ -275,10 +285,11 @@ a part with no honest job is decoration, and decoration on a board that
 must be hand-soldered on both faces costs real joints):
 
 - **AO3400, 2N7002, SI23xx** — after the reverse guard there is no second
-  switching load. The plan specifies the piezo cell as a BJT with a base
-  resistor and the plan wins; a 5.7 A FET switching a 30 mA buzzer would
-  be a species tick, not a circuit. See open question 1 for the v2 seat
-  (a bridge driver, where an N-FET is genuinely the right half).
+  switching load. The plan specifies the buzzer cell as a BJT with a base
+  resistor and the plan wins (Decision Q1); a 5.7 A FET switching a 30 mA
+  buzzer would be a species tick, not a circuit. The once-mooted v2
+  bridge seat (where an N-FET was genuinely the right half) is dead:
+  BZ1 is an ACTIVE element and a bridge does nothing for it.
 - **BAV70, BAW56** — BAV99's series pair is the correct topology for a
   two-rail clamp; a common-cathode or common-anode dual would need a
   second part to do the same job.
@@ -304,7 +315,7 @@ redesign of the ring wiring, not a footnote.
 Three levers keep the count there:
 
 1. **A THT lead soldered on both faces IS a via.** 24 LED leads, 8 button
-   legs, 3 switch legs, 2 piezo leads and 2 wire pads pass through the
+   legs, 3 switch legs, 2 buzzer leads and 2 wire pads pass through the
    board with a pad on each side. Any net that needs to change sides at
    one of those points crosses for free. The layout freeze publishes a
    **dual-solder list** naming every lead that is load-bearing as a via;
@@ -340,21 +351,33 @@ Straight reuse of the shipped pins law (DESIGN.md 2026-07-28 / 07-29,
 `[twosided]` + `[pins]`), with the PCB numbers filled in:
 
 - **Blank**: double-sided 1.5 mm FR-1/FR-4, ≥ 70 × 64 mm (board + pin
-  margin); a 100 × 80 blank is the intended stock. Full-coverage
-  double-stick tape is **mandatory** — a bowed blank turns every depth
-  number into fiction (mask guide §2), and this board depends on depth
-  numbers on both faces.
+  margin); the operator's stock is **150 × 100** (Decision Q8), which
+  clears the requirement comfortably. One board per blank as designed;
+  150 × 100 admits a second orbit per blank as a cut-time option, but a
+  second board re-plans the pin geometry — noted, not designed for.
+  Full-coverage double-stick tape is **mandatory** — a bowed blank turns
+  every depth number into fiction (mask guide §2), and this board
+  depends on depth numbers on both faces.
 - **Flip axis: Y** (x → −x), the mode the coin cut. The mirror line is
   the board's own vertical centreline, x = 28.0 in board coordinates.
 - **Pins**: 2 × Ø2.0 × 12 dowels at **(28.0, −8.0)** and **(28.0, 56.0)**
   — on the mirror line, so flip-symmetric by construction (the pins law
   refuses asymmetry), and 8 mm outside the board outline in the blank's
   waste, so the finished board carries no pin holes. Burr skim
-  `spot_depth 0.1`, `peck 0.8`, hole depth 12.0 from Z0 (1.5 through the
-  blank + 10.5 into the spoilboard) → the pin stands ~1.5 mm above the
-  MDF and fills the flipped blank's hole flush. Nothing is machined over
-  a pin (the cutout path stays ≥7.5 mm away; the pin keep-out check is
-  the judge).
+  `spot_depth 0.1`, `peck 0.8`, **feed F100** (Decision Q12 — the coin
+  lane's F120 is a brass number at 107 % of fr4's sustained chip limit;
+  F100 measures 89 %). Hole depth **12.0** from Z0, DECLARED in the job
+  as `seat_extra 0` + `tip_allowance 0` (Decision Q11: the `[pins]`
+  defaults 0.2 + 0.6 derive 12.8, but 1.5 blank over 12.7 spoilboard
+  allows only 12.2 before the bed and the grammar refuses; 12.0 clears
+  by 0.2). The honest consequence of declaring the tip allowance away:
+  the drill's real ~0.6 point cone means the pin seats at ~11.4 of full
+  diameter and stands **~0.6 mm proud of the blank** (~2.1 above the
+  MDF) instead of flush — harmless, because nothing is machined over a
+  pin (the cutout path stays ≥7.5 mm away; the pin keep-out check is
+  the judge) and the flipped blank engages the pin through its full
+  1.5 mm thickness — more engagement than the flush seat gave, not
+  less.
 - **One WCS for both sides.** Z0 is re-touched per side (each face has
   its own bow); XY is NEVER re-zeroed — re-zeroing throws away the
   registration the holes bought.
@@ -380,13 +403,13 @@ DESIGN.md still lists front-to-back art registration as *unmeasured*:
 "the number that turns the pin-slop estimate into calibration fact."
 Orbit is the board that measures it, two ways:
 
-1. **G1–G4**, one near each board corner: Ø1.0 hole, Ø1.6 pad on both
-   sides (0.3 annulus, the named DRU exception). The hole is bored in
-   side A's frame; side 2's pad is placed in the mirrored frame. Loupe
-   the annulus on each face after side-2 iso and before the mask
-   squeegee: an even 0.3 ring means a perfect flip, and thick/thin
-   reads the offset directly. Four corners give translation *and*
-   rotation.
+1. **G1–G4**, one near each board corner: Ø1.0 hole, Ø1.7 pad on both
+   sides (0.35 annulus declared at 0.3 — Decision Q13, the named DRU
+   exception). The hole is bored in side A's frame; side 2's pad is
+   placed in the mirrored frame. Loupe the annulus on each face after
+   side-2 iso and before the mask squeegee: an even ~0.35 ring means a
+   perfect flip, and thick/thin reads the offset directly. Four corners
+   give translation *and* rotation.
 2. **The 24 LED holes** are the same measurement at 0.7 annulus — less
    sensitive, but a population instead of four samples.
 
@@ -500,8 +523,11 @@ board exists to exercise.
 
 avr-gcc or arduino-cli, flashed via the operator's programmer. Structure:
 Timer0 CTC drives the 4-slot row scan at 1 kHz (frame 250 Hz) from a
-12-entry `{high, low, position}` table; the blanking window at the end of
-each slot reads S1/S2; Timer1 OC1B on PB4 generates tones; the game loop
+12-entry `{high, low, position}` table; the blanking window at the end
+of each slot reads S1/S2 (digital first — Decision Q3 — with the ADC
+threshold read as the no-hardware-change escalation); PB4 gates the
+active buzzer's beep patterns off Timer0's tick (Timer1 OC1B stays
+free in case BZ1 is ever swapped for a passive element); the game loop
 ramps the chase interval, scores the catch against position 1, and
 sleeps to power-down with PCINT wake after an idle timeout. Boot
 self-test first, always — it is the board's own continuity check.
@@ -512,7 +538,7 @@ self-test first, always — it is the board's own continuity check.
 |---|---|---|
 | 1 | iso, **twice** | side A unmirrored, side B mirrored, both frames derived from one Edge.Cuts — the side-frame mirror consistency check gets a real board instead of a synthetic one |
 | 2 | clear, twice | two pours, two sets of Swiss-cheese clearance rings, 1.2 mm minimum clearing feature |
-| 3 | mask, twice | two squeegee/cure cycles in two setups; whether cured mask + white legend survive being taped face-down (see open question 4) |
+| 3 | mask, twice | two squeegee/cure cycles in two setups; whether cured mask + white legend survive being taped face-down (Decision Q4: risk accepted — if the tape lifts the legend, that is an Article II incident) |
 | 4 | silk, twice | first board where the legend is load-bearing: 12 cathode ticks decide whether the ring works at all |
 | 5 | scrub, twice | disc laps on side A (no holes yet) and the new **annular** laps on side B (holes everywhere) |
 | — | drill-once-from-side-A | 53 bores in five diameter classes with one 0.8 corn, plus the hole schedule check |
@@ -521,58 +547,48 @@ self-test first, always — it is the board's own continuity check.
 | 6 | cutout | tabs on side 2, tab census, hand snap, 1.0 mm tab-zone copper keep-out |
 | — | stencil + reflow | one stencil, SOIC-8 at 1.27 pitch as the finest feature, and 12 identical resistors in three package sizes as a controlled wetting comparison |
 | — | wire vias | the whole point: 6 unplated holes, 12 hand joints, and a self-test that says whether each one took |
-| — | firmware | the ring chases, the button catches, the piezo scores. Nothing else proves the board |
+| — | firmware | the ring chases, the button catches, the buzzer scores. Nothing else proves the board |
 
-## Open questions for review
+## Decisions (2026-07-31, operator review)
 
-1. **Piezo driver: MMBT2222A (specified) or 2N7002?** The plan says
-   "SOT-23 + base R + flyback diode" and the plan wins, but the task
-   names 2N7002/AO3400 as species to exercise. An honest N-FET seat
-   exists in a **v2 bridge driver** (piezo between PB4 and a
-   complementary inverter, +6 dB on a disc) — deferred because the
-   element type is unmeasured and a bridge does nothing for a magnetic
-   buzzer. Decide once BZ1 is on the bench.
-2. **BZ1 is unknown**: disc or magnetic buzzer, lead pitch 5.08 or 7.62,
-   series resistor needed or not. The footprint choice waits on the bin.
-3. **Button read: blanking-window digital or ADC?** Hardware supports
-   both with no change. Which ships first?
-4. **Side A's silk gets taped over** when the blank flips. The plan's
-   order puts silk (phase 4) before the flip; accept the risk to a cured
-   white legend, or move both silks after the flip in a third re-flip
-   setup? Recommendation: follow the plan, and if the tape lifts the
-   legend, that is an Article II incident and the law changes.
-5. **Via count**: 6 planned / 10 ceiling — confirm after one ring-routing
-   trial. If the trial wants 15, the matrix mapping gets permuted before
-   any via gets added.
-6. **THT bins are uncatalogued** (LEDs, tactile switches, slide switch,
-   piezo, via wire). This is a gate blocker, not a footnote: five BOM
-   lines are bench-confirm today.
-7. **ATtiny85 SOIC-8 is in no crib file.** It needs an entry (its own
-   `parts/` file or an SMD-bins file) before layout freeze — the board
-   cannot be designed around a part the gate cannot see.
-8. **Blank stock**: is the operator's double-sided stock 100 × 80? Two
-   orbits per blank would need the pin geometry re-planned.
-9. **5 mm vs 3 mm THT LEDs** — 3 mm shrinks the ring to Ø18 and the board
-   to ~46 × 40, which is cheaper in clearing time and copper. Depends on
-   what the bins hold.
-10. **4 M3 holes or 2?** Ø3.4 bores are cheap; the question is whether
-    this board ever gets a case.
+The thirteen open questions this spec carried were put to the operator
+and resolved; each decision is folded into the sections above, recorded
+here with its consequence:
 
-Three more, surfaced by the software half (the `[twosided]` grammar and
-its live fixture run, 2026-07-31 — measured facts, not opinions):
-
-11. **The Ø2×12 dowel does not fit this stack.** The grammar derives the
-    pin hole as length + 0.2 seat + 0.6 tip allowance = **12.8 mm**, but
-    a 1.5 mm blank over the 12.7 mm spoilboard allows only 12.2 before
-    the bed — the job REFUSES it. This spec's own stated hole depth of
-    12.0 clears by 0.2. Resolve with a shorter dowel, a measured
-    (smaller) tip allowance, or more spoilboard.
-12. **Pin drilling feed is a brass number.** The coin lane's F120 for
-    the Ø2 twist drill reads **107 %** of fr4's sustained chip limit on
-    the full-face peck; **F100 lands at 89 %**. The pin block for this
-    board should carry F100 (or a bench-measured fr4 number).
-13. **The flip gauges sit exactly at their own bar.** Ø1.6 pad on a
-    Ø1.0 hole gives an annulus of exactly the 0.3 they declare, and the
-    raster reads it at 0.29. Either grow the pad to Ø1.7 (0.35 annulus,
-    0.05 of margin) or declare 0.28 — a gauge that fails its own check
-    on a perfect flip gauges nothing.
+1. **Buzzer driver → MMBT2222A** (the plan's BJT cell stands). With Q2's
+   answer the once-mooted v2 bridge seat is dead: a bridge does nothing
+   for a self-oscillating element.
+2. **BZ1 → identified from the operator's stock**: Cylewet CYT1036, 5 V
+   ACTIVE magnetic buzzer with internal oscillator (Amazon B01N7NHSY6,
+   pack of 10 per the listing). ACTIVE reshapes the sound design: PB4
+   gates patterns, no pitch control; the BAV99 clamp is unambiguously
+   the mandatory flyback. Count, body Ø and pin pitch are bench-sheet
+   rows, not assertions.
+3. **Button read → blanking-window digital first**; the ADC threshold
+   read stays as the designed-in, no-hardware-change escalation.
+4. **Silk order → follow the plan** (side A's legend gets taped over at
+   the flip; risk accepted). If the tape lifts the cured legend, that
+   is an Article II incident and the law changes on evidence.
+5. **Vias → trial then permute**: route once with the default matrix;
+   if the trial wants more than the 10 ceiling, the ring→pair mapping
+   is permuted before any via is added. Budget 6 / ceiling 10 stands.
+6. + 7. **Crib blockers → bench inventory sheet**: the operator fills
+   `parts/bench-inventory-sheet.md` (ATtiny85, THT bins, buzzer, via
+   wire, dowels, blanks, 74HC595) and the crib files are written from
+   it verbatim. Layout freeze remains gated on the sheet coming back.
+8. **Blank stock → 150 × 100** (not the assumed 100 × 80). One board
+   per blank as designed; a second orbit per blank is a cut-time option
+   that would re-plan the pins.
+9. **LEDs → 5 mm** (ring Ø26, board 56 × 48 as drawn).
+10. **M3 → 4 corners.**
+11. **Dowel stack → hole depth 12.0 with the Ø2×12 dowel**, declared in
+    the job as `seat_extra 0` + `tip_allowance 0` (the `[pins]` grammar
+    grew validated declarable knobs for exactly this — defaults 0.2/0.6
+    stand, negative refuses, the bed check still judges the result).
+    The pin seats on the drill's real tip cone ~0.6 proud of the blank;
+    the registration section states the honest arithmetic.
+12. **Pin feed → F100** (89 % of fr4's sustained chip limit; the coin
+    lane's F120 is a brass number reading 107 %).
+13. **Flip gauges → Ø1.7 pad** (0.35 annulus declared at 0.3 — 0.05 of
+    real margin; a gauge that fails its own check on a perfect flip
+    gauges nothing).

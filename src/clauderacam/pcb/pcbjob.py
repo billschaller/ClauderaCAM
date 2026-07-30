@@ -508,6 +508,13 @@ def _validate_twosided(j: PcbJob) -> None:
             f"pins.spot_tool T{spot.num} d{spot.diameter:g} is narrower than "
             f"the drill's {drill.shank_diameter} shank — the counterbore "
             f"cannot buy the drill any reach it does not already have")
+    for knob, default in (("seat_extra", 0.2), ("tip_allowance", 0.6)):
+        if float(pins.get(knob, default)) < 0:
+            raise ValueError(
+                f"pins.{knob} {pins[knob]} is negative — the hole can only "
+                f"be drilled deeper than the pin, never shallower; declare 0 "
+                f"and accept the pin seating on the drill cone instead "
+                f"(orbit decision Q11)")
     depth = pin_depth(j)
     if depth <= j.thickness:
         raise ValueError(
@@ -596,10 +603,20 @@ def _validate_twosided(j: PcbJob) -> None:
 
 
 def pin_depth(j: PcbJob) -> float:
-    """Pin hole depth below Z0, the coin lane's formula verbatim: pin length
-    + the seat that keeps the pin from standing proud + the drill-tip
-    allowance (the simulated hole is flat-bottomed; the real point cone needs
-    this much extra to give the pin its full-diameter depth)."""
+    """Pin hole depth below Z0, the coin lane's formula: pin length + the
+    seat that keeps the pin from standing proud + the drill-tip allowance
+    (the simulated hole is flat-bottomed; the real point cone needs this
+    much extra to give the pin its full-diameter depth).
+
+    Both terms are DECLARABLE (seat_extra default 0.2, tip_allowance default
+    0.6; negative refuses in _validate_twosided). Provenance: orbit decision
+    Q11 (2026-07-31) — a Ø2x12 dowel on a 1.5 blank over 12.7 spoilboard
+    derives 12.8 with the defaults, but the bed allows only 12.2; the job
+    declares both 0 for a 12.0 hole and accepts the pin seating on the real
+    tip cone (~0.6 proud of the blank, harmless: the pin keep-out excludes
+    every machining path). A declared depth that still reaches the bed is
+    refused by the same bed check as before — the knob buys honesty, not
+    reach."""
     p = j.pins
     return float(p["length"]) + float(p.get("seat_extra", 0.2)) \
         + float(p.get("tip_allowance", 0.6))
