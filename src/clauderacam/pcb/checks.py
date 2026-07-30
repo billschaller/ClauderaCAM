@@ -332,10 +332,13 @@ def program_moves(job: PcbJob, path) -> tuple[MoveMetrics, str]:
     reads it as a cutting move and refuses the file for having no position
     yet. Rather than relax the mill gate's resolver (Article I: never weaken
     a check to make a file pass), the PCB lane resolves modal state itself and
-    treats a coordinate-less motion word as what it is. The consequence is
-    recorded in DESIGN.md: an assembled [pcb] program cannot go through
-    verify.verify()'s stock simulation until WS4/WS6 decides where those
-    lines die.
+    treats a coordinate-less motion word as what it is.
+
+    Since 2026-07-30 those lines die at re-emission instead (reemit.read_phase
+    folds the F onto the next motion line, so an ASSEMBLED program does ride
+    prep_moves and verify()'s resolver). This tolerance stays anyway: it costs
+    one branch, and it is what lets the gate judge a hand-posted interchange
+    file too — the checks must never need the emitter's cooperation.
     """
     text = Path(path).read_text()
     rapid = float(job.machine.get("rapid_feed", 3000.0))

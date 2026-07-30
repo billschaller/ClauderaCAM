@@ -703,6 +703,7 @@ a pad mid-segment (the zigbee legend has a 23.5mm box line that passes
 0.09 from a pad). The check is right and the emitter is wrong — WS4
 follow-up: CLIP strokes against the clearance region, do not just drop
 whole chains. Left as a live incident rather than patched under a check.
+(CLOSED 2026-07-30 (midday) — the stroke clip, see below.)
 
 **Second finding, also left open**: `simulate.prep_moves` refuses
 FlatCAM's coordinate-less feed setters (`G01 F500.00`, three per phase
@@ -712,6 +713,7 @@ state itself on top of the SAME parse_line rather than relaxing the mill
 gate's resolver. Consequence: an assembled [pcb] program cannot ride
 verify.verify()'s stock simulation until WS4/WS6 decides where those lines
 die (drop them at re-emission, or teach prep_moves the modal case).
+(CLOSED 2026-07-30 (midday) — they die at re-emission, see below.)
 
 **Deliberately not checked, and why** — scrub COVERAGE has no honest bar:
 the retired Fusion pocket was field-verified at "worst gap 0.125 against a
@@ -735,6 +737,123 @@ synthetic 20×15 board (two pads, one trace, three islands) with
 hand-built, geometrically exact programs; the golden-pcb slot for Board A's
 blessed gerbers and programs prints a LOUD TODO block until those assets
 land in `tests/golden_pcb/`.
+
+## 2026-07-30 (midday): the re-emitter pays its two WS5 debts
+
+WS5's gate found two defects in the layer that FEEDS it, and left both
+as live incidents rather than patch them under a check. Both are now
+fixed where they belong — at re-emission, not in the gate. Article II:
+the check that caught each one is unchanged, and each keeps a negative
+control that can still fail.
+
+**The legend that would have cured white onto pads.** `silk_strokes`
+tested a stroke chain's VERTICES: a chain with any vertex inside the
+silk clearance was dropped whole, and a chain whose vertices were all
+clear shipped whole — including the zigbee legend's 23.5 × 22.2mm
+courtyard box, which drives straight through a field of 1.8–3.7mm mask
+apertures. `silk pad clearance` measured that box **0.085** from an
+aperture on the assembled bytes; re-measured off the mask APERTURE LIST
+with no raster in the loop it is **0.100**. Cured white mask on a
+solderable pad repels solder, so the whole box was a scrapped reflow.
+
+The law is CLIP, not drop (reemit.py):
+
+- Every stroke SEGMENT is split against the forbidden region — the mask
+  apertures dilated by the job's silk clearance. The clear sub-segments
+  fire; only what lies inside goes. numpy/scipy only, so the region is
+  the aperture EDT: sample each segment at half a pixel, call a sample
+  clear only at `need + step/2` (a distance field is Lipschitz-1, so
+  that margin covers every point BETWEEN two clear samples), then
+  bisect each clipped end out to where the field reads `need + 0.01`
+  and place it there. The bisection bracket is never wider than that
+  same 0.01 backoff, so Lipschitz-1 alone covers the gap from a clipped
+  end back to the first proven sample. Sub-segments below 0.05mm are
+  dropped: that is a dot of cured mask, not a legend feature.
+- `need` is the job clearance plus an EXPLICIT conservatism epsilon,
+  **2 px + 0.010mm = 0.330 at the lane's declared 0.01mm/px**, because
+  this module and the check do not share an array: reemit measures in
+  the TIGHT window (the 154/124 transform law) and `silk_checks`
+  re-measures the assembled BYTES in its own PADDED window. Budget: the
+  padded raster reads up to ONE pixel tighter than the tight one
+  (measured worst 0.010mm on this board), plus the half pixel of ink
+  bias the check subtracts, plus half a pixel spare, plus the check's
+  SAMPLE_STEP/2 path slop (0.005), plus the 3-decimal coordinates
+  `assemble_laser` writes (≤0.002), plus spare. The independent check is
+  still the judge; the margin exists so it never has to argue.
+- Silk really does run off the Edge.Cuts extents (this legend clears the
+  top edge by 0.5mm), so a point outside the window is measured as the
+  reading at the clamped border point MINUS the overshoot — a
+  Lipschitz-1 lower bound, never an over-read. A plain clamp there
+  measures fiction, which is the same class of bug as the vertex test.
+  And a mask raster with ink ON its window border REFUSES: the layer
+  continues where this module cannot see.
+- What it did to the field legend: **99 gerber chains → 117 strokes, 11
+  clipped, 0 dropped** (the vertex test dropped 10 whole), **52.38mm of
+  123.06mm removed**. Exact aperture geometry says **49.405mm** of that
+  legend is genuinely inside the 0.3 forbidden region, so 2.98mm is the
+  price of the conservatism epsilon — and `silk pad clearance` now reads
+  **0.315** (bar 0.30) where it read 0.085. Clipped and dropped chains
+  are counted SEPARATELY and both go on the run-sheet (`SilkClip.note`):
+  a legend that silently loses strokes is a lie, and so is one that
+  silently loses PARTS of strokes. The reported guarantee is a POLYGON
+  number, not a raster one (Article IX): the raster threshold with the
+  half-pixel ink bias taken back off, **0.325 asked 0.300** — and the
+  aperture-exact audit of the emitted bytes reads **0.3293**, inside it.
+- The negative control moved rather than died (Article III): the field
+  legend can no longer prove the check can fail, so
+  `pcb_checks_suite.py` now builds the same hazard synthetically — one
+  stroke whose two endpoints are 2mm+ clear of any aperture and which
+  drives through both pads of the synthetic board. Unclipped it FAILS
+  `silk pad clearance` at −0.010 while every other silk check passes;
+  through the clip it splits into 3 strokes and PASSES at 0.325. 19
+  named hazards now, 19 caught. `pcb_engine_suite.py` carries the
+  gerbv-free unit version (a hand-built disc mask dead centre of a
+  segment: the split lands on the forbidden circle to 3 decimals, the
+  original vertices survive exactly, and an exact-circle re-measurement
+  of the emitted points confirms the clearance).
+
+**The program the gate could not simulate.** FlatCAM's default post
+writes coordinate-less feed setters — `G01 F500.00`, 78 of them in the
+zigbee iso phase alone. A motion word with no axis word moves nothing,
+but `simulate.prep_moves` reads it as a cutting move with no position
+established and refuses the file. That refusal is CORRECT and stays
+(Article I: an unmodeled move is an unverified move); the fix is that
+the interchange dialect gets normalized to the gate's, at the boundary
+where dialect belongs (Article V, `reemit.read_phase`):
+
+- a standalone F is folded onto the NEXT motion line, which is FlatCAM's
+  own pattern (`G01 F500.00` then coordinate moves with no F). The modal
+  state every move sees is bit-identical; the assembled program contains
+  only fully-worded motion lines.
+- the F is added to the phase's feed set BEFORE it is folded, so the
+  param-match law still validates every feed word in the file — folding
+  cannot smuggle a stray feed past it (proven: a folded F450 in a
+  {500, 200} phase still refuses).
+- the folded word carries the SOURCE TOKEN verbatim, never a reformatted
+  float: a re-rendered feed could drift past the law's own 3-decimal
+  comparison on its way onto the next line.
+- a feed setter with no motion line left to fold onto REFUSES. It
+  commands nothing, so dropping it would be safe — and silent, which is
+  the habit this project does not keep.
+- **Blessed numbers move**: the zigbee iso phase re-emits to **2486**
+  kept lines, not 2564 — exactly the 78 folded setters, each now riding
+  the next motion line instead of occupying one of its own.
+  `path_len_mm` is untouched at 1208.573 (a feed setter has no XYZ
+  word), and the engine suite's assertion went from `> 1000` to the
+  exact 2486 while it was being changed anyway.
+- **The payoff, stated exactly**: the assembled mill program now
+  resolves through `simulate.prep_moves` — 2484 moves, one `pcb-iso`
+  stage, no refusal — asserted in the engine suite's local-bonus block.
+  That is the PARSE half of Article I only. `verify.verify()` end to end
+  still waits on the thin-sheet stock model the [pcb] grammar does not
+  build yet (WS5's own open item); what died today is the dialect
+  excuse, not that blocker.
+
+`checks.py` is unchanged but for one docstring: `program_moves` still
+resolves modal state itself and still tolerates a coordinate-less motion
+word, on purpose — it costs one branch and it is what lets the gate judge
+a hand-posted interchange file, which must never need the emitter's
+cooperation.
 
 ## Roadmap
 

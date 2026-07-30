@@ -17,12 +17,16 @@ What must hold, and why:
     incident — caught by `clear opening` while `clear keep-out` still passes,
     which is the whole reason both checks exist), scrubbing over a pad edge
     (caught by `scrub plateau margin` while `scrub window` still passes),
-    silk on a pad, a missing focus move, an over-dose S, a stale ZMIN, a wrong
-    F, a wrong tool, and a program simply not handed over.
+    silk on a pad, an UNCLIPPED silk stroke that is clear at both ENDS and
+    crosses a pad mid-segment (the 2026-07-30 field-legend incident, moved
+    here from the field the moment the field legend started passing), a
+    missing focus move, an over-dose S, a stale ZMIN, a wrong F, a wrong
+    tool, and a program simply not handed over.
   - LOCAL BONUS: on the operator's zigbee-button V2 run set the whole chain
     is re-assembled and verified, and the first PASS is cross-checked against
     the 2026-07-19 pcbnew numbers (iso containment 0.005, mask margin 0.145,
-    10/10 bores).
+    10/10 bores). The silk program is part of that PASS since the stroke clip
+    landed; before it, the legend FAILED `silk pad clearance` at 0.085.
 
 gerbv-dependent sections skip LOUDLY when gerbv is absent (same posture as
 pcb_groundtruth_suite); the hole schedule, the outline walk and the per-program
@@ -594,11 +598,12 @@ check("three copper islands rasterized", islands == 3, f"{islands} islands")
 
 print("\nsilk program (through the real reemit chain):")
 mask_t = bm.rasterize(job.files["mask"], maps.tight)
-silk_text, dropped = reemit.silk_program(job, maps.tight, mask_t)
+silk_text, silk_clip = reemit.silk_program(job, maps.tight, mask_t)
 SILKP = OUT / "silk.nc"
 SILKP.write_text(silk_text)
-check("both silk strokes survive the pad clearance clip", dropped == 0,
-      f"{dropped} dropped")
+check("both silk strokes survive the pad clearance clip untouched",
+      silk_clip.dropped == 0 and silk_clip.clipped == 0
+      and len(silk_clip.strokes) == 2, silk_clip.note)
 
 print("\nPOSITIVE control — the whole synthetic board through verify_pcb:")
 reports = checks.verify_pcb(job, {"mill": MILL, "silk": SILKP,
@@ -681,6 +686,42 @@ silk_hot = mutate(SILKP, "silk_hot",
 catches("an over-dose S (char/vaporize territory)",
         checks.silk_checks(job, maps, silk_hot.read_text()),
         "silk dose")
+maps.release()
+
+# --- the MID-SEGMENT stroke: the 2026-07-30 field-legend incident, moved
+# onto synthetic geometry (the field legend now PASSES, so the negative
+# control cannot live there any more — Article III: convert the fodder,
+# never delete the negative). Both ENDPOINTS of this stroke are 2mm+ clear
+# of any aperture and it drives straight through both pads, which is exactly
+# what reemit's old vertex test shipped intact.
+print("\nNEGATIVE control — a stroke clear at both ENDS, over a pad in the "
+      "middle:")
+MID = (HDR + "%ADD10C,0.200000*%\nG01*\nD10*\n"
+       f"X{gnum(1.0)}Y{gnum(4.0)}D02*\nX{gnum(13.0)}Y{gnum(4.0)}D01*\n"
+       "M02*\n")
+(G / "mid-B_Silkscreen.gbr").write_text(MID)
+midjob = pcbjob.load(JOBP)
+midjob.files["silk"] = G / "mid-B_Silkscreen.gbr"
+raw_mid = OUT / "silk_midsegment_unclipped.nc"
+raw_mid.write_text(emit.assemble_laser(
+    "midsegment", [[(MX - 1.0, 4.0), (MX - 13.0, 4.0)]],
+    dose_s=job.phases["silk"]["dose"], feed=job.phases["silk"]["feed"]))
+catches("an UNCLIPPED stroke whose endpoints are both clear",
+        checks.silk_checks(midjob, maps, raw_mid.read_text()),
+        "silk pad clearance", must_pass=("silk dialect lint",
+                                        "silk focus move", "silk dose",
+                                        "silk feed echo"))
+mid_text, mid_clip = reemit.silk_program(midjob, maps.tight, mask_t)
+mid_p = OUT / "silk_midsegment.nc"
+mid_p.write_text(mid_text)
+check("the same stroke through the CLIP is split, not dropped",
+      mid_clip.chains == 1 and mid_clip.clipped == 1 and mid_clip.dropped == 0
+      and len(mid_clip.strokes) == 3, mid_clip.note)
+mid_chk = by_name(checks.silk_checks(midjob, maps, mid_text))
+check("and the clipped program PASSES silk pad clearance",
+      mid_chk["silk pad clearance"].ok,
+      f"{mid_chk['silk pad clearance'].value:.4f} "
+      f"(>= {midjob.phases['silk']['clearance']})")
 maps.release()
 
 # the castellation-chewing incident needs a narrow copper channel: its own
@@ -796,7 +837,7 @@ if all((ZPH / f).is_file() for f in ZNC.values()) and \
         zprogs[name] = p
     zmaps = checks.board_maps(zjob)
     ztight_mask = bm.rasterize(zjob.files["mask"], zmaps.tight)
-    ztext, zdropped = reemit.silk_program(zjob, zmaps.tight, ztight_mask)
+    ztext, zclip = reemit.silk_program(zjob, zmaps.tight, ztight_mask)
     zprogs["silk"] = zout / "silk.nc"
     zprogs["silk"].write_text(ztext)
     zreps = checks.verify_pcb(zjob, zprogs, maps=zmaps)
@@ -858,18 +899,24 @@ if all((ZPH / f).is_file() for f in ZNC.values()) and \
           zhd["cutout ride band"].ok and zhd["cutout tab census"].ok,
           zhd["cutout tab census"].detail)
 
-    # --- and the one thing the new gate does NOT let through ---
-    print("\n  the field silk program (a FINDING, not a pass):")
+    # --- the field silk program: a FINDING on 2026-07-30, a PASS since ---
+    print("\n  the field silk program (was a FINDING; the clip closed it):")
     zsilk = by_name(zreps["silk"].checks)
-    check("silk pad clearance CATCHES the field legend",
-          not zsilk["silk pad clearance"].ok,
-          f"{zsilk['silk pad clearance'].value:.4f} < "
-          f"{zjob.phases['silk']['clearance']}")
-    print("      reemit.silk_strokes tests chain VERTICES only, so a long "
-          "stroke\n      whose endpoints are clear can still cross a pad "
-          "mid-segment.\n      The check reads the assembled bytes and says "
-          "so (Article I).\n      WS4 follow-up: clip strokes, do not just "
-          "drop chains.")
+    check("silk pad clearance PASSES on the clipped field legend",
+          zreps["silk"].ok,
+          f"{zsilk['silk pad clearance'].value:.4f} >= "
+          f"{zjob.phases['silk']['clearance']} "
+          f"(was 0.0850 = FAIL when whole chains were kept or dropped on a "
+          f"VERTEX test)")
+    check("the clip reports what it took off the legend",
+          zclip.chains == 99 and zclip.clipped == 11 and zclip.dropped == 0
+          and 52.0 < zclip.removed_mm < 53.0, zclip.note)
+    print("      The 23.5mm legend box drives through a field of 1.8-3.7mm "
+          "mask\n      apertures: 49.4mm of the 123.1mm legend is genuinely "
+          "inside the\n      0.3 forbidden region (measured off the aperture "
+          "list, no raster).\n      The old vertex test dropped 10 chains "
+          "whole and shipped that box\n      intact; the clip splits 11 "
+          "chains into 117 strokes and drops none.")
     zmaps.release()
 else:
     print("\nSKIP: the zigbee-button run set is not on this box — the field "
