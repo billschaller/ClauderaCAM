@@ -399,6 +399,22 @@ def octagon_chain(cx, cy, r):
     ch.SetClosed(True)
     return ch
 
+def add_scrub_ring(board, layer):
+    """SPEC.md's scrub-margin gauge: a 2.0 mm band annulus, OD 8 (centreline
+    r 3.0), drawn from ONE definition so the copper ring and the mask aperture
+    over it cannot drift apart.
+
+    The B.Mask copy is what makes the gauge a gauge. The scrub phase paints the
+    MASK apertures (deflated by the job's paint offset), so a B.Cu graphic with
+    no aperture over it never gets lapped: the first live FlatCAM run measured
+    this ring's closest scrub sample at 6.466 mm from a band that ends at 4.0,
+    i.e. the gauge read identically on a perfect and a botched run (DESIGN.md
+    2026-07-30, the gauge the process cannot touch)."""
+    ring = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_CIRCLE)
+    ring.SetCenter(MM(49.7, 27.0)); ring.SetEnd(MM(52.7, 27.0))
+    ring.SetWidth(NM(2.0)); ring.SetFilled(False); ring.SetLayer(layer)
+    board.Add(ring)
+
 def add_track(board, a, b, w, net):
     t = pcbnew.PCB_TRACK(board)
     t.SetStart(a); t.SetEnd(b); t.SetWidth(NM(w))
@@ -476,10 +492,7 @@ def main():
         pts[2:2] = []
         for a, b in zip(pts, pts[1:]):
             add_track(board, a, b, wdt, nets[netname])
-    ring = pcbnew.PCB_SHAPE(board, pcbnew.SHAPE_T_CIRCLE)
-    ring.SetCenter(MM(49.7, 27.0)); ring.SetEnd(MM(52.7, 27.0))
-    ring.SetWidth(NM(2.0)); ring.SetFilled(False); ring.SetLayer(pcbnew.B_Cu)
-    board.Add(ring)
+    add_scrub_ring(board, pcbnew.B_Cu)      # its B.Mask twin goes on post-fill
     # silk: board texts + ticks; refs to B.SilkS, values to fab
     for txt, x, y, h, rot in SILK:
         t = pcbnew.PCB_TEXT(board); t.SetText(txt); t.SetPosition(MM(x, y))
@@ -509,21 +522,35 @@ def main():
     z.SetPadConnection(pcbnew.ZONE_CONNECTION_THERMAL)
     z.Outline().AddOutline(rect_chain(0.6, 0.6, 54.4, 39.58)); board.Add(z)
     open(os.path.join(HERE, "coupon.kicad_dru"), "w").write(DRU)
+    # fill needs a project-attached board: save, reload, fill, save again
+    pcbnew.SaveBoard(BOARD, board)
+    board2 = pcbnew.LoadBoard(BOARD)
+    pcbnew.ZONE_FILLER(board2).Fill(board2.Zones())
+    # the gauge's mask aperture goes on AFTER the pour, deliberately: a mask
+    # graphic reaches no copper, but adding it before ZONE_FILLER drops one
+    # COLLINEAR vertex from one GND island's outline (measured 2026-07-30:
+    # the vertex sits 0.000mm off its own chord, the island's area is equal to
+    # the bit, and the copper gerber's other 675 ops are untouched). Post-fill
+    # the copper bytes cannot move at all, which is the honest form of "this
+    # change reaches no copper" -- the mask layer does not get to rewrite B.Cu.
+    add_scrub_ring(board2, pcbnew.B_Mask)
+    pcbnew.SaveBoard(BOARD, board2)
     # courtyard checks -> warning: this hand-assembled milled board uses
     # deliberate same-net pad butt-joints (R4/S2, JP5/C1, JP5 beside U2's
     # lead-span courtyard); every copper clearance is checked at error level.
+    # This patch must be the LAST write: SaveBoard re-serializes the project
+    # file from the board's own settings, so a patch written before it is
+    # silently reverted and a fresh build hands the DRC gate 7 courtyard-class
+    # ERRORS (found 2026-07-30 re-running this script for the scrub-ring fix).
     pro = os.path.join(HERE, "coupon.kicad_pro")
     import json as _json
     p = _json.load(open(pro))
     rs = p.setdefault("board", {}).setdefault("design_settings", {}).setdefault("rule_severities", {})
     rs["courtyards_overlap"] = "warning"
     rs["pth_inside_courtyard"] = "warning"
-    _json.dump(p, open(pro, "w"), indent=2)
-    # fill needs a project-attached board: save, reload, fill, save again
-    pcbnew.SaveBoard(BOARD, board)
-    board2 = pcbnew.LoadBoard(BOARD)
-    pcbnew.ZONE_FILLER(board2).Fill(board2.Zones())
-    pcbnew.SaveBoard(BOARD, board2)
+    # trailing newline: KiCad's own serializer writes one, so keeping it makes
+    # this rewrite a two-value diff instead of a whole-file one
+    open(pro, "w").write(_json.dumps(p, indent=2) + "\n")
     # pad dump for route authoring / audit
     for ref in sorted(fps):
         fp = fps[ref]

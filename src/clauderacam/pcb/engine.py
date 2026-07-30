@@ -84,9 +84,18 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     for name in ("cu", "mask", "edge", "drl"):
         L.append(f"offset {name} -x {dx:.6g} -y {dy:.6g}")
 
-    def cnc(geo, tool, z, feed, plunge, out, dpp=None):
+    def cnc(geo, tool, z, feed, plunge, out, dpp=None, dia=None):
+        """`dia` overrides the tool's shank diameter for the CUTTING width the
+        phase actually uses — a vee's tip, not its cone (2026-07-30, the first
+        live run: the iso phase's cncjob got the vee's full 3.175 while
+        `isolate` correctly got the 0.2 tip, so fc-1-iso.nc's header printed
+        "TOOL DIAMETER: 3.175". It reaches no geometry and re-emission drops
+        the header, but a lying header is still a lie in a file an operator
+        can open — the assembled mill program is byte-identical either way,
+        which is the proof this fix is geometry-free)."""
         extra = f" -dpp {dpp:.6g}" if dpp is not None else ""
-        return (f"cncjob {geo} -dia {tool.diameter:.6g} -z_cut {z:.6g}"
+        d = tool.diameter if dia is None else dia
+        return (f"cncjob {geo} -dia {d:.6g} -z_cut {z:.6g}"
                 f"{extra} -z_move 2.0 -feedrate {feed:.6g} "
                 f"-feedrate_z {plunge:.6g} -spindlespeed {tool.rpm} "
                 f"-pp default -outname {out}")
@@ -95,7 +104,7 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     L += [f"isolate cu -dia {iso_t.tip_diameter:.6g} -passes 1 -overlap 0 "
           f"-combine 1 -outname iso_geo",
           cnc("iso_geo", iso_t, p["depth"], p["feed"], p["plunge"],
-              "iso_cnc"),
+              "iso_cnc", dia=iso_t.tip_diameter),
           f"write_gcode iso_cnc $OUT/{PHASE_NC['iso']}"]
     p = ph["clear"]
     L += [f"ncc cu -tooldia {clear_t.diameter:.6g} "

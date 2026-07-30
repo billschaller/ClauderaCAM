@@ -964,7 +964,8 @@ the one number in it that differs from the field Tcl: only channels
 ≥1.0mm get a tool, `clear opening` reads 0.005 with 0.445 to spare, and
 the copper left behind is copper the mask seals. No threshold moved.
 
-**The scrub ring is not a gauge (OPEN — board-side, not patched).**
+**The scrub ring is not a gauge (FIXED board-side the same evening — see
+the next entry).**
 SPEC.md's coupon block specifies "an annular copper ring pad (~8mm OD,
 2mm band) for reading scrub-margin registration with a loupe", and
 `tools-layout.py` builds it as a `PCB_SHAPE` circle on **B.Cu** —
@@ -1026,6 +1027,149 @@ would let `verify.verify()` run its own simulation over a [pcb] job,
 scrub COVERAGE (still un-barred until Board A's pads are inspected under
 a loupe), and the run-sheet/overlay viewer work. Board A has not been
 cut yet — these are verified files, not verified copper.
+
+## 2026-07-30 (evening): a gauge the process cannot touch is not a gauge
+
+`boards/coupon/tools-layout.py`. The live run's third finding gets its
+board-side fix, and the fix carries a law: **a process gauge must live
+inside the region its own phase PAINTS, not merely near it.** The scrub
+phase paints the MASK APERTURES deflated by the job's offset, so a scrub
+gauge needs an aperture over it; copper alone is invisible to that phase
+and reads identically on a perfect run and a botched one.
+
+**What changed on the board.** `add_scrub_ring(board, layer)` draws the
+annulus from ONE definition — centre (49.7, 27.0) board / (149.7,
+−127.0) gerber, centreline r 3.0, stroke 2.0, so the ink band is r
+2.0..4.0 — and it is called twice, once for **B.Cu** and once for
+**B.Mask**. One definition because a copper ring and the aperture over it
+that disagree by any amount would make the loupe reading a lie about
+which edge it is reading.
+
+The mask copy is added to the POST-FILL board on purpose. Adding it
+before `ZONE_FILLER` drops exactly one vertex from one GND island's
+outline — measured: the vertex sits **0.000mm off its own chord**, its
+neighbours share the same y to the nanometre, and the island's shoelace
+area is equal **to the bit** (−23.226794342 mm² both ways), with the
+copper layer's other 675 ops untouched. So it is a serialization
+artifact, not geometry — but it would still have rewritten
+`coupon-B_Cu.gbr` for a change that cannot reach copper. Post-fill, the
+copper bytes cannot move at all, which is the honest form of "this
+change reaches no copper": the mask layer does not get to rewrite B.Cu.
+
+**A second board-side defect fell out of re-running the script.** The
+courtyard-severity patch (`courtyards_overlap` / `pth_inside_courtyard`
+→ warning, the same-net butt-joint triage of the 2026-07-30 layout
+commit) was written BEFORE `pcbnew.SaveBoard`, and SaveBoard
+re-serializes the project file from the board's own settings — so the
+patch was silently reverted on every build and a fresh checkout handed
+`kicad-cli pcb drc` **7 courtyard-class ERRORS**. Proven by
+reconstruction: the committed `.kicad_pro` carries KiCad's trailing
+newline and `"error"`, i.e. it is the post-SaveBoard file, not the
+patched one. The patch is now the script's LAST write (and keeps the
+trailing newline, so it is a two-value diff instead of a whole-file
+one). The DRC end state is unchanged from what the layout commit
+claimed; it is now what a re-run actually produces.
+
+**Gate state (kicad-cli pcb drc --schematic-parity --severity-all,
+10.0.4): 0 errors**, 74 warnings, census byte-for-byte the previously
+triaged one — 7 courtyard-class, 48 lib bookkeeping (11 + 37), 18
+`silk_overlap` cosmetics, 1 parity. **Zero new warnings**, and no
+violation involves the new aperture. One thing worth recording because
+it looks like a change and is not: the *measured value* printed inside
+two of the 18 silk warnings wobbles between identical builds (0.1221 /
+0.1140 / 0.0000 on the same text across three runs of the same script).
+The census is stable, the severity is stable, the rule is unchanged; the
+number in the message is not a build invariant and must not be read as
+one.
+
+**Re-export: exactly one gerber file changed.**
+`boards/coupon/gerbers/coupon-B_Mask.gbr` gains the annulus — two `G75`
+multi-quadrant `G02` semicircle arcs stroked with a `C,2.000000`
+aperture, i.e. **+1 aperture and +4 coordinate ops (176 → 180)**.
+`coupon-B_Cu.gbr`, `-Edge_Cuts.gbr`, `-B_Silkscreen.gbr`,
+`-B_Paste.gbr`, `coupon.drl` and the `.gbrjob` were NOT re-exported and
+are byte-identical in the repo. That they *could* not simply be
+re-exported is the caveat this entry states once, so nobody re-derives
+it later: **gerber TEXT is not build-stable — gerber GEOMETRY is.** KiCad
+permutes the D-code assignment from build to build (two runs of the
+identical script produce the same shapes with different aperture
+numbers), so B.Cu's bytes can never be regenerated. The closure is
+therefore an aperture-DEFINITION-keyed comparison of a full fresh export
+against the committed set: copper **676 ops / 31 apertures / 4 regions
+of 1916, 321, 253, 97 points — identical**; silk 971 ops, outline 18
+ops, paste 128 ops, the Excellon exact; every file's only textual
+difference outside B.Mask is KiCad's `CreationDate` stamp.
+
+**boardmaps closure** (src/clauderacam/pcb/boardmaps.py on the committed
+gerbers): extents exactly **55.000 × 40.000** at (100, −140)..(155,
+−100), `machine_offset(anchor 0,0)` = **(155.000, 140.000)**, **37
+bores** with dias {0.8, 0.9, 1.1, 1.5, 3.4}, 37 copper regions whose
+first closing-morphology merge is at **d = 0.39mm** (the 0.4 clearance
+law, unchanged), copper-to-outline-centreline 0.380. The mask layer now
+carries **91 coordinate ops (was 87)** and its nearest one to the ring
+centre is **3.000mm (was 7.316)**; rasterized, its ink around that
+centre spans r **1.988..4.009** against the annulus's asked 2.000..4.000
+— half a pixel each way at the lane's declared 0.01mm/px.
+
+**The ring is now gauged.** The engine re-ran (8.7s, five phases), the
+four programs were re-emitted, and `verify_pcb` says **PASS on all
+four**. The lap, measured on the assembled scrub bytes:
+
+| | before | after |
+|---|---|---|
+| scrub samples | 96,182 | 117,404 |
+| closest approach to the ring centre | 6.466 | **2.295** |
+| samples inside the 2.0..4.0 band | 0 | **21,222** |
+| tool CENTRES cover | — | r 2.295..3.701 |
+| tool EDGE sweeps | — | r 2.145..3.851 |
+| one-degree sectors with a sample | 0/360 | **360/360** |
+
+So the deflate the job asked for (`scrub offset 0.15`) is delivered at
+**0.145 inner / 0.149 outer** — FlatCAM under-delivering 0.005, the same
+direction and order as `clear keep-out`'s true 0.0972 of an asked 0.100.
+On the ring alone, `scrub window` reads **0.137** and `scrub plateau
+margin` **0.137** (bars 0.05): the spring tip never straddles the ring's
+copper edges, which is what makes a loupe reading of that band mean
+anything. Program-wide worsts are unmoved — window **0.131**, plateau
+**0.133** — i.e. the new gauge is not the worst place on the board and
+no threshold is anywhere near.
+
+Cost: the scrub program grows **3,319 → 3,659 lines**, path **1597.87 →
+1934.93 mm** (+337.06), est **3.99 → 4.84 min**; the four-program
+estimate goes ≈17.8 → **≈18.7 min**. Estimates are estimates; the
+verdicts are facts.
+
+**Re-blessed, explicitly (Article III):**
+`tests/golden_pcb/coupon-scrub.nc` and
+`tests/golden_pcb/gerbers/coupon-B_Mask.gbr` — those two files only. The
+mill, silk and holes programs are **byte-identical** to the blessed
+bytes (sha256 each), which is the assertion that localizes this change
+to the scrub phase. Silk in particular: the new aperture clipped
+**nothing** — 481 gerber chains → 481 strokes, 0 clipped, 0 dropped,
+`silk pad clearance` **0.656** (bar 0.30) unchanged, the nearest legend
+stroke being the "0.6" ladder label ~6.1mm from the ring centre. A
+clipped gauge label would have been a new problem, not a fix. And a
+second engine run from the re-blessed job reproduces all four programs
+byte-identically, so the new scrub bytes are a golden asset in the same
+sense as the old ones.
+
+**The lying header stops lying (engine.py, geometry-free).**
+`render_tcl`'s `cncjob` for the iso phase now gets the vee's **0.2 tip**
+instead of its 3.175 shank, so `fc-1-iso.nc`'s header prints "TOOL
+DIAMETER: 0.2 mm". Proof that it reaches no geometry, stated as bytes:
+the iso interchange file's motion body is identical line-for-line before
+and after, and the assembled mill program is **byte-identical** to the
+blessed one. `isolate` was always given the tip; only the header was
+wrong, and a header an operator can open is not a place to keep a wrong
+number.
+
+**What this does NOT close.** The gate-side generalization of this
+finding is `scrub coverage` — a check that every mask aperture actually
+gets lapped — and it is still deliberately un-barred (DESIGN.md
+2026-07-30 morning): the bar wants a loupe on real copper first. This
+ring is now exactly the coupon that will set it. Suites: all **11
+green**. Board A still has not been cut — these are verified files, not
+verified copper.
 
 ## Roadmap
 
