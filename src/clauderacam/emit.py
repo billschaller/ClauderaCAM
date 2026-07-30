@@ -96,6 +96,157 @@ def lint_program(lines: list[str]) -> list[str]:
     return problems
 
 
+# ---------------------------------------------------------------- laser silk
+# The Air's 455nm module cures white UV mask as a plotter (solder-mask guide
+# §5). Laser programs are their OWN dialect with their own law: the mill gate
+# (simulate.parse_line) refuses M321 on sight, so a laser file can never slip
+# through the carving pipeline — and this lint refuses anything spindle-like,
+# so a carving file can never pass as a laser job.
+LASER_S_MAX = 0.30         # hard ceiling = the MakeraCAM tutorial's own top
+#                            end (20-30%). The 2026-07-19 defocus incident
+#                            proved a DEFOCUSED 20% beam cures mask in washes,
+#                            so focused 20% is already past the cure
+#                            threshold; the ceiling exists to catch a
+#                            fat-fingered dose, not to bless 0.30.
+LASER_DOSE_DEFAULT = 0.03  # field-validated 2026-07-19 (S0.03 / F100)
+LASER_FEED_DEFAULT = 100.0
+
+_M321 = re.compile(r"\bM321\b")
+_Z_WORD = re.compile(r"\bZ([-+]?\d*\.?\d+)")
+_T_WORD = re.compile(r"\bT\d")
+_LASER_WORDS = re.compile(
+    r"\bG0?(?:[01]\b|17\b|21\b|54\b|90\b|94\b)|\bM(?:321|0?3|0?5|30)\b"
+    r"|[XYZF][-+]?\d*\.?\d+|S\d*\.?\d+")
+
+
+def lint_laser(lines: list[str], s_max: float = LASER_S_MAX) -> list[str]:
+    """Dialect lint for a LASER program. The law (solder-mask guide §5, all
+    field-derived): exactly one M321 before anything moves; the first motion
+    after it is exactly `G0 Z0` (the focus law — a parked head projects a
+    big square and cures mask in washes); no other Z word in the file; one
+    M3 with 0 < S <= s_max (no G4 dwell — spin-up is a SPINDLE rule, the
+    laser has none); no tool changes; M5 before M30. The laser fires only
+    during feed moves, so armed G0 travel is dark by firmware design."""
+    problems: list[str] = []
+    seen_m321 = seen_m3 = seen_m5 = seen_m30 = seen_motion = False
+    seen_g21 = seen_g90 = False
+    focus_pending = False    # after M321, before its G0 Z0
+    for lineno, raw in enumerate(lines, 1):
+        if len(raw) > MAX_LINE:
+            problems.append(f"line {lineno} exceeds {MAX_LINE} chars")
+        body = _COMMENT.sub(" ", raw).strip()
+        if not body:
+            continue
+        if _LASER_WORDS.sub("", body).replace(" ", ""):
+            problems.append(
+                f"line {lineno}: {raw.strip()!r} contains words outside "
+                f"the laser dialect")
+            continue
+        if _T_WORD.search(body) or _M6.search(body):
+            problems.append(f"line {lineno}: tool change in a laser program")
+        if _G21.search(body):
+            seen_g21 = True
+        if _G90.search(body):
+            seen_g90 = True
+        if _M321.search(body):
+            if seen_m321:
+                problems.append(f"line {lineno}: second M321")
+            if seen_motion:
+                problems.append(f"line {lineno}: M321 after motion")
+            seen_m321 = True
+            focus_pending = True
+            continue
+        zm = _Z_WORD.search(body)
+        motion = _MOTION.search(body) is not None
+        if focus_pending:
+            if motion or _M3.search(body):
+                if body.replace(" ", "") == "G0Z0":
+                    focus_pending = False
+                    seen_motion = True
+                    continue
+                problems.append(
+                    f"line {lineno}: first motion after M321 must be "
+                    f"exactly 'G0 Z0' (focus law) — got {raw.strip()!r}")
+                focus_pending = False
+        elif zm is not None:
+            problems.append(
+                f"line {lineno}: Z word outside the M321 focus move — the "
+                f"head stays at the focal plane")
+        if motion:
+            seen_motion = True
+            if not seen_m321:
+                problems.append(f"line {lineno}: motion before M321 — the "
+                                f"head is still a spindle here")
+            if not (seen_g21 and seen_g90):
+                problems.append(f"line {lineno}: motion before G21/G90")
+        if _M3.search(body):
+            if not seen_m321:
+                problems.append(f"line {lineno}: M3 before M321 arms the "
+                                f"SPINDLE, not the laser")
+            if seen_m3:
+                problems.append(f"line {lineno}: second M3")
+            seen_m3 = True
+            sm = _S_WORD.search(body)
+            s = float(sm.group(1)) if sm else 0.0
+            if not sm or s <= 0:
+                problems.append(f"line {lineno}: M3 without a positive S")
+            elif s > s_max:
+                problems.append(
+                    f"line {lineno}: dose S{s:g} exceeds the ceiling "
+                    f"{s_max:g} — char/vaporize territory")
+        elif _M5.search(body):
+            seen_m5 = True
+        if _M30.search(body):
+            seen_m30 = True
+    if not seen_m321:
+        problems.append("no M321 — this is not a laser program")
+    if focus_pending:
+        problems.append("M321 never followed by its 'G0 Z0' focus move")
+    if not seen_m3:
+        problems.append("laser never armed (no M3 S)")
+    if not seen_m5:
+        problems.append("laser never disarmed (no M5)")
+    if not seen_m30:
+        problems.append("program has no M30 end-of-program")
+    return problems
+
+
+def assemble_laser(name: str, strokes: list[list[tuple]], *,
+                   dose_s: float = LASER_DOSE_DEFAULT,
+                   feed: float = LASER_FEED_DEFAULT,
+                   s_max: float = LASER_S_MAX) -> str:
+    """Emit a silk-legend laser program: one G0 hop + G1 chain per stroke.
+    Refuses to emit outside its own law, same posture as assemble()."""
+    if dose_s <= 0 or dose_s > s_max:
+        raise ValueError(
+            f"laser dose S{dose_s:g} outside (0, {s_max:g}] — the "
+            f"field-validated dose is S{LASER_DOSE_DEFAULT}; bracket UP on "
+            f"scrap, not in the config")
+    out = [f"(clauderacam laser: {name})",
+           f"(silk legend: dose S{dose_s:g} F{feed:g}; cures white mask, "
+           f"wipe uncured with IPA)",
+           "G90 G94", "G17", "G21", "G54",
+           "M321",
+           "G0 Z0",
+           "(focus law: Z0 = focal plane after M321)",
+           f"M3 S{dose_s:g}"]
+    for pts in strokes:
+        if len(pts) < 2:
+            raise ValueError("laser stroke needs at least 2 points")
+        x, y = pts[0]
+        out.append(f"G0 X{x:.3f} Y{y:.3f}")
+        x, y = pts[1]
+        out.append(f"G1 X{x:.3f} Y{y:.3f} F{feed:g}")
+        for x, y in pts[2:]:
+            out.append(f"G1 X{x:.3f} Y{y:.3f}")
+    out += ["M5", "M30"]
+    problems = lint_laser(out, s_max=s_max)
+    if problems:
+        raise ValueError("emitted laser program fails its own dialect "
+                         "lint: " + "; ".join(problems[:3]))
+    return "\n".join(out) + "\n"
+
+
 def assemble(job: Job, ops: list[OpResult]) -> str:
     from .simulate import parse_line  # deferred: emit is imported by verify
 

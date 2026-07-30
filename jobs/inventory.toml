@@ -8,11 +8,15 @@
 #
 # Provenance: hand-mirrored from the operator's inventory app
 # (~/scratch/carvera/inventory, counted 2026-07-19), geometry from the
-# bit descriptions and the metal-validated job set. Entries whose reach is
-# NOT known are deliberately absent (TiN drills 2.5/3.0, PCB micro drills,
-# sub-2mm corn bits): measure, then add — never guess. Conical bits
-# (chamfer/engraving V-tips) are unsupported by the simulator and have no
-# place here yet.
+# bit descriptions, the operator's printed case labels, and the
+# metal-validated job set. Entries whose reach is NOT known are
+# deliberately absent (TiN drills 2.5/3.0, PCB micro drills): measure,
+# then add — never guess.
+#
+# PCB-lane entries (2026-07-29): vee engravers and the spring mask tool
+# became simulatable with the WS1 kernel shapes; the corn mills and both
+# conical tools below carry the app's counted quantities and the case-label
+# geometry (tip/angle/FL printed on the operator's own bit-case labels).
 
 [[tool]]
 type = "flat"
@@ -139,3 +143,44 @@ flutes = 2
 flute_length = 12.0
 label = "Twist Drill 2x12 (Spare Tools)"   # reach reported at the bench
 qty = 5
+
+# --- PCB lane -------------------------------------------------------------
+
+[[tool]]
+type = "vee"
+diameter = 3.175            # max cutting dia at the top of the cone
+tip_diameter = 0.2
+included_angle_deg = 30.0
+shank_diameter = 3.175
+flutes = 1
+flute_length = 10.0         # case label "30° · TIP 0.2 · 1F · FL 10"
+label = "0.2mm Tip Engraving Metal (30°)"  # cut the zigbee-button V2 boards
+qty = 7
+
+[[tool]]
+type = "flat"
+diameter = 0.8
+shank_diameter = 3.175
+flutes = 2
+flute_length = 6.0
+label = "6mm Flute Corn 0.8"               # cut the zigbee-button V2 boards
+qty = 3                     # 2 working + 1 in the graduated PCB set
+
+[[tool]]
+type = "flat"
+diameter = 1.0
+shank_diameter = 3.175
+flutes = 2
+flute_length = 6.0
+label = "6mm Flute Corn 1.0"               # cut the zigbee-button cutouts
+qty = 4                     # 3 spare + 1 in the graduated PCB set
+
+[[tool]]
+type = "scrub"
+diameter = 0.3              # modeled as a flat 0.3 scrub width (mask guide
+#                             §3.1: never as the chamfer-mill library entry)
+shank_diameter = 3.175
+flutes = 1
+flute_length = 2.0          # case label "30° · TIP 0.3 · 1F · FL 2"
+label = "UV Solder Mask Removal Tool (spring)"  # scrubbed the zigbee pads
+qty = 2

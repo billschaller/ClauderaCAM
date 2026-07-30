@@ -21,12 +21,15 @@ from .physics import MACHINE_DEFAULTS, MATERIALS
 @dataclass
 class Tool:
     num: int
-    type: str            # "flat" | "ball"
-    diameter: float
+    type: str            # "flat" | "ball" | "drill" | "vee" | "scrub"
+    diameter: float      # vee: MAX cutting diameter at the top of the cone
     rpm: int
     flutes: int          # cutting edges (Spiral O = 1)
     flute_length: float  # mm of cutting flute above the tip
     shank_diameter: float
+    # vee only (load-bearing: the kernel's conical drop is built from them)
+    tip_diameter: float | None = None
+    included_angle_deg: float | None = None
 
     @property
     def radius(self) -> float:
@@ -94,14 +97,32 @@ def parse_tools(d: dict, machine: dict, job_dir: Path) -> dict[int, Tool]:
     inv = inventory.load(inv_path)
     tools: dict[int, Tool] = {}
     for t in d["tool"]:
-        if t["type"] not in ("flat", "ball", "drill"):
+        if t["type"] not in ("flat", "ball", "drill", "vee", "scrub"):
             raise ValueError(
                 f"tool T{t['num']}: unknown type {t['type']!r} — the "
-                f"simulator models flat, ball and drill only")
+                f"simulator models flat, ball, drill, vee and scrub only")
+        if t["type"] == "vee":
+            # the conical drop is built from tip and angle — a vee without
+            # them cannot be simulated, and a guessed value is an invented
+            # tool (Article XI)
+            for k in ("tip_diameter", "included_angle_deg"):
+                if k not in t:
+                    raise ValueError(
+                        f"tool T{t['num']}: vee tools require {k!r}")
+            if not (0 < t["tip_diameter"] < t["diameter"]):
+                raise ValueError(
+                    f"tool T{t['num']}: tip_diameter must sit strictly "
+                    f"inside (0, diameter)")
+            if not (0 < t["included_angle_deg"] < 180):
+                raise ValueError(
+                    f"tool T{t['num']}: included_angle_deg must be in "
+                    f"(0, 180)")
         tool = Tool(
             t["num"], t["type"], t["diameter"], t["rpm"],
             t["flutes"], t["flute_length"],
-            t.get("shank_diameter", max(t["diameter"], 3.175)))
+            t.get("shank_diameter", max(t["diameter"], 3.175)),
+            tip_diameter=t.get("tip_diameter"),
+            included_angle_deg=t.get("included_angle_deg"))
         inventory.match(tool, inv, inv_path)  # Article XI: refuse phantoms
         tools[t["num"]] = tool
         if t["rpm"] > machine["spindle_max_rpm"]:

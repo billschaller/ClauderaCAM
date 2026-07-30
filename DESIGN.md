@@ -469,6 +469,50 @@ Now pinned:
 Local checkout `~/scratch/carvera/flatcam` sits on the branch with a
 clean tree, remote `fork` = the pin.
 
+## 2026-07-29 (night, later): WS1 — the kernels learn the PCB shapes
+
+Both kernels (Article X) now speak four shapes — codes 0 flat, 1 ball,
+2 vee, 3 scrub — and the parity suite carries a synthetic vee+scrub
+case alongside the dome job. Everything below is generation-blind:
+flat/ball output is untouched (golden byte-identical).
+
+- **Vee** (`type = "vee"`): conical drop above a flat tip,
+  `drop(rr) = max(rr − tip_r, 0) · cot(half_angle)` — the fixed-shallow-
+  depth case of the conical-tools roadmap item. `tip_diameter` and
+  `included_angle_deg` are REQUIRED on the job tool and on the crib
+  entry, and must match (the cone IS the tool — a guessed cone is an
+  invented tool, Article XI). Contact limit `MAX_ENGAGE_VEE = 0.35`,
+  PROVISIONAL: the zigbee boards validated −0.15 isolation and a cone
+  buried past ~2× that is a snapped engraver tip.
+- **Scrub** (`type = "scrub"`, the Makera spring mask tool): EMPTY
+  kernel footprint — commanded depth is spring preload, not cut depth
+  (mask guide §1), so the sim removes nothing, contacts nothing, reads
+  no rapids and leaves min_cut_z alone. The Article IX exemption is
+  stated in kernel_py.py and physics.py (scrub plunges are exempt from
+  mill plunge limits — the plunge compresses a spring, not a flute).
+  Honesty note: the kernel's silence is the exemption; the scrub
+  program's own checks (containment / coverage / exact-depth,
+  WS5) are the judge for that program family.
+- **Laser dialect** (mask guide §5, all field-derived): laser programs
+  are a separate family with their own law in emit.py —
+  `assemble_laser()` / `lint_laser()`: exactly one M321 before motion,
+  the first motion after it EXACTLY `G0 Z0` (the 2026-07-19 defocus
+  incident: a parked head projects a square and cures mask in washes),
+  no other Z word in the file, one M3 with 0 < S ≤ 0.30 (the ceiling is
+  the MakeraCAM tutorial's own top end; field-validated dose S0.03
+  F100), no tool changes, M5 before M30, no G4 dwell (spin-up is a
+  spindle rule). The mill gate refuses M321 on sight, so the two
+  program families cannot cross-contaminate.
+- **Materials**: `fr4` and `fr1` entries, ALL PROVISIONAL, anchored to
+  the flawless zigbee-button V2 cuts (2026-07-19): vee isolation
+  Z−0.15 S12000 F500 plunge 200, 0.8 corn clearing + helical bores,
+  1.0 corn cutout at 0.3 stepdown. Those cuts drew ~1–3 W by the model;
+  every limit sits far above the validated points.
+- **Crib**: 0.2mm/30° vee engraver (×7), 0.8 corn (×3), 1.0 corn (×4),
+  spring mask tool (×2) — quantities from the operator's inventory app
+  (counted 2026-07-19), tip/angle/reach from the operator's printed
+  case labels. Vee inventory entries without tip+angle refuse to load.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
@@ -479,9 +523,11 @@ clean tree, remote `fork` = the pin.
 - **v1 depth-stepped clearing**: restricted stepped clearing where the
   rough-offset minus ball-offset delta exceeds the engagement limit (the
   coinforge semi-finish logic) — unlocks deep narrow pockets and tall walls.
-- **v1 conical tools**: V-bits and tapered ball noses via a cone drop
-  function in offset/simulate, gated on a machine-validated tip engagement
-  limit before any job ships with one.
+- **v1 conical tools**: V-bits at fixed shallow depth SHIPPED with WS1
+  (vee kernel shape, above). Still open: tapered ball noses, and
+  heightmap-following vee offset surfaces in offset.py, gated on a
+  machine-validated tip engagement limit before any carving job ships
+  with one.
 - **v1 viewer**: toolpath overlay per op, A/B against target model,
   per-check highlight (e.g. paint the engagement hotspot).
 - **v2**: adaptive/trochoidal rough option. (Two-sided pin-and-flip

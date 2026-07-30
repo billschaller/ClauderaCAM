@@ -52,6 +52,11 @@ MAX_ENGAGE_DRILL = 1.2   # a peck advances 0.8 into its own hole; drills cut
 #                          full-face by design, so the bound exists to catch
 #                          a runaway peck, not flank flex. PROVISIONAL: no
 #                          pin hole drilled on this machine yet.
+MAX_ENGAGE_VEE = 0.35    # a vee's working depth is shallow by design (the
+#                          zigbee boards validated -0.15 isolation); a cone
+#                          buried past ~2x that is a snapped engraver tip,
+#                          the most fragile thing in the crib. PROVISIONAL:
+#                          no vee cut by this pipeline yet.
 MAX_OVERCUT = 0.5        # below stock bottom (sacrificial board territory)
 GOUGE_TOL = 0.15         # measured max on validated jobs: 0.102
 
@@ -63,6 +68,10 @@ def contact_limit(tool) -> float:
         return BALL_ENGAGE_FRAC * tool.diameter
     if tool.type == "drill":
         return MAX_ENGAGE_DRILL
+    if tool.type == "vee":
+        return MAX_ENGAGE_VEE
+    # scrub tools have an empty kernel footprint (contact is always 0);
+    # the flat limit here is a formality, never the judge
     return MAX_ENGAGE_FLAT
 
 

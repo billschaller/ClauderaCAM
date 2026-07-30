@@ -24,6 +24,8 @@ jobs:
         run: python tests/viewer_sessions.py
       - name: two-sided pin-and-flip (cross-side checks + negatives)
         run: python tests/twosided_suite.py
+      - name: pcb tools (vee cone, scrub exemption, laser dialect)
+        run: python tests/pcb_tools_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -42,3 +44,5 @@ jobs:
         run: python tests/viewer_sessions.py
       - name: two-sided pin-and-flip on the pure-python kernel
         run: python tests/twosided_suite.py
+      - name: pcb tools on the pure-python kernel
+        run: python tests/pcb_tools_suite.py

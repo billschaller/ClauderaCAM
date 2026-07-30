@@ -82,6 +82,36 @@ MATERIALS = {
         "heat_window_s": 10.0,
         "enclosed_chip_mm3": 600.0,  # gummy: chips weld if they can't escape
     },
+    # Copper-clad board for the PCB lane. ALL LIMITS PROVISIONAL — anchored
+    # to the flawless zigbee-button V2 cuts (2026-07-19, 1.5mm blank):
+    # 0.2 vee isolation Z-0.15 S12000 F500 plunge 200; 0.8 corn clearing +
+    # helical bores S12000 F500; 1.0 corn cutout 0.3-stepdown x6 to -1.7.
+    # By this model those cuts drew ~1-3 W and ~0.006 mm³/tooth (1.0 corn),
+    # so every limit below sits far above the validated points and exists
+    # to catch runaway classes, not to shave margins.
+    "fr4": {
+        "specific_energy": 0.6,      # J/mm³ — glass/epoxy literature band
+        "fz_min_frac": 0.001,        # abrasive glass dulls a rubbing edge
+        "a_tooth_max_frac": 0.009,   # validated 0.00625 frac (1.0 corn) +45%
+        "plunge_feed_max": 250.0,    # validated 200 (vee engraver plunge)
+        "drill_plunge_max": 300.0,   # no PCB twist drill used yet
+        "sustained_w": 40.0,         # epoxy softens; PROXY, see contract
+        "heat_window_s": 10.0,
+        "enclosed_chip_mm3": 400.0,  # cutout slot ~26 mm³/pass validated
+    },
+    # FR-1 phenolic: mills milder than FR-4 (no glass weave) but the bench
+    # has only cut the FR-4-class blanks — same numbers until FR-1 evidence
+    # says otherwise.
+    "fr1": {
+        "specific_energy": 0.6,
+        "fz_min_frac": 0.001,
+        "a_tooth_max_frac": 0.009,
+        "plunge_feed_max": 250.0,
+        "drill_plunge_max": 300.0,
+        "sustained_w": 40.0,
+        "heat_window_s": 10.0,
+        "enclosed_chip_mm3": 400.0,
+    },
 }
 
 ENCLOSED_EFRAC = 0.4     # engagement fraction that counts as an enclosed cut
@@ -230,10 +260,14 @@ def physics_checks(job, metrics) -> list[PhysCheck]:
     # --- plunge rate -------------------------------------------------------
     # end mills and drills plunge under different physics: an end mill's
     # center barely cuts (limit is tight), a twist drill's point geometry
-    # exists to plunge (limit is the material's drilling feed band)
+    # exists to plunge (limit is the material's drilling feed band). Scrub
+    # tools are exempt (Article IX, stated): the plunge compresses a spring,
+    # not a flute — commanded depth is preload, the kernel removes nothing.
     is_drill = np.array([job.tool(int(t)).type == "drill"
                          for t in m.tool_num])
-    mill_pl = plungey & ~is_drill
+    is_scrub = np.array([job.tool(int(t)).type == "scrub"
+                         for t in m.tool_num])
+    mill_pl = plungey & ~is_drill & ~is_scrub
     worst_pl = float(m.feed[mill_pl].max()) if mill_pl.any() else 0.0
     checks.append(PhysCheck("plunge feed", worst_pl,
                             f"<= {mat['plunge_feed_max']:g} mm/min",

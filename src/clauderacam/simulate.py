@@ -37,6 +37,9 @@ from .job import Job
 
 SAFE_Z = 3.0
 
+# job tool type -> kernel shape code (kernel_py.FLAT/BALL/VEE/SCRUB)
+SHAPE_OF = {"flat": 0, "ball": 1, "drill": 0, "vee": 2, "scrub": 3}
+
 WORD = re.compile(r"([A-Za-z])\s*([-+]?(?:\d+\.?\d*|\.\d+))")
 COMMENT = re.compile(r"\([^)]*\)|;.*")
 # Stage markers: emit.assemble() writes one before every operation's moves.
@@ -267,8 +270,14 @@ def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
     idx_of = {t: i for i, t in enumerate(tool_nums)}
     tools = job.tools
     dia = np.array([tools[t].diameter for t in tool_nums])
-    ball = np.array([1 if tools[t].type == "ball" else 0 for t in tool_nums],
-                    dtype=np.uint8)
+    # kernel shape codes (kernel_py.py): drills carve as flat-bottom holes
+    shape = np.array([SHAPE_OF[tools[t].type] for t in tool_nums],
+                     dtype=np.uint8)
+    tip_r = np.array([(tools[t].tip_diameter or 0.0) / 2.0
+                      for t in tool_nums])
+    slope = np.array([1.0 / np.tan(np.radians(
+        tools[t].included_angle_deg / 2.0))
+        if tools[t].type == "vee" else 0.0 for t in tool_nums])
     flute_len = np.array([tools[t].flute_length for t in tool_nums])
     shank_d = np.array([tools[t].shank_diameter for t in tool_nums])
     tool_idx = np.array([idx_of[int(t)] for t in m.tool_num], dtype=np.uint16)
@@ -286,7 +295,8 @@ def carve(nc_path, job: Job, *, ppm: float = 12.5, extra_half: float = 3.0,
 
     out = kernel.measure(
         n=n, ppm=ppm, half=half, step=step, check=check,
-        dia=dia, ball=ball, flute_len=flute_len, shank_d=shank_d,
+        dia=dia, shape=shape, tip_r=tip_r, slope=slope,
+        flute_len=flute_len, shank_d=shank_d,
         motion=m.motion, x0=m.x0, y0=m.y0, z0=m.z0,
         x1=m.x1, y1=m.y1, z1=m.z1, tool_idx=tool_idx,
         snap_after=snap_after)

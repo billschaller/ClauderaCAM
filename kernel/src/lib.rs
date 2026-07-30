@@ -19,23 +19,33 @@ struct Kit {
     drop: Vec<f32>,
 }
 
-fn make_kit(dia: f64, ball: bool, ppm: f64) -> Kit {
+// shape codes shared with kernel_py.py: 0 flat, 1 ball, 2 vee, 3 scrub
+fn make_kit(dia: f64, shape: u8, ppm: f64, tip_r: f64, slope: f64) -> Kit {
     let r_px = (dia / 2.0 * ppm).ceil() as i64;
     let w = (2 * r_px + 1) as usize;
     let mut foot = vec![false; w * w];
     let mut foot_in = vec![false; w * w];
     let mut drop = vec![0f32; w * w];
     let radius = dia / 2.0;
+    if shape == 3 {
+        // scrub: EMPTY footprint — the spring tip rides the surface, so
+        // the kernel measures nothing (see kernel_py.py, the authority)
+        return Kit { r_px, w, foot, foot_in, drop };
+    }
     for dy in -r_px..=r_px {
         for dx in -r_px..=r_px {
             let rr = ((dx * dx + dy * dy) as f64).sqrt() / ppm;
             let idx = ((dy + r_px) as usize) * w + (dx + r_px) as usize;
             if rr <= radius + 1e-9 {
                 foot[idx] = true;
-                if ball {
+                if shape == 1 {
                     drop[idx] =
                         (radius - (radius * radius - rr * rr).max(0.0).sqrt())
                             as f32;
+                } else if shape == 2 {
+                    // vee: conical drop above a flat tip of radius tip_r,
+                    // slope = cot(half_angle)
+                    drop[idx] = ((rr - tip_r).max(0.0) * slope) as f32;
                 }
             }
             if rr <= radius - 0.5 / ppm + 1e-9 {
@@ -48,7 +58,8 @@ fn make_kit(dia: f64, ball: bool, ppm: f64) -> Kit {
 
 #[allow(clippy::too_many_arguments)]
 #[pyfunction]
-#[pyo3(signature = (n, ppm, half, step, check, dia, ball, flute_len, shank_d,
+#[pyo3(signature = (n, ppm, half, step, check, dia, shape, tip_r, slope,
+                    flute_len, shank_d,
                     motion, x0, y0, z0, x1, y1, z1, tool_idx,
                     snap_after=None))]
 fn measure<'py>(
@@ -59,7 +70,9 @@ fn measure<'py>(
     step: f64,
     check: bool,
     dia: PyReadonlyArray1<f64>,
-    ball: PyReadonlyArray1<u8>,
+    shape: PyReadonlyArray1<u8>,
+    tip_r: PyReadonlyArray1<f64>,
+    slope: PyReadonlyArray1<f64>,
     flute_len: PyReadonlyArray1<f64>,
     shank_d: PyReadonlyArray1<f64>,
     motion: PyReadonlyArray1<u8>,
@@ -73,7 +86,9 @@ fn measure<'py>(
     snap_after: Option<PyReadonlyArray1<i64>>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dia = dia.as_slice()?;
-    let ball = ball.as_slice()?;
+    let shape = shape.as_slice()?;
+    let tip_r = tip_r.as_slice()?;
+    let slope = slope.as_slice()?;
     let flute_len = flute_len.as_slice()?;
     let shank_d = shank_d.as_slice()?;
     let motion = motion.as_slice()?;
@@ -92,10 +107,10 @@ fn measure<'py>(
 
     let ntools = dia.len();
     let kits: Vec<Kit> = (0..ntools)
-        .map(|t| make_kit(dia[t], ball[t] != 0, ppm))
+        .map(|t| make_kit(dia[t], shape[t], ppm, tip_r[t], slope[t]))
         .collect();
     let skits: Vec<Kit> = (0..ntools)
-        .map(|t| make_kit(shank_d[t], false, ppm))
+        .map(|t| make_kit(shank_d[t], 0, ppm, 0.0, 0.0))
         .collect();
     let px_area = (1.0 / ppm) * (1.0 / ppm);
 

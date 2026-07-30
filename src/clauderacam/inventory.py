@@ -33,8 +33,13 @@ def load(path: str | Path) -> list[dict]:
     if not tools:
         raise ValueError(f"tool inventory {path} lists no tools")
     for i, t in enumerate(tools):
-        for k in ("type", "diameter", "shank_diameter", "flutes",
-                  "flute_length", "qty"):
+        req = ("type", "diameter", "shank_diameter", "flutes",
+               "flute_length", "qty")
+        if t.get("type") == "vee":
+            # the cone is the tool: an entry without tip and angle cannot
+            # back a vee job
+            req += ("tip_diameter", "included_angle_deg")
+        for k in req:
             if k not in t:
                 raise ValueError(
                     f"inventory {path} entry {i + 1} "
@@ -63,6 +68,13 @@ def match(tool, inv: list[dict], inv_path) -> dict:
             continue
         if tool.flute_length > rec["flute_length"] + EPS:
             continue
+        if tool.type == "vee":
+            # a vee is its cone: tip and angle must match the entry exactly
+            if abs(rec["tip_diameter"] - tool.tip_diameter) > EPS:
+                continue
+            if abs(rec["included_angle_deg"]
+                   - tool.included_angle_deg) > EPS:
+                continue
         if rec["qty"] < 1:
             continue
         return rec

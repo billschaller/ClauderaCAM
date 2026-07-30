@@ -27,6 +27,15 @@ tests/kernel_parity.py enforces it):
   - snap_after: sorted move indices; AFTER each listed move completes
     (including skipped vertical lifts) a copy of the stock is appended to
     "snapshots" — the per-stage previews of the viewer's stage model
+  - tool SHAPE (codes shared with the Rust kernel): 0 flat, 1 ball,
+    2 vee, 3 scrub. A vee's cutting surface at radius rr sits
+    (rr - tip_r) * slope above the tip (slope = cot(half_angle), flat tip
+    of radius tip_r). A scrub tool (the spring-loaded mask scraper) has an
+    EMPTY footprint: commanded depth is spring preload, not cut depth —
+    zero removal, zero contact, no rapid reading, min_cut_z untouched.
+    That silence is deliberate (Article IX: the exemption is stated here
+    and in physics.py); the scrub program's own checks are containment/
+    coverage/exact-depth, not carving physics.
 """
 from __future__ import annotations
 
@@ -34,26 +43,37 @@ import numpy as np
 
 SAFE_Z = 3.0
 
+FLAT, BALL, VEE, SCRUB = 0, 1, 2, 3
 
-def _kit(dia_mm: float, ball: bool, ppm: float):
+
+def _kit(dia_mm: float, shape: int, ppm: float,
+         tip_r: float = 0.0, slope: float = 0.0):
     r_px = int(np.ceil(dia_mm / 2 * ppm))
     dy, dx = np.mgrid[-r_px:r_px + 1, -r_px:r_px + 1]
     rr = np.hypot(dx, dy) / ppm
+    if shape == SCRUB:
+        f = np.zeros_like(rr, dtype=bool)
+        return r_px, f, f, np.zeros_like(rr, dtype=np.float32)
     f = rr <= dia_mm / 2 + 1e-9
     f_in = rr <= dia_mm / 2 - 0.5 / ppm + 1e-9   # contact: real penetration
     R = dia_mm / 2
-    drop = (R - np.sqrt(np.maximum(R * R - rr * rr, 0))) if ball \
-        else np.zeros_like(rr)
+    if shape == BALL:
+        drop = R - np.sqrt(np.maximum(R * R - rr * rr, 0))
+    elif shape == VEE:
+        drop = np.maximum(rr - tip_r, 0.0) * slope
+    else:
+        drop = np.zeros_like(rr)
     return r_px, f, f_in, drop.astype(np.float32)
 
 
 def measure(*, n, ppm, half, step, check,
-            dia, ball, flute_len, shank_d,
+            dia, shape, tip_r, slope, flute_len, shank_d,
             motion, x0, y0, z0, x1, y1, z1, tool_idx, snap_after=None):
     stock = np.zeros((n, n), np.float32)
     ntools = len(dia)
-    kits = [_kit(float(dia[t]), bool(ball[t]), ppm) for t in range(ntools)]
-    skits = [_kit(float(shank_d[t]), False, ppm) for t in range(ntools)]
+    kits = [_kit(float(dia[t]), int(shape[t]), ppm,
+                 float(tip_r[t]), float(slope[t])) for t in range(ntools)]
+    skits = [_kit(float(shank_d[t]), FLAT, ppm) for t in range(ntools)]
     px_area = (1.0 / ppm) ** 2
 
     nm = len(motion)
