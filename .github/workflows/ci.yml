@@ -31,6 +31,8 @@ jobs:
         run: python tests/pcb_groundtruth_suite.py
       - name: pcb engine (grammar gate, templated tcl, param-match law)
         run: python tests/pcb_engine_suite.py
+      - name: pcb checks (iso/clear/scrub/silk/holes/cutout, 18 hazards caught)
+        run: python tests/pcb_checks_suite.py
   test-python-fallback:
     runs-on: ubuntu-latest
     steps:
@@ -55,3 +57,5 @@ jobs:
         run: python tests/pcb_groundtruth_suite.py
       - name: pcb engine on the pure-python kernel
         run: python tests/pcb_engine_suite.py
+      - name: pcb checks without gerbv (raster sections must skip loudly)
+        run: python tests/pcb_checks_suite.py

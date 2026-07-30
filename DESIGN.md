@@ -598,6 +598,144 @@ Still open in WS3/4: a live engine run end-to-end on Board A's gerbers
 (the design is in flight), and the double-sided [pcb]+[twosided]
 composition (Board B).
 
+## 2026-07-30 (morning): WS5 — the gate grows a PCB lane
+
+`pcb/checks.py` + `tests/pcb_checks_suite.py`. `verify_pcb(job, programs)`
+returns one Report per assembled program, composed the way
+twosided.verify composes its two sides, using the same Check/Report types
+as the mill gate. The checks read exactly two things: the gerbv board maps
+(WS2) and the BYTES of each program, strict-parsed line-by-line with
+simulate.parse_line. Nothing reads FlatCAM's state, its Tcl, or its .nc
+headers — reemit.py refuses some of this at read time; the checks prove it
+again on the bytes the operator actually posts (Article I verifies bytes,
+not intent).
+
+The single-sided check set, with each threshold's provenance (all field
+bars from the 2026-07-19 zigbee-button V2 pcbnew verification or the
+process guides — no number here was invented):
+
+- **iso containment** ≤ 0.06 of (copper boundary + tip radius), and **iso
+  coverage**: every point standing exactly tip_r outside copper — which IS
+  the required centerline set, interior pour boundaries included — must
+  have a path sample within 0.08. That second check is the one that
+  catches a SKIPPED ISLAND, i.e. copper left connected: a short. It costs
+  two EDTs and no per-island loop, so 200 islands cost what 20 do.
+- **clear keep-out** ≥ 0.02 from kept copper, AND **clear opening**: every
+  clearing sample must sit somewhere a disc of (tool + 0.10) fits in free
+  space. The second does not follow from the first — that is the whole
+  lesson of the castellation-chewing incident, where an 0.84mm slot gave
+  an 0.8 corn 0.02 of clearance on both sides and chewed the pads anyway.
+  The suite proves the independence: on a synthetic 0.88 slot `clear
+  keep-out` reads 0.03 and PASSES while `clear opening` fails.
+- **scrub window** ≥ 0.05 (tool edge inside its mask aperture) and **scrub
+  plateau margin** ≥ 0.05 — the tool edge is either that far inside copper
+  or that far clear of it, never straddling a copper EDGE. The plateau law
+  is the peeled-trace mechanism (the spring tip dropped off a pad rim into
+  the isolation groove and levered traces off), and a file can satisfy the
+  window law and still do it: the synthetic negative does exactly that.
+- **silk pad clearance** ≥ the job's 0.3, **silk focus move** (M321 then
+  exactly `G0 Z0` — the defocus incident), **silk dose** == the job dose
+  and ≤ the emitter ceiling, plus lint_laser on the assembled bytes.
+- **hole schedule / hole bore depth / stray bores**: every Excellon hole
+  bored once at position (±0.10) and diameter (±0.06) to depth in ≥ the
+  configured passes, and NO cutting sample that belongs to no scheduled
+  hole. The displaced-drill class fails all four ways loudly.
+- **cutout ride band** (±0.05 of the tool radius from the outline INK,
+  which already carries the Edge.Cuts line width — the board comes out one
+  line width oversize per side, measured and accepted 2026-07-19),
+  **cutout side** (no sample inside the board: a negative geocutout margin
+  flips the cut INSIDE), **cutout tab census** (exactly the configured
+  tabs, each ≥ 1.0mm of material, and no THIN bridge). The tab walk is the
+  coin sever walk generalized off the circle: order the final-depth
+  samples by arc length along the Edge.Cuts loop, measure the gaps in real
+  XY. KiCad writes the outline segments in creation order (the zigbee
+  board draws top, left, right, bottom), so the walk CHAINS them into a
+  loop first — trusting draw order interleaves opposite sides and invents
+  tabs, and an outline that is not one closed loop refuses.
+- **per-program echoes**: `<phase> floor Z` == the declared depth,
+  `<phase> params` (S == the tool's rpm, F ∈ {feed, plunge}), `<phase>
+  tool`, and lint_program on the whole file — the stale-repost incident,
+  re-proven on assembled output.
+- **rapid depth**: no rapid descends below the work surface and none
+  travels laterally below it. On a solid blank every point is material, so
+  this needs no stock model — and the lane has none yet, so without this
+  check a G0 at Z−1.7 across the board would pass everything.
+
+**Measurement honesty (Article IX applied to geometry).** Every distance
+comes from `distance_transform_edt` over a gerbv raster, i.e. from pixel
+center to nearest INK pixel center, which over-reads the true distance to
+the polygon by a CALIBRATED half pixel — measured +0.50px at 1270, 2540
+and 5080 dpi against a closed-form circle, and asserted in the suite before
+anything else runs. Every clearance subtracts it; every escape adds it.
+Paths are sampled every 0.01mm (one pixel at the declared resolution) and
+the fields are bilinearly interpolated, so the sampled extremum can miss
+the true one by at most half a step, which is also added in the
+conservative direction. What none of it models: runout, deflection, board
+bow, mask thickness, laser spot size, or the vee kerf widening with depth
+(the KERNEL owns that; these checks work on centerlines). A sample outside
+the padded window is a REFUSAL, not a clamp.
+
+**The transform trap, recorded because it cost an hour**: the machine
+transform must be derived from the TIGHT Edge.Cuts extents even though the
+rasters live in a padded window. `reemit.silk_strokes` derives it from the
+window it is handed — hand it a padded window and every stroke shifts by
+the pad, and the silk clearance check then measures fiction.
+
+**Cross-checked against the field (local bonus, the operator's box).** The
+whole zigbee V2 chain re-assembles through reemit + emit.assemble and the
+mill/scrub/holes programs PASS the new set: iso containment 0.028 (bar
+0.06), coverage 0.043 (field 0.048), clear keep-out 0.025 (bar 0.02),
+clear opening 0.035 (bar 0.45), scrub window 0.126, plateau 0.077, 10/10
+bores at 0.000 diameter error, cutout ride 0.019 with 4×1.5mm tabs. Three
+independent reproductions of the 2026-07-19 pcbnew numbers:
+- the worst iso point re-probed at 0.001mm/px reads **0.0054** against
+  pcbnew's **0.005** (the declared 0.01mm/px raster reads 0.028 — the
+  raster is deliberately pessimistic, and now we know by how much);
+- the scrub plateau margin expressed as pcbnew's mask-ring number is
+  **0.127** vs the field's **0.145**, and as the guide's copper number
+  **0.077** vs its **0.095** — both on the safe side;
+- **10/10 bores**, exactly the schedule the drill file carries.
+
+**And one FINDING the gate would not let through.** The field silk program
+FAILS `silk pad clearance` at 0.085: `reemit.silk_strokes` tests chain
+VERTICES only, so a long stroke whose endpoints are clear can still cross
+a pad mid-segment (the zigbee legend has a 23.5mm box line that passes
+0.09 from a pad). The check is right and the emitter is wrong — WS4
+follow-up: CLIP strokes against the clearance region, do not just drop
+whole chains. Left as a live incident rather than patched under a check.
+
+**Second finding, also left open**: `simulate.prep_moves` refuses
+FlatCAM's coordinate-less feed setters (`G01 F500.00`, three per phase
+file), reading them as cutting moves with no position established. A
+motion word with no axis word moves nothing, so checks.py resolves modal
+state itself on top of the SAME parse_line rather than relaxing the mill
+gate's resolver. Consequence: an assembled [pcb] program cannot ride
+verify.verify()'s stock simulation until WS4/WS6 decides where those lines
+die (drop them at re-emission, or teach prep_moves the modal case).
+
+**Deliberately not checked, and why** — scrub COVERAGE has no honest bar:
+the retired Fusion pocket was field-verified at "worst gap 0.125 against a
+0.15 tip radius", while the FlatCAM `paint` that replaced it measures 0.37
+worst gap over the morphological opening of its own apertures on the same
+board. Either the bar or the toolpath is wrong; inventing a threshold the
+validated file happens to pass is what Article I forbids, so it stays an
+open incident until Board A's scrubbed pads are read under a loupe. The
+stock simulation (rapids vs sheet, contact, physics) and the double-sided
+checks (side-frame mirror consistency, via concentricity across the flip,
+pins law carry-over) land with Board A and Board B respectively.
+
+**Negatives (Article III): 18 hazards, 18 caught by name** — displaced
+drill, extra bore, stale ZMIN, wrong F, wrong tool, a rapid at depth, an
+iso pass that skips an island, an iso pass 0.12 off the boundary, clearing
+across kept copper, an 0.8 corn threading an 0.88 slot, a spring tool on
+the pad edge, a cutout with one tab missing, a silk stroke on a pad, a
+missing focus move, an over-dose S, a program never handed to the gate, an
+unknown program name, an open outline. The suite's positive control is a
+synthetic 20×15 board (two pads, one trace, three islands) with
+hand-built, geometrically exact programs; the golden-pcb slot for Board A's
+blessed gerbers and programs prints a LOUD TODO block until those assets
+land in `tests/golden_pcb/`.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
