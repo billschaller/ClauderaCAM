@@ -513,6 +513,47 @@ flat/ball output is untouched (golden byte-identical).
   (counted 2026-07-19), tip/angle/reach from the operator's printed
   case labels. Vee inventory entries without tip+angle refuse to load.
 
+## 2026-07-29 (night, later still): WS2 — the lane's ground truth
+
+`src/clauderacam/pcb/boardmaps.py`: gerbv-rasterized layer masks + an
+in-repo ~50-line Excellon parser. Lineage law stated in the module: the
+geometry engine (FlatCAM) and the verifier read the same gerbers
+through parsers that share no code — the STL lane's mesh-vs-gcode
+split, transplanted.
+
+- **One window, derived once**: the board window is the Edge.Cuts
+  CENTERLINE extents; every layer rasterizes into that window at one
+  declared dpi (default 2540 = 0.01mm/px), pixel-registered by
+  construction. The raster mapping is the lane's Article IV: row 0 =
+  window top, convert only through BoardWindow.world_to_px/px_to_world.
+- **Stated caveat with a guard**: extents come from coordinate words,
+  and an arc CAN bulge past its endpoints — so extents() rasterizes the
+  outline into a padded window and refuses if ink escapes extents +
+  half the widest aperture (exotic outlines fail loudly instead of
+  misregistering every layer). Rectangular boards with quarter-corner
+  arcs — everything this shop draws — have their extremes ON endpoints.
+- **gerbv discipline**: `--border=0` always (gerbv silently adds a 5%
+  border otherwise — caught by the suite's window-shape check), no
+  antialiasing, black-on-white threshold at mid-grey, and a hard refusal
+  if gerbv's pixel window drifts more than one pixel from the declared
+  math. Binary discovery: $CLAUDERACAM_GERBV → PATH → an extracted
+  package under ~/.clauderacam/tools/gerbv (this box runs the extracted
+  Ubuntu deb — no system install needed; `sudo apt install gerbv`
+  supersedes it whenever the operator likes). CI installs gerbv in the
+  rust job; the fallback job proves the suite SKIPS loudly without it.
+- **Excellon**: strict KiCad dialect (M48, FMAT,2, METRIC, decimal
+  coordinates). INCH, integer coordinates, undefined tools, missing
+  headers all refuse — the gate does not guess digit formats.
+- **Margins**: distance_transform_edt helpers (`dist_mm`, `escape_mm`,
+  `min_gap_mm`) — the numbers every WS5 containment/coverage/margin
+  check will be built on.
+- **The 154/124 law**: `machine_offset()` DERIVES the mirror+offset
+  from extents and a configured anchor. Cross-checked against reality:
+  the suite reads the real zigbee V2 files when present — extents
+  94.40,−124.00 → 154.00,−100.00 (59.6×24.0, the board that "grew from
+  23 → 24mm"), and the drill schedule parses to exactly the 10
+  pcbnew-verified bores.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the
