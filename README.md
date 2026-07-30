@@ -7,7 +7,8 @@ STL relief → rough / semi / finish / cutout → **physical stock-simulation
 verification** → live 3D viewer → .nc. Built from the exact code that cut
 the brass Mango coin, then hardened by a 42-agent adversarial review whose
 35 confirmed findings are each either fixed or a named check (see DESIGN.md
-"2026-07-28: adversarial review & hardening").
+"2026-07-28: adversarial review & hardening"). A second lane mills PCBs
+from KiCad gerbers through the same gate (see **The PCB lane** below).
 
 ## Setup
 
@@ -149,6 +150,36 @@ carried front floor to hit a target `tab_bridge` thickness (hand-written
 values are refused — the first cut coin's hand-picked tab_top made
 0.24mm tabs that snapped too thin). `jobs/twoside-ref.toml` +
 `tests/twosided_suite.py` are the executable spec, negatives included.
+
+## The PCB lane
+
+Gerbers + Excellon in, verified Carvera programs out: isolation-milled
+PCBs through the same gate. A `[pcb]` TOML names a KiCad export
+directory and parameterizes the operator's six-phase chain — cut traces
+(0.2mm vee) → clear copper → solder mask *(operator: squeegee + UV
+cure)* → silkscreen (455nm laser onto the cured mask) → scrub mask off
+pads (spring tool) → drills + edge cut. FlatCAM (a pinned headless
+fork) runs as the **geometry engine only**: its per-phase output is
+strictly parsed and re-emitted through `emit.py`, so every shipped byte
+obeys the house dialect (the laser program has its own — one `M321`,
+then a mandatory `G0 Z0` defocus, dose-ceilinged `M3 S`). Verification
+never trusts the generator: gerbv rasterizes the same gerbers through
+an unrelated parser lineage, and the gate measures the assembled
+programs against those maps — iso containment *and* coverage, clearing
+margins, scrub laps inside pad copper, silk clearance, the exact
+Excellon hole schedule, cutout ride + tab census, and true sheet stock
+simulation for the milling programs. Double-sided boards compose
+`[pcb]` + `[twosided]`: per-side phase tables, both machine frames
+derived from the one Edge.Cuts, registration pins under the coin lane's
+pins law, both-side annular-ring and flip-concentricity checks for
+hand-soldered wire vias, and a side-2 scrub generator that laps
+drilled pads annularly instead of driving the spring tip across open
+holes. Board contracts and golden assets live in `boards/` and
+`tests/golden_pcb/`; the viewer opens a `[pcb]` job as one session per
+program, with 2D overlays for the non-carving stages and the
+operator's run-sheet card. FlatCAM and gerbv are external optional
+binaries (like the Rust kernel): the blessed goldens verify without
+them and the suites skip loudly.
 
 ## The tool crib
 

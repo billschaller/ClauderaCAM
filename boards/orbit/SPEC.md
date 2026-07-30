@@ -557,3 +557,22 @@ self-test first, always — it is the board's own continuity check.
    what the bins hold.
 10. **4 M3 holes or 2?** Ø3.4 bores are cheap; the question is whether
     this board ever gets a case.
+
+Three more, surfaced by the software half (the `[twosided]` grammar and
+its live fixture run, 2026-07-31 — measured facts, not opinions):
+
+11. **The Ø2×12 dowel does not fit this stack.** The grammar derives the
+    pin hole as length + 0.2 seat + 0.6 tip allowance = **12.8 mm**, but
+    a 1.5 mm blank over the 12.7 mm spoilboard allows only 12.2 before
+    the bed — the job REFUSES it. This spec's own stated hole depth of
+    12.0 clears by 0.2. Resolve with a shorter dowel, a measured
+    (smaller) tip allowance, or more spoilboard.
+12. **Pin drilling feed is a brass number.** The coin lane's F120 for
+    the Ø2 twist drill reads **107 %** of fr4's sustained chip limit on
+    the full-face peck; **F100 lands at 89 %**. The pin block for this
+    board should carry F100 (or a bench-measured fr4 number).
+13. **The flip gauges sit exactly at their own bar.** Ø1.6 pad on a
+    Ø1.0 hole gives an annulus of exactly the 0.3 they declare, and the
+    raster reads it at 0.29. Either grow the pad to Ø1.7 (0.35 annulus,
+    0.05 of margin) or declare 0.28 — a gauge that fails its own check
+    on a perfect flip gauges nothing.

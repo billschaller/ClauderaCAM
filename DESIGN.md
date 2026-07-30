@@ -1753,3 +1753,32 @@ re-blessed.
   hotspot).
 - **v2**: adaptive/trochoidal rough option. (Two-sided pin-and-flip
   jobs: SHIPPED 2026-07-28, see above.)
+- **Cut Board A** (the coupon — the PCB lane's first copper): the four
+  programs are verified bytes and blessed golden, which is "verified
+  files, not verified copper." Bench work before and during: parts-gate
+  bench confirms at BOM freeze (the THT bins — 5mm LEDs, slide switch,
+  tactile — are uncataloged), JP6 crosses JP2 so that jumper wants
+  insulated wire, then tape, all six phases, assemble, blink. The
+  process window the coupon measures (trace/gap ladders, silk heights,
+  the scrub ring) becomes law; incidents are expected and will become
+  checks.
+- **Board B "orbit"** (double-sided chase-the-light): the software half
+  SHIPPED 2026-07-31 (per-side grammar, derived flip frames, the
+  via/annular/scrub check set, the side-2 aperture-class scrub
+  generator — see above). The BOARD waits on the operator: 13 open
+  questions in `boards/orbit/SPEC.md` (piezo element, LED size,
+  silk-under-tape, the dowel-length arithmetic the grammar now refuses,
+  pin drilling feed for fr4, flip-gauge margin, …) and two Article XI
+  gate blockers — the ATtiny85 SOIC-8 and the THT bins have no crib
+  entries. Then: schematic → layout → cut, flip, solder, flash, play.
+- **Optional live-FlatCAM CI job**: the retired plan wanted a separate
+  workflow job running the real engine (the two CI jobs never do). Today
+  every live run is a local-bonus suite section on a box holding the
+  pinned checkout; the optional job remains unbuilt.
+- **PCB deferrals** (carried from the retired PCB-PLAN.md so nothing is
+  silently lost): ESP32-H2-Zero Zigbee board (Board C candidate — the
+  modules are on hand, the H2 footprint proven); real twist-drill
+  drilling cycles for PCB holes (today every hole is milled with the
+  corn — the 0.3–1.2 drill set stays out of the crib until measured);
+  panelization (the 3-up Tcl trick is documented in the zigbee README);
+  MakeraCAM interop as the documented quick-path alternative.

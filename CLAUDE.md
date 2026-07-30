@@ -122,5 +122,11 @@ absent and the job refuses to load — that refusal is the feature.
   cite the requirement or incident a piece of code serves.
 - The MCP server runs on stdio — nothing in the process may print to stdout
   except the protocol. The viewer logs nowhere.
+- The PCB lane's binaries are EXTERNAL, optional dependencies like the Rust
+  kernel: the pinned FlatCAM fork is a geometry engine, not a post-processor
+  — its phase output is strictly parsed and re-emitted through emit.py, so
+  Article V holds — and gerbv is the ground-truth rasterizer whose parser
+  shares no lineage with the generator's. Configured paths, loud skips when
+  absent, never imported by core code.
 - Time estimates are estimates; verification results are facts. Report them
   with exactly that confidence split.
