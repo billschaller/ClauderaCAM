@@ -4,3 +4,5 @@ __pycache__/
 *.egg-info/
 assets/generated/
 kernel/target/
+boards/coupon/.history/
+*.kicad_prl

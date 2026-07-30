@@ -967,20 +967,22 @@
                 (size 1.27 1.27))))))
       (embedded_fonts no))
     (symbol "Timer:NE555P"
-      (extends "Timer:NE555D")
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
       (property "Reference" "U"
         (at -10.16 8.89 0)
         (effects
           (font
             (size 1.27 1.27))
           (justify left)))
-      (property "Value" "NE555P"
+      (property "Value" "NE555D"
         (at 2.54 8.89 0)
         (effects
           (font
             (size 1.27 1.27))
           (justify left)))
-      (property "Footprint" "Package_DIP:DIP-8_W7.62mm"
+      (property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
         (at 0 -24.13 0)
         (effects
           (font
@@ -992,7 +994,7 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Precision Timers, 555 compatible, PDIP-8"
+      (property "Description" "Precision Timers, 555 compatible, SOIC-8"
         (at 0 -21.59 0)
         (effects
           (font
@@ -1004,12 +1006,112 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "ki_fp_filters" "DIP*W7.62mm*"
+      (property "ki_fp_filters" "SOIC*3.9x4.9mm*P1.27mm*"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
-          (hide yes))))
+          (hide yes)))
+      (symbol "NE555P_0_0"
+        (pin power_in line
+          (at 0 -10.16 90)
+          (length 2.54)
+          (name "GND"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at 2.54 10.16 270)
+          (length 2.54)
+          (name "VCC"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "NE555P_0_1"
+        (rectangle
+          (start -7.62 7.62)
+          (end 7.62 -7.62)
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background))))
+      (symbol "NE555P_1_1"
+        (pin input line
+          (at -10.16 5.08 0)
+          (length 2.54)
+          (name "~{RST}"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -10.16 2.54 0)
+          (length 2.54)
+          (name "DISCH"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "7"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -10.16 -2.54 0)
+          (length 2.54)
+          (name "THRES"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "6"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -10.16 -5.08 0)
+          (length 2.54)
+          (name "TRIG"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin open_collector line
+          (at 0 10.16 270)
+          (length 2.54)
+          (name "CONT"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "5"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 10.16 0 180)
+          (length 2.54)
+          (name "OUT"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
     (symbol "Amplifier_Operational:LM2904"
       (pin_names
         (offset 0.127))
@@ -1178,14 +1280,18 @@
                 (size 1.27 1.27))))))
       (embedded_fonts no))
     (symbol "Amplifier_Operational:LM358"
-      (extends "Amplifier_Operational:LM2904")
+      (pin_names
+        (offset 0.127))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
       (property "Reference" "U"
         (at 0 5.08 0)
         (effects
           (font
             (size 1.27 1.27))
           (justify left)))
-      (property "Value" "LM358"
+      (property "Value" "LM2904"
         (at 0 -5.08 0)
         (effects
           (font
@@ -1197,18 +1303,23 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Datasheet" "http://www.ti.com/lit/ds/symlink/lm2904-n.pdf"
+      (property "Datasheet" "http://www.ti.com/lit/ds/symlink/lm358.pdf"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Low-Power, Dual Operational Amplifiers, DIP-8/SOIC-8/TO-99-8"
+      (property "Description" "Dual Operational Amplifiers, DIP-8/SOIC-8/TSSOP-8/VSSOP-8"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
+      (property "ki_locked" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
       (property "ki_keywords" "dual opamp"
         (at 0 0 0)
         (effects
@@ -1220,16 +1331,134 @@
         (effects
           (font
             (size 1.27 1.27))
-          (hide yes))))
+          (hide yes)))
+      (symbol "LM358_1_1"
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy 5.08 0)
+            (xy -5.08 -5.08)
+            (xy -5.08 5.08))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input line
+          (at -7.62 2.54 0)
+          (length 2.54)
+          (name "+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 -2.54 0)
+          (length 2.54)
+          (name "-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 7.62 0 180)
+          (length 2.54)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "LM358_2_1"
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy 5.08 0)
+            (xy -5.08 -5.08)
+            (xy -5.08 5.08))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input line
+          (at -7.62 2.54 0)
+          (length 2.54)
+          (name "+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "5"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 -2.54 0)
+          (length 2.54)
+          (name "-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "6"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 7.62 0 180)
+          (length 2.54)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "7"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "LM358_3_1"
+        (pin power_in line
+          (at -2.54 7.62 270)
+          (length 3.81)
+          (name "V+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at -2.54 -7.62 90)
+          (length 3.81)
+          (name "V-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
     (symbol "Amplifier_Operational:TL072"
-      (extends "Amplifier_Operational:LM2904")
+      (pin_names
+        (offset 0.127))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
       (property "Reference" "U"
         (at 0 5.08 0)
         (effects
           (font
             (size 1.27 1.27))
           (justify left)))
-      (property "Value" "TL072"
+      (property "Value" "LM2904"
         (at 0 -5.08 0)
         (effects
           (font
@@ -1241,18 +1470,23 @@
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Datasheet" "http://www.ti.com/lit/ds/symlink/tl071.pdf"
+      (property "Datasheet" "http://www.ti.com/lit/ds/symlink/lm358.pdf"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
-      (property "Description" "Dual Low-Noise JFET-Input Operational Amplifiers, DIP-8/SOIC-8"
+      (property "Description" "Dual Operational Amplifiers, DIP-8/SOIC-8/TSSOP-8/VSSOP-8"
         (at 0 0 0)
         (effects
           (font
             (size 1.27 1.27))
           (hide yes)))
+      (property "ki_locked" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
       (property "ki_keywords" "dual opamp"
         (at 0 0 0)
         (effects
@@ -1264,7 +1498,745 @@
         (effects
           (font
             (size 1.27 1.27))
-          (hide yes)))))
+          (hide yes)))
+      (symbol "TL072_1_1"
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy 5.08 0)
+            (xy -5.08 -5.08)
+            (xy -5.08 5.08))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input line
+          (at -7.62 2.54 0)
+          (length 2.54)
+          (name "+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "3"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 -2.54 0)
+          (length 2.54)
+          (name "-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "2"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 7.62 0 180)
+          (length 2.54)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "TL072_2_1"
+        (polyline
+          (pts
+            (xy -5.08 5.08)
+            (xy 5.08 0)
+            (xy -5.08 -5.08)
+            (xy -5.08 5.08))
+          (stroke
+            (width 0.254)
+            (type default))
+          (fill
+            (type background)))
+        (pin input line
+          (at -7.62 2.54 0)
+          (length 2.54)
+          (name "+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "5"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin input line
+          (at -7.62 -2.54 0)
+          (length 2.54)
+          (name "-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "6"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin output line
+          (at 7.62 0 180)
+          (length 2.54)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "7"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (symbol "TL072_3_1"
+        (pin power_in line
+          (at -2.54 7.62 270)
+          (length 3.81)
+          (name "V+"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "8"
+            (effects
+              (font
+                (size 1.27 1.27)))))
+        (pin power_in line
+          (at -2.54 -7.62 90)
+          (length 3.81)
+          (name "V-"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "4"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "power:GND"
+      (power)
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "#PWR"
+        (at 0 -6.35 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Value" "GND"
+        (at 0 -3.81 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "ki_keywords" "global power"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "GND_0_1"
+        (polyline
+          (pts
+            (xy 0 0)
+            (xy 0 -1.27)
+            (xy 1.27 -1.27)
+            (xy 0 -2.54)
+            (xy -1.27 -1.27)
+            (xy 0 -1.27))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "GND_1_1"
+        (pin power_in line
+          (at 0 0 270)
+          (length 0)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+    (symbol "power:VCC"
+      (power)
+      (pin_numbers
+        (hide yes))
+      (pin_names
+        (offset 0)
+        (hide yes))
+      (exclude_from_sim no)
+      (in_bom yes)
+      (on_board yes)
+      (property "Reference" "#PWR"
+        (at 0 -3.81 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Value" "VCC"
+        (at 0 3.556 0)
+        (effects
+          (font
+            (size 1.27 1.27))))
+      (property "Footprint" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Datasheet" ""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "Description" "Power symbol creates a global label with name \"VCC\""
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (property "ki_keywords" "global power"
+        (at 0 0 0)
+        (effects
+          (font
+            (size 1.27 1.27))
+          (hide yes)))
+      (symbol "VCC_0_1"
+        (polyline
+          (pts
+            (xy -0.762 1.27)
+            (xy 0 2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 2.54)
+            (xy 0.762 1.27))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none)))
+        (polyline
+          (pts
+            (xy 0 0)
+            (xy 0 2.54))
+          (stroke
+            (width 0)
+            (type default))
+          (fill
+            (type none))))
+      (symbol "VCC_1_1"
+        (pin power_in line
+          (at 0 0 90)
+          (length 0)
+          (name "~"
+            (effects
+              (font
+                (size 1.27 1.27))))
+          (number "1"
+            (effects
+              (font
+                (size 1.27 1.27))))))
+      (embedded_fonts no))
+(symbol "Transistor_BJT:Q_NPN_BEC"
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "Q"
+			(at 5.08 1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "Q_NPN_BEC"
+			(at 5.08 -1.27 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" ""
+			(at 5.08 2.54 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "NPN transistor, base/emitter/collector"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Device" "NPN"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Sim.Pins" "1=B 2=E 3=C"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "BJT"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "Q_NPN_BEC_0_1"
+			(polyline
+				(pts
+					(xy -2.54 0) (xy 0.635 0)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.635 1.905) (xy 0.635 -1.905)
+				)
+				(stroke
+					(width 0.508)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(circle
+				(center 1.27 0)
+				(radius 2.8194)
+				(stroke
+					(width 0.254)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(symbol "Q_NPN_BEC_1_1"
+			(polyline
+				(pts
+					(xy 0.635 0.635) (xy 2.54 2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 0.635 -0.635) (xy 2.54 -2.54)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+			(polyline
+				(pts
+					(xy 1.27 -1.778) (xy 1.778 -1.27) (xy 2.286 -2.286) (xy 1.27 -1.778)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type outline)
+				)
+			)
+			(pin input line
+				(at -5.08 0 0)
+				(length 2.54)
+				(name "B"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 5.08 270)
+				(length 2.54)
+				(name "C"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "3"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+			(pin passive line
+				(at 2.54 -5.08 90)
+				(length 2.54)
+				(name "E"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "2"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	
+(symbol "power:PWR_FLAG"
+		(power)
+		(pin_numbers
+			(hide yes)
+		)
+		(pin_names
+			(offset 0)
+			(hide yes)
+		)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(property "Reference" "#FLG"
+			(at 0 1.905 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 0 3.81 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "ki_keywords" "flag power"
+			(at 0 0 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(symbol "PWR_FLAG_0_0"
+			(pin power_out line
+				(at 0 0 90)
+				(length 0)
+				(name "~"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+				(number "1"
+					(effects
+						(font
+							(size 1.27 1.27)
+						)
+					)
+				)
+			)
+		)
+		(symbol "PWR_FLAG_0_1"
+			(polyline
+				(pts
+					(xy 0 0) (xy 0 1.27) (xy -1.016 1.905) (xy 0 2.54) (xy 1.016 1.905) (xy 0 1.27)
+				)
+				(stroke
+					(width 0)
+					(type default)
+				)
+				(fill
+					(type none)
+				)
+			)
+		)
+		(embedded_fonts no)
+	)
+	)
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
+
+  
 
   (symbol
     (lib_id "Connector:TestPoint")
@@ -1284,7 +2256,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D4.0mm_Drill2.0mm"
       (at 25.4 25.4 0)
       (effects
         (font
@@ -1320,7 +2292,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Button_Switch_THT:SW_Slide_SPDT_Straight_CK_OS102011MS2Q"
       (at 44.45 25.4 0)
       (effects
         (font
@@ -1356,7 +2328,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Diode_SMD:D_SMA_Handsoldering"
       (at 64.77 25.4 0)
       (effects
         (font
@@ -1392,7 +2364,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
       (at 74.93 39.37 0)
       (effects
         (font
@@ -1428,7 +2400,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Inductor_SMD:L_0805_2012Metric_Pad1.05x1.20mm_HandSolder"
       (at 90.17 25.4 0)
       (effects
         (font
@@ -1464,7 +2436,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0603_1608Metric_Pad1.08x0.95mm_HandSolder"
       (at 100.33 39.37 0)
       (effects
         (font
@@ -1500,7 +2472,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
       (at 110.49 39.37 0)
       (effects
         (font
@@ -1536,7 +2508,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder"
       (at 119.38 20.32 0)
       (effects
         (font
@@ -1572,7 +2544,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder"
       (at 119.38 33.02 0)
       (effects
         (font
@@ -1608,7 +2580,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "TestPoint:TestPoint_THTPad_D4.0mm_Drill2.0mm"
       (at 25.4 54.61 0)
       (effects
         (font
@@ -1644,7 +2616,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Package_DIP:DIP-8_W7.62mm_Socket"
       (at 180.34 59.69 0)
       (effects
         (font
@@ -1680,7 +2652,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
       (at 195.58 74.93 0)
       (effects
         (font
@@ -1716,7 +2688,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_1206_3216Metric_Pad1.33x1.80mm_HandSolder"
       (at 199.39 66.04 0)
       (effects
         (font
@@ -1752,7 +2724,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
       (at 189.23 39.37 0)
       (effects
         (font
@@ -1788,7 +2760,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
       (at 204.47 60.96 0)
       (effects
         (font
@@ -1824,7 +2796,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Button_Switch_THT:SW_PUSH_6mm"
       (at 160.02 35.56 0)
       (effects
         (font
@@ -1860,7 +2832,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder"
       (at 160.02 44.45 0)
       (effects
         (font
@@ -1896,7 +2868,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
       (at 149.86 74.93 0)
       (effects
         (font
@@ -1932,7 +2904,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
       (at 229.87 54.61 0)
       (effects
         (font
@@ -1951,7 +2923,7 @@
           (unit 1)))))
 
   (symbol
-    (lib_id "Device:Q_NPN_BEC")
+    (lib_id "Transistor_BJT:Q_NPN_BEC")
     (at 245.11 59.69 0)
     (unit 1)
     (in_bom yes)
@@ -1968,7 +2940,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Package_TO_SOT_SMD:SOT-23_Handsoldering"
       (at 245.11 59.69 0)
       (effects
         (font
@@ -2004,7 +2976,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
       (at 260.35 39.37 0)
       (effects
         (font
@@ -2040,7 +3012,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "LED_THT:LED_D5.0mm"
       (at 260.35 54.61 0)
       (effects
         (font
@@ -2076,7 +3048,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder"
       (at 275.59 39.37 0)
       (effects
         (font
@@ -2112,7 +3084,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "LED_THT:LED_D5.0mm"
       (at 275.59 54.61 0)
       (effects
         (font
@@ -2133,7 +3105,7 @@
   (symbol
     (lib_id "Amplifier_Operational:LM358")
     (at 170.18 110.49 0)
-    (unit 1)
+    (unit 3)
     (in_bom yes)
     (on_board yes)
     (dnp no)
@@ -2148,7 +3120,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm"
       (at 170.18 110.49 0)
       (effects
         (font
@@ -2164,7 +3136,7 @@
       (project ""
         (path "/"
           (reference "U2")
-          (unit 1)))))
+          (unit 3)))))
 
   (symbol
     (lib_id "Device:C")
@@ -2184,7 +3156,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
       (at 180.34 110.49 0)
       (effects
         (font
@@ -2220,7 +3192,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
       (at 149.86 134.62 0)
       (effects
         (font
@@ -2256,7 +3228,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "Resistor_SMD:R_1206_3216Metric_Pad1.30x1.75mm_HandSolder"
       (at 185.42 134.62 0)
       (effects
         (font
@@ -2292,7 +3264,7 @@
       (effects
         (font
           (size 1.27 1.27))))
-    (property "Footprint" ""
+    (property "Footprint" "LED_SMD:LED_0805_2012Metric_Pad1.15x1.40mm_HandSolder"
       (at 195.58 134.62 0)
       (effects
         (font
@@ -2309,4 +3281,539 @@
         (path "/"
           (reference "LED4")
           (unit 1)))))
+
+  (symbol
+    (lib_id "Device:R")
+    (at 154.94 119.38 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "1210083f-ef92-4ab3-978b-866b951a6847")
+    (property "Reference" "R9"
+      (at 154.94 115.57 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "10k"
+      (at 154.94 123.19 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0603_1608Metric_Pad0.98x0.95mm_HandSolder"
+      (at 154.94 119.38 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 154.94 119.38 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "R9")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Device:R")
+    (at 154.94 149.86 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "c241fd68-16b1-4b78-960e-7b0bd8a96319")
+    (property "Reference" "R10"
+      (at 154.94 146.05 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "10k"
+      (at 154.94 153.67 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Resistor_SMD:R_0805_2012Metric_Pad1.20x1.40mm_HandSolder"
+      (at 154.94 149.86 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 154.94 149.86 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "R10")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Device:C")
+    (at 144.78 135.89 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "53d9f1e2-1cb8-4ad1-998c-be3568f07801")
+    (property "Reference" "C6"
+      (at 144.78 132.08 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "100nF"
+      (at 144.78 139.7 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "Capacitor_SMD:C_0805_2012Metric_Pad1.18x1.45mm_HandSolder"
+      (at 144.78 135.89 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 144.78 135.89 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "C6")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Amplifier_Operational:LM358")
+    (at 170.18 160.02 0)
+    (unit 2)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "93e2139d-b81d-416c-bfe8-f58a106622e4")
+    (property "Reference" "U2"
+      (at 170.18 156.21 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "LM358"
+      (at 170.18 163.83 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 170.18 160.02 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 170.18 160.02 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "U2")
+          (unit 2)))))
+
+  (symbol
+    (lib_id "Amplifier_Operational:LM358")
+    (at 170.18 134.62 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "7f9dec08-d882-480b-893b-270d04b479f3")
+    (property "Reference" "U2"
+      (at 170.18 130.81 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "LM358"
+      (at 170.18 138.43 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" ""
+      (at 170.18 134.62 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 170.18 134.62 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "U2")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 30.48 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "64aa0cfc-50ad-41d0-a920-fc58920f96ab")
+    (property "Reference" "TP1"
+      (at 30.48 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 30.48 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 30.48 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 30.48 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP1")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 44.45 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "d746bfb1-ca50-48ec-afbf-f79b5cf7b440")
+    (property "Reference" "TP2"
+      (at 44.45 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 44.45 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 44.45 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 44.45 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP2")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 64.77 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "a557d0ac-0588-4257-a7e3-3021875d6896")
+    (property "Reference" "TP3"
+      (at 64.77 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 64.77 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 64.77 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 64.77 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP3")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 80.01 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "58a6a00c-6e15-4c88-9bf1-08e990e68eec")
+    (property "Reference" "TP4"
+      (at 80.01 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 80.01 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 80.01 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 80.01 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP4")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 100.33 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "d5581a38-9f79-4910-8fc1-9bc4e9d47fac")
+    (property "Reference" "TP5"
+      (at 100.33 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 100.33 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 100.33 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 100.33 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP5")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "Connector:TestPoint")
+    (at 115.57 199.39 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "09558494-db58-4ac0-ad6c-ae25e19a0e92")
+    (property "Reference" "TP6"
+      (at 115.57 195.58 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Value" "TestPoint"
+      (at 115.57 203.2 0)
+      (effects
+        (font
+          (size 1.27 1.27))))
+    (property "Footprint" "TestPoint:TestPoint_Pad_D2.0mm"
+      (at 115.57 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (property "Datasheet" ""
+      (at 115.57 199.39 0)
+      (effects
+        (font
+          (size 1.27 1.27))
+        (hide yes)))
+    (instances
+      (project ""
+        (path "/"
+          (reference "TP6")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "power:GND")
+    (at 25.4 54.61 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "27978f42-7127-43d4-aa6d-bc310436cdc2")
+    (property "Reference" "#PWR01")
+    (property "Value" "GND")
+    (property "Footprint" "")
+    (property "Datasheet" "")
+    (instances
+      (project ""
+        (path "/"
+          (reference "#PWR001")
+          (unit 1)))))
+
+  (symbol
+    (lib_id "power:VCC")
+    (at 93.98 25.4 0)
+    (unit 1)
+    (in_bom yes)
+    (on_board yes)
+    (dnp no)
+    (uuid "140081a8-cb61-460d-bda8-5f7d811299d5")
+    (property "Reference" "#PWR02")
+    (property "Value" "VCC")
+    (property "Footprint" "")
+    (property "Datasheet" "")
+    (instances
+      (project ""
+        (path "/"
+          (reference "#PWR002")
+          (unit 1)))))
+
+  (label "VF" (at 74.93 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 74.93 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 100.33 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 100.33 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 110.49 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 110.49 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 149.86 71.12 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 149.86 78.74 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_CV" (at 199.39 62.23 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 199.39 69.85 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VHALF" (at 144.78 132.08 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 144.78 139.7 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 195.58 71.12 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 195.58 78.74 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 180.34 106.68 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 180.34 114.3 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VF" (at 68.58 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VIN_SW" (at 60.96 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VF" (at 86.36 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 93.98 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 119.38 36.83 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED1" (at 119.38 29.21 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LEDK" (at 260.35 58.42 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED2A" (at 260.35 50.8 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LEDK" (at 275.59 58.42 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED3A" (at 275.59 50.8 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 191.77 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED4A" (at 199.39 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VIN" (at 25.4 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 25.4 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_Q1B" (at 240.03 59.69 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 247.65 64.77 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LEDK" (at 247.65 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 119.38 16.51 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED1" (at 119.38 24.13 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VHALF" (at 154.94 146.05 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 154.94 153.67 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2AOUT" (at 181.61 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED4A" (at 189.23 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 189.23 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_DISCH" (at 189.23 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_DISCH" (at 200.66 60.96 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 208.28 60.96 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_KICK" (at 160.02 40.64 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 160.02 48.26 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "BLINK" (at 226.06 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_Q1B" (at 233.68 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 260.35 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED2A" (at 260.35 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 275.59 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_LED3A" (at 275.59 43.18 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 146.05 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2AIN" (at 153.67 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 154.94 115.57 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VHALF" (at 154.94 123.19 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_DISCH" (at 154.94 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_KICK" (at 165.1 35.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VIN" (at 49.53 22.86 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VIN_SW" (at 39.37 25.4 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_040" (at 30.48 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_040" (at 44.45 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_050" (at 64.77 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_050" (at 80.01 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_060" (at 100.33 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "LADDER_060" (at 115.57 199.39 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 180.34 69.85 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 170.18 64.77 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "BLINK" (at 190.5 59.69 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 170.18 54.61 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_CV" (at 180.34 49.53 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "TRIG_THR" (at 170.18 62.23 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_DISCH" (at 170.18 57.15 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 182.88 49.53 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2AOUT" (at 177.8 134.62 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VHALF" (at 162.56 137.16 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2AIN" (at 162.56 132.08 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 167.64 118.11 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "GND" (at 162.56 157.48 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2BFB" (at 162.56 162.56 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "N_U2BFB" (at 177.8 160.02 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (label "VCC" (at 167.64 102.87 0) (effects (font (size 1.27 1.27)) (justify left bottom)))
+  (no_connect (at 49.53 27.94))
+  (symbol (lib_id "power:PWR_FLAG") (at 93.98 25.4 0) (unit 1)
+    (in_bom no) (on_board no) (uuid "22c49a93-95ce-44fc-9a90-ca2f4124aa58")
+    (property "Reference" "#FLG003" (at 93.98 23.4 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "PWR_FLAG" (at 93.98 21.4 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "5aaf6daa-4390-46af-9538-2c3ab13f4c35"))
+    (instances (project ""
+        (path "/" (reference "#FLG003") (unit 1))))
+  )
+  (symbol (lib_id "power:PWR_FLAG") (at 25.4 54.61 0) (unit 1)
+    (in_bom no) (on_board no) (uuid "99fec90b-9734-4eeb-a93d-7cd195d2188d")
+    (property "Reference" "#FLG004" (at 25.4 52.61 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (property "Value" "PWR_FLAG" (at 25.4 50.61 0)
+      (effects (font (size 1.27 1.27)) (hide yes)))
+    (pin "1" (uuid "0f21b4b3-42bc-45b0-8a6b-a8febebe9097"))
+    (instances (project ""
+        (path "/" (reference "#FLG004") (unit 1))))
+  )
 )
