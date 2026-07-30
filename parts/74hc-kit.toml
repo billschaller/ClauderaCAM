@@ -41,5 +41,13 @@ box_only = ["74HC10", "74HC21", "74HC30", "74HC126", "74HC165",
             "74HC174", "74HC393", "74HC573", "74HC574", "74HC595"]
 bullets_only = ["74HC06", "74HC07", "74HC11", "74HC86", "74HC112",
                 "74HC123", "74HC166", "74HC221", "74HC240"]
-# The one that matters for LED work is 74HC595 (box-only): CONFIRM IT
-# ON THE BENCH before any design leans on it.
+
+# BENCH-CONFIRMED 2026-07-30 (bench-inventory-sheet): a 74HC595 IS
+# physically in the box — and beyond the kit, the operator holds
+# "loads" of plain DIP 74HC595 (a whole box bought separately) plus
+# ten SN74HC595DWR (SOIC-16 wide). The 595 is no longer one-piece
+# precious; the rest of the kit stays qty-1, socket-always.
+[hc595_stock]
+dip = "loads (separate box, plain DIP)"
+soic = "SN74HC595DWR x10 (SOIC-16 wide)"
+status = "bench-verified"

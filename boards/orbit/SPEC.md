@@ -36,7 +36,7 @@ rows marked **NEW** exist only because this board flips.
 | THT annular **Δ** | ≥ **0.7 mm** (was 0.6) on every hole-centered pad, BOTH sides | must be solderable on both faces AND annularly scrubbable on side 2 (see the scrub delta) |
 | copper-to-edge | ≥ 0.4 mm, both sides | edge cut is a separate phase |
 | tab-zone copper **NEW** | ≥ 1.0 mm clear of every cutout tab, both sides | tabs are snapped by hand; a tab that bridges copper tears it off the laminate |
-| drills **Δ** | **ALL holes helical-bored with the 0.8 corn**; min hole Ø1.0 (tool + 0.2); classes 1.0 / 1.1 / 1.2 / 1.5 / 3.4 | Article XI: the PCB drill set (0.3–1.2) is NOT in `jobs/inventory.toml` — reach unmeasured, so it does not exist. A 0.8 tool cannot bore its own diameter |
+| drills **Δ** | **ALL holes helical-bored with the 0.8 corn**; min hole Ø1.0 (tool + 0.2); classes 1.0 / 1.1 / 1.2 / 1.5 / **1.8** / 3.4 (1.8 = SW1's bench-measured 1.4-wide blades, crib derivation) | Article XI: the PCB drill set (0.3–1.2) is NOT in `jobs/inventory.toml` — reach unmeasured, so it does not exist. A 0.8 tool cannot bore its own diameter |
 | registration holes **NEW** | 2 × Ø2.0, `Twist Drill 2x12 (Spare Tools)`, peck 0.8, **feed F100**, through the blank into the spoilboard | the pins law from the coin jobs; F100 not the coin's F120 — that is a brass number reading 107 % of fr4's chip limit, F100 lands at 89 % (Decision Q12) |
 | footprints | hand-solder variants everywhere; SOIC-8 (1.27 pitch) is the finest pitch on the board | stenchill stencils are happiest at 0603+ and large-pitch ICs |
 | paste **Δ** | **B.Paste only** — one stencil, back side. Vias, THT pads and ISP pads carry NO aperture | vias are soldered after reflow; a pasted via hole wicks solder and blocks the wire |
@@ -244,7 +244,7 @@ whose whole front face already shows that it is powered.
 
 | ref | value / part | package | source crib |
 |---|---|---|---|
-| U1 | ATtiny85, SOIC-8 | SOIC-8 | **NOT IN ANY CRIB — bench-catalog first.** operator-stated on hand (2026-07-29); `parts/README.md` lists "SMD ATtiny85 (SOIC-8)" under *not yet cataloged*. Article XI: it needs a crib entry before layout freeze |
+| U1 | ATTINY85-20SU ×4 on hand | **SOIC-8 WIDE (EIAJ 8S2, 5.3 mm body, 1.27 pitch)** | `parts/attiny85.toml` (bench 2026-07-30) — the -SU marking means the 208-mil wide body; a narrow SOIC-8 footprint is a reflow failure. Footprint must be the 5.3 mm variant |
 | Q1 | AO3401 P-FET (marking X1·) | SOT-23 | kokiso-smd |
 | Q2 | MMBT2222A NPN | SOT-23 | kokiso-smd |
 | D1 | BAV99 dual (series pair) | SOT-23 | kokiso-smd |
@@ -259,10 +259,10 @@ whose whole front face already shows that it is powered.
 | C2 | 100 nF U1 decoupling | 0805 | egscst-0805 (**only** ≥100 nF source) |
 | C3 | 1 µF buzzer-cell reservoir | 0603 | egscst-0603 (its top value) |
 | C4 | 10 nF RESET filter | 1206 | egscst-1206 (its top value) |
-| LED1–LED12 | 5 mm THT (Decision Q9), one colour, Vf ≈2.0–2.2 V | THT | THT bins — **bench-confirm** colour, Vf, 2.54 lead pitch |
-| S1, S2 | 6×6 tactile | THT | THT bins — **bench-confirm** footprint (2-leg vs 4-leg) |
-| SW1 | SS-12D00-class slide SPDT | THT 2.54 | THT bins — **bench-confirm** footprint |
-| BZ1 | Cylewet CYT1036, 5 V ACTIVE magnetic buzzer (Decision Q2) | THT 2 lead | operator stock (Amazon B01N7NHSY6, ×10 per listing) — **bench-confirm** count, body Ø (~12), pin pitch (~7.6) |
+| LED1–LED12 | 5 mm THT **red** (Vf 2.0–2.2 measured; ~50 on hand, 2.54 pitch confirmed) | THT | `parts/tht-bins.toml` (bench 2026-07-30). Eight colours ×50 exist — red is the ring; the pos-1 red-marker option is moot (whole ring is red), the silk arrow carries the marker |
+| S1, S2 | 6×6 tactile, **4-leg THT** (DaFuRui kit; heights 4.3 / 5 "Pin" / 12 share the footprint — operator's choice at the bench) | THT, lead grid 6.5 × 4.5, legs 0.7×0.3 → Ø1.0 holes | `parts/tht-bins.toml` (kit catalog-read 2026-07-30, B07KGR7L9M) |
+| SW1 | big slide SPDT, no marking, dozens on hand — **pitch 4.86 measured, blade 1.4 wide, hole Ø1.8** (thickness unmeasured → hole covers the blade class; derivation in the crib) | THT 3 blade, 4.86 pitch | `parts/tht-bins.toml` (bench 2026-07-30). NOT the SS-12D00 2.54 the draft assumed — the bench overrode it |
+| BZ1 | Cylewet CYT1036, 5 V ACTIVE magnetic (Decision Q2) — **×8 on hand, body Ø12, pitch ~7.6, "+" marked, beeps on plain 5 V confirmed** | THT 2 lead | `parts/tht-bins.toml` (bench 2026-07-30) |
 | V1–V6 | via wire, 22 AWG solid (0.64) or a clipped 0.5 mm component lead | — | consumable, **not a crib part** — bench-confirm the gauge passes a Ø1.0 hole |
 | PAD+, PAD− | wire pads | Ø1.5 hole, Ø3.6 pad both sides | copper + wire |
 | TP1–TP6 | ISP pads | bare Ø1.8, B.Cu | none |
@@ -576,6 +576,11 @@ here with its consequence:
    `parts/bench-inventory-sheet.md` (ATtiny85, THT bins, buzzer, via
    wire, dowels, blanks, 74HC595) and the crib files are written from
    it verbatim. Layout freeze remains gated on the sheet coming back.
+   **GATE CLEARED 2026-07-30**: sheet returned, cribs written
+   (`attiny85.toml`, `tht-bins.toml`, 74hc addendum). Three bench
+   overrides folded into this spec: U1 is the WIDE-body 8S2 SOIC,
+   SW1 is a 4.86-pitch blade switch (hole Ø1.8, new drill class),
+   and the ring colour is red (Vf 2.0–2.2 measured).
 8. **Blank stock → 150 × 100** (not the assumed 100 × 80). One board
    per blank as designed; a second orbit per blank is a cut-time option
    that would re-plan the pins.

@@ -1,0 +1,117 @@
+# THT bins + bench stock — cataloged 2026-07-30 from
+# parts/bench-inventory-sheet.md, operator-filled at the bench.
+# Sheet answers are recorded VERBATIM (Article XI: the gate only sees
+# what the crib records, and the crib only records what the bench
+# shows). Rows marked source = "catalog" are dimensions the operator
+# delegated to the seller's listing ("look for yourself") — the listing
+# is cited and the physical bin wins if they ever disagree.
+
+[bins]
+status = "bench-verified"
+date = "2026-07-30"
+
+# ---------------------------------------------------------------- LEDs
+# 5 mm THT, "various" colours, ~50 per colour (operator: count per
+# colour for at least the best two = 50). Vf measured at the meter's
+# test current, per colour, verbatim:
+[[led]]
+colour = "red"
+vf = "2.0-2.2"
+[[led]]
+colour = "blue"
+vf = "3.0-3.2"
+[[led]]
+colour = "pink"
+vf = "3.0-3.2"
+[[led]]
+colour = "white"
+vf = "3.0-3.2"
+[[led]]
+colour = "yellow"
+vf = "2.0-2.2"
+[[led]]
+colour = "yellow-green"
+vf = "2.0-2.4"
+[[led]]
+colour = "orange"
+vf = "2.0-2.2"
+[[led]]
+colour = "UV/purple"
+vf = "3.2-3.4"
+
+[led_common]
+body_mm = 5.0                # bench-calipered on one
+lead_pitch_mm = 2.54         # bench-confirmed
+count_per_colour = 50
+
+# ------------------------------------------------- tactile switch kit
+# DaFuRui 250 pcs / 25 values x 10 (Amazon B07KGR7L9M). Operator:
+# "loads — look for yourself". The kit is a MIX of SMD ("Patch") and
+# THT variants; the value chart in the listing gallery
+# (710LkruP9RS._SL1500_.jpg, read 2026-07-30) names all 25. The 6x6
+# family on hand, 10 pcs each:
+#   6*6*3.1 (SMD), 6*6*4.3 (THT 4-leg), 6*6*5 Side-two-feet (THT
+#   2-leg), 6*6*5 Pin (THT 4-leg), 6*6*5 Patch (SMD 4-leg), 6*6*5
+#   support (right-angle), 6*6*5 Middle-two-feet (THT 2-leg),
+#   6*6*12 (THT 4-leg tall);  also 12x12 Pin/Patch/7.3 and small
+#   2x4..4.5x4.5 SMD types.
+[tactile]
+kit = "DaFuRui B07KGR7L9M, 25 values x 10"
+quantity = "loads (10 per value)"
+source = "catalog"           # operator delegated dims to the listing
+# 6x6 THT 4-leg (the S1/S2 class — heights 4.3 / 5 "Pin" / 12 all
+# share this footprint): standard 6x6 tact geometry, catalog class:
+lead_grid_mm = [6.5, 4.5]    # span across button x between-leg
+lead_section_mm = [0.7, 0.3] # flat leg w x t -> passes a 1.0 hole
+hole_mm = 1.0
+
+# ------------------------------------------------------ slide switch
+# "bigass SPDT", dozens on hand, no printed model. Bench-measured:
+[slide_spdt]
+quantity = "dozens"
+marking = "unknown, bigass SPDT"
+pitch_mm = 4.86              # bench-calipered, "approx"
+blade_w_mm = 1.4             # bench-calipered pin cross-section width
+# blade THICKNESS was not measured (sheet cell blank — honest). Hole
+# sizing therefore covers the whole plausible blade class: a round
+# hole passing a 1.4-wide blade up to 0.9 thick needs diag <= 1.67 ->
+# hole 1.8. Recorded here so the layout reads a decided number, with
+# its derivation, not a guess presented as a measurement.
+hole_mm = 1.8
+# Operator note, verbatim: "I also have some smaller dpdt 2.54 pitch
+# switches" — uncounted, unmeasured, so per Article XI they have no
+# entry and no design may lean on them until calipered.
+
+# ------------------------------------------------------------ buzzer
+# Cylewet CYT1036 (Amazon B01N7NHSY6), the Board B BZ1 (Decision Q2).
+[buzzer]
+part = "Cylewet CYT1036"
+kind = "5 V ACTIVE magnetic (internal oscillator)"
+quantity = 8
+body_mm = 12.0               # bench-calipered
+pitch_mm = 7.6               # bench-calipered "~7.6"
+plus_marking = true          # "+" on top: yep
+beeps_on_5v_dc = true        # active confirm, clip leads, no resistor:
+                             # "definitely yes"
+
+# ------------------------------------------------- registration pins
+# Confirms Decision Q11 (hole depth 12.0, seat_extra 0, tip_allowance 0)
+[dowel_pins]
+size = "2x12"                # lengths in the tin: 2x12 only
+quantity = 20                # of the 12 mm length
+diameter_mm = 2.0            # bench-calipered on one
+
+# ------------------------------------------------------- blank stock
+[blank_stock]
+size_mm = [150, 100]
+quantity = 10
+thickness_mm = 1.5           # bench-measured, matches the job's assumption
+material = "FR-4"            # per packaging
+copper_both_sides = true
+
+# ---------------------------------------------------------- via wire
+# Consumable, not a crib part (SPEC): operator holds "lots of different
+# types", solid confirmed; gauge check ("passes a Ø1.0 hole") waived by
+# the operator — "don't worry about it". Makera's via-rivet kit
+# (0.2–1.0 mm) exists on the bench but the operator calls the rivets
+# "a massive pain in the ass" — wire remains the plan.

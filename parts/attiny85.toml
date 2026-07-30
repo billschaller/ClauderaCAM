@@ -1,0 +1,25 @@
+# ATtiny85 (SOIC) — the Board B layout-freeze blocker, bench-cataloged
+# 2026-07-30 from parts/bench-inventory-sheet.md (operator-filled).
+# Package geometry is CATALOG-SOURCED from the marking the operator read
+# off the chip tops — never guessed (Article XI).
+
+[part]
+part = "ATTINY85-20SU"      # marking on top, bench-read verbatim
+quantity = 4                 # on hand right now
+package = "SOIC-8"           # bench-confirmed SOIC-8
+status = "bench-verified"
+
+[package]
+# THE TRAP THIS FILE EXISTS TO RECORD: the -SU suffix is the EIAJ
+# 208-mil WIDE-body SOIC (Atmel drawing 8S2), NOT the JEDEC 3.9 mm
+# narrow SOIC-8. Body 5.3 mm wide (~5.35 x 5.4 x 1.91 mm overall),
+# lead span ~8.0 mm, pitch 1.27. A narrow SOIC-8 footprint leaves the
+# gull-wings barely touching the pads — weak or open reflow joints.
+# Source: Microchip pkg drawing 8S2 / distributor listings for
+# ATTINY85-20SU ("8-Pin EIAJ SOIC", 5.35 x 5.4 x 1.91 mm), looked up
+# 2026-07-30.
+drawing = "8S2 (EIAJ, 208 mil)"
+body_w_mm = 5.3
+pitch_mm = 1.27
+lead_span_mm = 8.0
+source = "catalog"           # marking bench-read; dimensions catalog

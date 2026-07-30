@@ -54,11 +54,26 @@ printed.
 - `kokiso-smd.toml` — 50 SOT-23-class values ×10 (15 diodes, 20
   transistors, 15 MOSFETs), transcribed from the catalog images.
 
+## Bench-verified 2026-07-30 (from `bench-inventory-sheet.md`)
+
+- `attiny85.toml` — ATTINY85-20SU ×4. **The -SU is the EIAJ 208-mil
+  WIDE-body SOIC (8S2, 5.3 mm)** — a narrow SOIC-8 footprint is a
+  reflow failure; dimensions catalog-sourced from the bench-read
+  marking.
+- `tht-bins.toml` — 5 mm LEDs (8 colours ×~50, per-colour Vf
+  measured), the DaFuRui 25-value tactile kit (SMD/THT mix — the 6×6
+  THT 4-leg class serves S1/S2), the big ~4.86 mm-pitch slide SPDT
+  (blade 1.4 wide, thickness unmeasured → hole 1.8 with derivation),
+  CYT1036 buzzer ×8, Ø2×12 dowels ×20, 150×100×1.5 FR-4 double-sided
+  blanks ×10, via-wire note.
+- 74HC595 bench-confirmed in `74hc-kit.toml` — plus "loads" of plain
+  DIP 595s and ten SN74HC595DWR SOIC-16 outside the kit.
+
 ## Not yet cataloged (bench-catalog before their first BOM)
 
-- THT bins (resistors, capacitors, inductors, diodes, buttons,
-  switches, piezos, LEDs)
-- ESP32-H2-Zero modules, SMD ATtiny85 (SOIC-8)
+- THT bins beyond the sheet's rows (resistors, capacitors, inductors,
+  diodes, piezos)
+- ESP32-H2-Zero modules
 
 Known-plentiful, never a design constraint (operator-stated
 2026-07-29): DIP sockets in all sizes — every DIP IC gets socketed,
