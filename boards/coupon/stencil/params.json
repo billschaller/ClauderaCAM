@@ -1,0 +1,13 @@
+{
+  "thickness": 0.4,
+  "shrink": 0.0,
+  "nozzle_diameter": 0.4,
+  "enable_slotify": true,
+  "pad_close_threshold": 0.08,
+  "enable_shoulders": true,
+  "pcb_thickness": 1.6,
+  "shoulder_length": 15.0,
+  "shoulder_width": 3.0,
+  "shoulder_clearance": 0.3,
+  "corner_reinforcement": false
+}

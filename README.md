@@ -156,26 +156,35 @@ values are refused — the first cut coin's hand-picked tab_top made
 Gerbers + Excellon in, verified Carvera programs out: isolation-milled
 PCBs through the same gate. A `[pcb]` TOML names a KiCad export
 directory and parameterizes the operator's six-phase chain — cut traces
-(0.2mm vee) → clear copper → solder mask *(operator: squeegee + UV
-cure)* → silkscreen (455nm laser onto the cured mask) → scrub mask off
-pads (spring tool) → drills + edge cut. FlatCAM (a pinned headless
+(0.2mm vee, a multi-pass ladder so gaps too wide for one pass and too
+narrow for the clearing tool still come out copper-free) → clear copper
+→ solder mask *(operator: squeegee + UV cure)* → silkscreen (455nm
+laser onto the cured mask) → scrub mask off pads (spring tool) →
+drills + edge cut. FlatCAM (a pinned headless
 fork) runs as the **geometry engine only**: its per-phase output is
 strictly parsed and re-emitted through `emit.py`, so every shipped byte
 obeys the house dialect (the laser program has its own — one `M321`,
 then a mandatory `G0 Z0` defocus, dose-ceilinged `M3 S`). Verification
 never trusts the generator: gerbv rasterizes the same gerbers through
 an unrelated parser lineage, and the gate measures the assembled
-programs against those maps — iso containment *and* coverage, clearing
-margins, scrub laps inside pad copper, silk clearance, the exact
-Excellon hole schedule, cutout ride + tab census, and true sheet stock
-simulation for the milling programs. Double-sided boards compose
+programs against those maps — iso containment *and* coverage, a
+residual-copper law on the simulated carve (no bridging sliver survives
+between what isolation reaches and what clearing owns — a loupe-found
+incident), clearing margins, scrub laps inside pad copper, pad
+scrubbability, thermal-relief spoke delivery, silk clearance and stroke
+metrics, the exact Excellon hole schedule, cutout ride + tab census,
+and true sheet stock simulation for the milling programs
+(`guides/pcb-dfm-notes.md` translates the big fab houses' hand-solder
+DFM rules into this milled lane's numbers). Double-sided boards compose
 `[pcb]` + `[twosided]`: per-side phase tables, both machine frames
 derived from the one Edge.Cuts, registration pins under the coin lane's
 pins law, both-side annular-ring and flip-concentricity checks for
 hand-soldered wire vias, and a side-2 scrub generator that laps
 drilled pads annularly instead of driving the spring tip across open
-holes. Board contracts and golden assets live in `boards/` and
-`tests/golden_pcb/`; the viewer opens a `[pcb]` job as one session per
+holes. Board contracts — plus each board's assembly map, companion
+sheet and machine-side tool pull-list — live in `boards/`, golden
+assets in `tests/golden_pcb/`; the viewer opens a `[pcb]` job as one
+session per
 program, with 2D overlays for the non-carving stages and the
 operator's run-sheet card. FlatCAM and gerbv are external optional
 binaries (like the Rust kernel): the blessed goldens verify without

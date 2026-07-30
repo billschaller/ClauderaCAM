@@ -2,6 +2,8 @@
 
 Pairs with `assembly-map.png` (FRONT = THT insertion side; BACK = copper/
 SMD/probe side, drawn copper-up so it matches the board on your bench).
+Machine-side counterpart: `TOOLS.md` — the bit pull-list for the four
+programs.
 Order of operations is the run-sheet's: mill → mask → silk → scrub →
 holes/cutout, then **SMD reflow or hand-solder on the BACK, wire jumpers
 on the FRONT (soldered on the back), THT last**.
