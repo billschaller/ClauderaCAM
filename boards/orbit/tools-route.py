@@ -153,6 +153,278 @@ def fixed_keys() -> set:
     return out
 
 
+BOT = frozenset(("bottom",))
+BOTH = frozenset(("top", "bottom"))
+RAIL_NETS = {"VCC", "VBAT", "VSW"}
+MAX_CLOSURES = 12
+
+
+def net_copper(net: str, parts: list, tracks: list, vias: list,
+               promoted: set) -> list:
+    """Every piece of *net*'s copper as (faces, points, radius), board frame.
+
+    `faces` is a SET because a wire via and a promoted lead are ONE conductor on
+    two faces — that is the entire reason both exist — so they bridge the faces
+    here the way the operator's solder bridges them on the bench.  An
+    UNPROMOTED through lead does not bridge: its front ring is dead copper
+    belonging to no net (the R3 finding), so it contributes its back ring only.
+    Getting that distinction wrong would let this code believe in connections
+    the board does not have, which is the exact failure the plating model
+    exists to prevent.
+    """
+    H, objs = TB.BOARD_H, []
+    for part in parts:
+        for p in part.pins:
+            if p.net != net:
+                continue
+            if p.kind == "rect":
+                objs.append((BOT, p.corners(), 0.0))
+            elif p.kind == "circ":
+                objs.append((BOT, [(p.x, p.y)], p.shape[1] / 2))
+            else:
+                objs.append((BOTH if p.pid in promoted else BOT,
+                             [(p.x, p.y)], p.shape[2] / 2))
+    for t in tracks:
+        if t[6] == net:
+            objs.append((frozenset((t[0],)),
+                         [(t[1], H - t[2]), (t[3], H - t[4])], t[5] / 2))
+    for lay, n, w, pts in TB.fixed_tracks() + TB.board_only_tracks():
+        if n == net:
+            for a, b in zip(pts, pts[1:]):
+                objs.append((frozenset((lay,)), [a, b], w / 2))
+    for vx, vy, vn in vias:
+        if vn == net:
+            objs.append((BOTH, [(vx, H - vy)], TB.RING_VIA / 2))
+    return objs
+
+
+def components(objs: list) -> list:
+    """Union-find over copper that TOUCHES (gap <= 0) on a shared face."""
+    up = list(range(len(objs)))
+
+    def find(i):
+        while up[i] != i:
+            up[i] = up[up[i]]
+            i = up[i]
+        return i
+
+    for i, (fa, pa, ra) in enumerate(objs):
+        for j in range(i + 1, len(objs)):
+            fb, pb, rb = objs[j]
+            if (fa & fb) and TB.shape_gap((pa, ra), (pb, rb)) <= 0.0:
+                up[find(i)] = find(j)
+    groups: dict = {}
+    for i in range(len(objs)):
+        groups.setdefault(find(i), []).append(i)
+    return [groups[k] for k in sorted(groups, key=lambda k: min(groups[k]))]
+
+
+def anchor(obj, toward) -> tuple:
+    """A point ON *obj* to land a track on, nearest *toward*."""
+    faces, pts, r = obj
+    if len(pts) == 1:
+        return pts[0]
+    if len(pts) == 2:
+        (ax, ay), (bx, by) = pts
+        dx, dy = bx - ax, by - ay
+        n = dx * dx + dy * dy
+        t = 0.0 if n == 0 else max(0.0, min(
+            1.0, ((toward[0] - ax) * dx + (toward[1] - ay) * dy) / n))
+        return (TB.q(ax + t * dx), TB.q(ay + t * dy))
+    return (TB.q(sum(p[0] for p in pts) / len(pts)),
+            TB.q(sum(p[1] for p in pts) / len(pts)))
+
+
+def closing_tracks(parts: list, tracks: list, vias: list,
+                   promoted: set) -> list:
+    """-> the copper that FINISHES what the router leaves open, LIHATA frame.
+
+    R4b's endgame lever, and the operator sanctioned it in as many words: the
+    autorouter is a tool, not an authority.  When it stops with a net lying in
+    two pieces, the board data is ours to finish — and the galvanic gate, not
+    this function, is what decides whether the finish is real.
+
+    The method is measurement, not cleverness.  For every net: build its copper,
+    union-find the pieces that actually TOUCH, and while more than one piece
+    remains, offer the shortest paths between the two nearest pieces to the same
+    independent clearance oracle the gate uses.  A path that cannot make 0.40 mm
+    against every other net is never drawn; if nothing legal exists the net
+    stays open and pcb-rnd says so, which is the honest outcome — a closure that
+    only exists because a check was skipped is worth nothing.
+
+    Deterministic by construction: nets in sorted order, components keyed by
+    their lowest object index, candidate paths generated in a fixed sequence and
+    chosen by (length, -clearance, coordinates).  Power nets get RAIL width
+    because they carry the battery.
+    """
+    route = {"tracks": [t[:6] for t in tracks], "vias": vias,
+             "track_nets": [t[6] for t in tracks], "promoted": promoted}
+    others = TB.copper_objects(parts, route)
+    out, new_vias, H = [], [], TB.BOARD_H
+
+    def nearby(pa, pb, layer, net, pad=7.0):
+        """The only copper a path between pa and pb can possibly hit.  A spatial
+        prefilter, not an approximation: everything outside this box is further
+        than the box margin from every candidate, and the candidates never leave
+        it."""
+        x0, x1 = min(pa[0], pb[0]) - pad, max(pa[0], pb[0]) + pad
+        y0, y1 = min(pa[1], pb[1]) - pad, max(pa[1], pb[1]) + pad
+        keep = []
+        for n2, l2, p2, r2 in others:
+            if l2 != layer or n2 == net or n2 is None:
+                continue
+            xs = [p[0] for p in p2]
+            ys = [p[1] for p in p2]
+            if (max(xs) + r2 < x0 or min(xs) - r2 > x1
+                    or max(ys) + r2 < y0 or min(ys) - r2 > y1):
+                continue
+            keep.append((p2, r2))
+        return keep
+
+    def clears(pts, near, w):
+        worst = 99.0
+        for a, b in zip(pts, pts[1:]):
+            for p2, r2 in near:
+                g = TB.shape_gap(([a, b], w / 2), (p2, r2))
+                if g < worst:
+                    worst = g
+                    if worst < TB.CLEAR:
+                        return worst
+        return worst
+
+    bodies = [(p.x, p.y, 1.5 if p.kind == "rect" else 2.0)
+              for part in parts for p in part.pins]
+
+    def via_ok(x, y, net):
+        """SPEC "Via geometry": 0.4 to any other copper on BOTH faces, 1.5 clear
+        of an SMD body, 2.0 of a THT body, 3.0 from the board edge — every one
+        of them a rule about whether a human can thread and solder a wire
+        there, which is what a via on this board actually is."""
+        if not (3.0 < x < TB.BOARD_W - 3.0 and 3.0 < y < TB.BOARD_H - 3.0):
+            return False
+        for bx, by, keep in bodies:
+            if math.hypot(bx - x, by - y) < keep + TB.RING_VIA / 2:
+                return False
+        for n2, _l2, p2, r2 in others:
+            if n2 in (None, net):
+                continue
+            if TB.shape_gap(([(x, y)], TB.RING_VIA / 2), (p2, r2)) < TB.CLEAR:
+                return False
+        return True
+
+    off = [round(-5.0 + 0.5 * k, 3) for k in range(21)]
+    vgrid = [round(-6.0 + 0.5 * k, 3) for k in range(25)]
+    for net in sorted({p.net for part in parts for p in part.pins} - {None}):
+        w = TB.RAIL if net in RAIL_NETS else TB.TRACK
+        for _ in range(MAX_CLOSURES):
+            objs = net_copper(net, parts, tracks + out,
+                              vias + new_vias, promoted)
+            comps = components(objs)
+            if len(comps) < 2:
+                break
+            # EVERY cross-component pair that shares a face, nearest first: the
+            # closest pieces are often the ones a dense corner has walled off,
+            # and a pair 2 mm further apart can have an empty lane between it.
+            pairs = sorted(
+                (round(TB.shape_gap((objs[i][1], objs[i][2]),
+                                    (objs[j][1], objs[j][2])), 3), i, j)
+                for ci, ga in enumerate(comps) for gb in comps[ci + 1:]
+                for i in ga for j in gb if objs[i][0] & objs[j][0])
+            drawn = None
+            for _d, i, j in pairs[:24]:
+                face = sorted(objs[i][0] & objs[j][0])[0]
+                pa = anchor(objs[i], anchor(objs[j], objs[i][1][0]))
+                pb = anchor(objs[j], pa)
+                near = nearby(pa, pb, face, net)
+                mid = ((pa[0] + pb[0]) / 2, (pa[1] + pb[1]) / 2)
+                # Three shapes, and the third one is the lesson of U1-1:
+                # a pin buried in a pin field escapes on a SHORT LEG of its own
+                # bearing first (U1-1's only lane is 130-145 deg, +0.645 mm)
+                # and only then heads for the far piece.  Bends offered only
+                # near the MIDPOINT cannot express that, so the first leg went
+                # straight back into the traffic every time and the closure was
+                # reported impossible when it was merely mis-shaped.
+                escape = [(round(r * math.cos(math.radians(a)), 3),
+                           round(r * math.sin(math.radians(a)), 3))
+                          for r in (2.0, 3.0, 4.0) for a in range(0, 360, 10)]
+                cands = [[pa, pb]] + [
+                    [pa, (TB.q(mid[0] + dx), TB.q(mid[1] + dy)), pb]
+                    for dx in off for dy in off] + [
+                    [pa, (TB.q(pa[0] + dx), TB.q(pa[1] + dy)), pb]
+                    for dx, dy in escape] + [
+                    [pa, (TB.q(pb[0] + dx), TB.q(pb[1] + dy)), pb]
+                    for dx, dy in escape]
+                ok = []
+                for pts in cands:
+                    g = clears(pts, near, w)
+                    if g >= TB.CLEAR:
+                        ln = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
+                        ok.append((round(ln, 3), -round(g, 3), pts))
+                if ok:
+                    ok.sort()
+                    drawn = (face, ok[0][2], None)
+                    break
+            if drawn is None:
+                # No lane on the face the two pieces share.  SPEND A VIA PAIR
+                # and cross on the other one — the operator's 2026-08-01 ruling
+                # says a wire via costs about what a jumper wire costs, and the
+                # FRONT of this board is mostly bare pour where the BACK is
+                # solid traffic.  Each via still has to be a hole a human can
+                # thread (via_ok), and both stubs and the crossing are measured
+                # like any other copper.
+                for _d, i, j in pairs[:40]:
+                    face = sorted(objs[i][0] & objs[j][0])[0]
+                    over = "top" if face == "bottom" else "bottom"
+                    pa = anchor(objs[i], anchor(objs[j], objs[i][1][0]))
+                    pb = anchor(objs[j], pa)
+                    va = [(TB.q(pa[0] + dx), TB.q(pa[1] + dy))
+                          for dx in vgrid for dy in vgrid]
+                    vb = [(TB.q(pb[0] + dx), TB.q(pb[1] + dy))
+                          for dx in vgrid for dy in vgrid]
+                    va = [v for v in va if via_ok(*v, net)
+                          and clears([pa, v], nearby(pa, v, face, net), w)
+                          >= TB.CLEAR][:40]
+                    vb = [v for v in vb if via_ok(*v, net)
+                          and clears([pb, v], nearby(pb, v, face, net), w)
+                          >= TB.CLEAR][:40]
+                    hop = []
+                    for a in va:
+                        for b2 in vb:
+                            g = clears([a, b2], nearby(a, b2, over, net), w)
+                            if g >= TB.CLEAR:
+                                hop.append((round(math.dist(a, b2), 3),
+                                            -round(g, 3), a, b2))
+                    if hop:
+                        hop.sort()
+                        _l, _g, a, b2 = hop[0]
+                        drawn = (face, [pa, a], (over, a, b2, pb))
+                        break
+            if drawn is None:
+                break                       # nothing legal: let the gate speak
+            face, pts, hop = drawn
+            runs = [(face, pts)]
+            if hop:
+                over, a, b2, pb = hop
+                runs += [(over, [a, b2]), (face, [b2, pb])]
+                for v in (a, b2):
+                    new_vias.append((TB.q(v[0]), TB.q(H - v[1]), net))
+                    for lay in ("top", "bottom"):
+                        others.append((net, lay, [v], TB.RING_VIA / 2))
+            for lay, run in runs:
+                for a, b in zip(run, run[1:]):
+                    if a == b:
+                        continue
+                    out.append((lay, TB.q(a[0]), TB.q(H - a[1]),
+                                TB.q(b[0]), TB.q(H - b[1]), w, net))
+                    # Every closure joins the obstacle set IMMEDIATELY.
+                    # Measured the hard way: without this, closure #2 is
+                    # checked against the board as it was before closure #1,
+                    # and pcb-rnd reads the result as a SHORT between two nets
+                    # we drew ourselves.
+                    others.append((net, lay, [a, b], w / 2))
+    return out, new_vias
+
+
 def merge(parts: list, ses_path: str) -> dict:
     s = ses_parse.load(ses_path)
     # Scale is recovered from PLACEMENT, never from (resolution ...): the
@@ -194,6 +466,15 @@ def merge(parts: list, ses_path: str) -> dict:
     promoted = {pid for pid in hits if by_pid[pid].dual} | MANDATORY
     fantasy = sorted(pid for pid in hits if not by_pid[pid].dual)
 
+    # ... and now the copper that finishes what the router left open.  AFTER
+    # promotion, deliberately: a closing track may not conjure a dual-solder
+    # joint into existence, so it is drawn on copper the bench is already
+    # committed to.  Before everything else, so the ledger, the stitch list,
+    # the clearance scan and pcb-rnd all see exactly one board.
+    closing, closing_vias = closing_tracks(parts, tracks, vias, promoted)
+    tracks.extend(closing)
+    vias.extend(closing_vias)
+
     stitch = sorted([(TB.q(x), TB.q(y)) for x, y, _n in vias] +
                     [TB.lht_xy(by_pid[pid].x, by_pid[pid].y)
                      for pid in promoted])
@@ -209,6 +490,7 @@ def merge(parts: list, ses_path: str) -> dict:
         "promoted": sorted(promoted),
         "front_copper_on_leads": sorted(hits),
         "fantasy_bridges": fantasy,
+        "closing_tracks": [list(t) for t in closing],
         "stitch_set": [list(p) for p in stitch],
     }
 

@@ -102,11 +102,36 @@ COPPER_CLEAR = CLEAR + DRC_MARGIN
 # GEOMETRY (SPEC "Layout notes"), board frame: y-UP, origin at the lower-left
 # corner — the WCS both machining setups share.
 # ---------------------------------------------------------------------------
-BOARD_W, BOARD_H = 56.0, 48.0
+# GROWN 2026-08-01 from 56.0 x 48.0, and the growth is the fix for four of the
+# six galvanic residues R4b inherited (U1-4 GND x2, L0 R4-2/TP4-1, the L3 front
+# fragment).  Operator ruling 2026-08-01, density philosophy: "components low /
+# vias medium / crowded board HIGH — when geometry fights back, GROW the outline
+# or SPREAD the placement instead of being clever."  The binding fight was the
+# ring INTERIOR: 12 radial resistors capped at RES_OUTER by the cathode ring
+# left U1 a 0.7 mm annulus to escape into, and U1-4 (GND, mid pin field) could
+# not reach open copper at all.  Growing LEAD_R_IN by 4.00 mm moves every
+# resistor 4.00 mm outward and turns that annulus into 4.7 mm — three routable
+# corridors where there was not one.  The board grows to carry the bigger ring.
+#
+# DOWNSTREAM CONSEQUENCES OF THESE TWO NUMBERS, stated here because they live in
+# other files: the flip mirror line is BOARD_W/2 (now x = 30.0, was 28.0) and
+# the registration pins sit ON it at (BOARD_W/2, -8.0) and (BOARD_W/2,
+# BOARD_H+8.0) = (30, -8) and (30, 62); the blank must cover BOARD_W x
+# (BOARD_H+16) = 60 x 70, which the operator's 150 x 100 stock clears twice
+# over.  Pins and job frames are declared in the JOB TOML, not here.
+# W grew a second time (60 -> 64) for the RIGHT STRIP, measured the same way:
+# both button nets (L2, L3) can only enter their button from its outboard leg
+# column, and on the 60-wide board the only lane into S2's was 1.67 mm against a
+# 1.46 mm need — with D1 standing in it.  Widening the strip and clearing the
+# lane is the ruling's answer; being clever with a 0.2 mm margin is not.
+BOARD_W, BOARD_H = 64.0, 54.0
 CORNER_R = 2.0
-RING_CX, RING_CY = 22.0, 26.0
-RING_R = 13.0                    # LED body pitch circle
-LEAD_R_IN, LEAD_R_OUT = 11.55, 14.45   # cathode INWARD, anode outward
+# Ring centre moved with the growth: +2 in x so the enlarged ring keeps a 4.3 mm
+# pour margin on the left edge, +4 in y so its lowest lead still clears the
+# bottom strip (SW1's blade ring tops out at 6.62).
+RING_CX, RING_CY = 24.0, 30.0
+RING_R = 17.0                    # LED body pitch circle (bodies 8.9 mm apart)
+LEAD_R_IN, LEAD_R_OUT = 15.55, 18.45   # cathode INWARD, anode outward
 # LED lead pitch is 2.90, NOT the SPEC's 2.54.  Ø2.44 rings on two DIFFERENT
 # nets need hole pitch >= 2.44 + 0.40 = 2.84 before any routing happens; 2.54
 # caps the ring at 0.57 and is UNBUILDABLE under ring>=0.7.  Found independently
@@ -146,6 +171,17 @@ POUR_HOLE_MARGIN = 0.30
 ROUTE_MOUNT_KEEPOUT_R = MOUNT_KEEPOUT_R + COPPER_CLEAR + POUR_HOLE_MARGIN
 ISP_PAD = 1.8            # bare B.Cu pad, no hole
 ISP_PITCH = 2.54
+# x0 = 44.0 (was 38.0, SPEC's ~37).  MEASURED, and the ISP was the board's real
+# routing bottleneck: six Ø1.8 pads on a 2.54 grid leave 0.74 mm between
+# neighbours, which is 0.72 mm too little for a track, so EVERY pad has to be
+# entered from outside the block — the left column from the west, the right from
+# the east.  At x0 38 the western corridor was the 3.6 mm slot between SW1's
+# unused blade and the grid, and three nets wanted it (TP1 L1, TP3 L2, TP5
+# RESET): the router left TP3 and TP5 open, and TP2 with them.  At 44 the west
+# corridor is 9.6 mm and the east side is open to the edge.  Rotating the block
+# 90 deg would also free every pad, but three labels per row cannot fit on a
+# 2.54 pitch and the legend is what makes bare pads usable.
+ISP_X0, ISP_Y0 = 44.0, 3.0
 
 # The bottom strip's vertical stack is the tightest geometry on the board and
 # is therefore PRE-PLACED and protected rather than left to a router.  Reading
@@ -159,6 +195,30 @@ CORRIDOR_Y = 2.3         # VBAT power-entry corridor, y
 SW1_Y = 5.0              # SW1 blade row, y
 SW1_X, SW1_PITCH = 27.0, 4.86
 SPINE_X0, SPINE_X1 = 19.5, 29.9        # SPEC/R4b contract: spine ends x<=29.9
+# The power-entry cell, named because fixed_tracks() draws the VCC rail from
+# Q1's pin 2 and THROUGH C1's pin 1: the rail, the regulator and the reservoir
+# cap are one geometric statement and may not drift apart.  C1_XY is derived
+# from the rail's descent (x 14) minus the C0805 half-pitch, so pin 1 lands on
+# the rail's centreline exactly.
+# x 20.64 = SW1_X - SW1_PITCH - 1.5, i.e. Q1's OUTPUT land sits directly above
+# SW1's VSW blade.  That alignment is the whole point: VSW is board-only copper
+# hidden from the router (see board_only_tracks), so the corridor it reserves
+# has to be as short as a corridor can be — one 4.5 mm vertical drop instead of
+# an L across the artery between the power entry and the bottom strip.
+Q1_XY = (SW1_X - SW1_PITCH - 1.5, 9.5)
+# C4 (the RESET cap) is NAMED because its position is not a free choice: its GND
+# land has to sit in pour the BACK PLANE actually reaches.  See build_parts.
+C4_XY = (40.5, 12.5, 0.0)
+# R13 is NAMED because fixed_tracks() runs the VCC rail to its pin 1: the rail
+# and the part that terminates it are one statement.  R0603 pin 1 sits one
+# half-pitch (0.9125) left of centre.
+R13_XY = (36.0, 10.5)
+R13_VCC_X = R13_XY[0] - 0.9125
+VCC_DESCENT_X = 14.0     # the rail's descent leg, x; C1's VCC land sits ON it
+# C1 is rotated 180, so its pin 1 is at centre + C0805 half-pitch (1.0375, from
+# SMD_FP below).  Asserted against SMD_FP at import time so the two can never
+# disagree — a land that drifts off the rail is a silently open VCC net.
+C1_XY = (VCC_DESCENT_X - 1.0375, 9.0)
 
 # Radial resistor rings.  MEASURED failure the KiCad rounds recorded: laid
 # TANGENTIALLY the 1206s "spend 4.40 mm of arc each and WALL OFF their own two
@@ -166,32 +226,85 @@ SPINE_X0, SPINE_X1 = 19.5, 29.9        # SPEC/R4b contract: spine ends x<=29.9
 # the neighbour read 0.374 — below the law.  Radial fixes both.  The per-package
 # radius is set so every land's OUTER edge stops short of the LED cathode ring
 # (inner edge at LEAD_R_IN - RING_LED/2 = 10.33) by >= CLEAR.
-RES_OUTER, RES_OUTER_1206 = 9.7, 9.5
+# radius set so every land's OUTER edge stops short of the LED cathode ring
+# (inner edge at LEAD_R_IN - RING_LED/2 = 14.33) by >= CLEAR.  Both numbers grew
+# by the same 4.00 mm as LEAD_R_IN, so the outer annulus is unchanged (0.63) and
+# all 4.00 mm of new room lands in the INTERIOR, where U1 is.
+RES_OUTER, RES_OUTER_1206 = 13.7, 13.5
 
-MOUNTS = {"H1": (3.5, 3.5), "H2": (52.5, 3.5),
-          "H3": (3.5, 44.5), "H4": (52.5, 44.5)}
-# y 42, not 45: a flip gauge is a zero-length LINE (a disc of copper), so
-# POUR_HOLE_MARGIN binds it.  At y 45 the G3/G4 discs cleared the H3/H4 pour
-# holes by 0.058 — inside the fatal band, and passing only by luck.  y 42 reads
-# +0.678.  The bottom pair is already clear (+1.894) and does not move.
-GAUGES = {"G1": (8.0, 8.0), "G2": (48.0, 8.0),
-          "G3": (8.0, 42.0), "G4": (48.0, 42.0)}
+# DERIVED from the edges, not hard-coded: these four bores belong to the corners
+# of the outline, so when the outline grows they move WITH it (2026-08-01).
+#
+# INSET 4.2, not the 3.5 the KiCad rounds and R4a used.  MEASURED 2026-08-01,
+# and it is a real defect the old board carried by luck: the M3 copper keep-out
+# is punched into each pour as a DECLARED hole contour (ta:hole), and at 3.5 that
+# Ø6.4 contour reached x 0.3 — 0.1 mm OUTSIDE the pour's own boundary at
+# EDGE_CLEAR 0.4.  A hole that is not wholly inside its polygon is degenerate,
+# and pcb-rnd's boolean fails on it once enough other copper has been
+# subtracted: on the routed board it threw "Error while clipping RND_PBO_SUB: 3"
+# 324 times and SILENTLY DISCARDED THE BACK POUR (the unrouted board, with far
+# less to subtract, clipped clean — which is exactly how the defect stayed
+# hidden).  Sweeping the inset against the routed board: 3.5 -> 324 errors,
+# 4.0 / 4.5 / 5.0 / 5.5 / 6.0 -> 0.  4.2 puts the contour 0.6 mm inside the
+# straight boundary and 1.19 mm off the corner arc, and is bounded ABOVE by
+# PAD2's ring (the keep-out may not swallow it) at 5.4.
+# assert_pour_holes_inside() below refuses to emit if this is ever violated
+# again — the measurement is not enough, because the symptom is silence.
+MOUNT_INSET = 4.2
+MOUNTS = {"H1": (MOUNT_INSET, MOUNT_INSET),
+          "H2": (BOARD_W - MOUNT_INSET, MOUNT_INSET),
+          "H3": (MOUNT_INSET, BOARD_H - MOUNT_INSET),
+          "H4": (BOARD_W - MOUNT_INSET, BOARD_H - MOUNT_INSET)}
+# A flip gauge is a zero-length LINE (a disc of copper), so POUR_HOLE_MARGIN
+# binds it against the M3 pour holes: it must stay RING_GAUGE/2 + COPPER_CLEAR +
+# MOUNT_KEEPOUT_R + POUR_HOLE_MARGIN = 4.77 mm from a mount centre.  On the
+# 56x48 board the top pair had to be pulled off the symmetric inset to 6 mm
+# below the edge (it read +0.058 — inside the fatal band, passing by luck); on
+# the grown outline the symmetric 8 mm inset clears it by 6.36 - 4.77 = 1.59, so
+# the exception is retired and all four sit at the same inset.  They stay
+# mirror-symmetric about BOARD_W/2, which the flip depends on.
+GAUGE_INSET = 8.0
+GAUGES = {"G1": (GAUGE_INSET, GAUGE_INSET),
+          "G2": (BOARD_W - GAUGE_INSET, GAUGE_INSET),
+          "G3": (GAUGE_INSET, BOARD_H - GAUGE_INSET),
+          "G4": (BOARD_W - GAUGE_INSET, BOARD_H - GAUGE_INSET)}
 
 # Tactile switch bodies and the half-pitch of their four legs.  ONE definition:
 # build_parts() places the pads from it and fixed_tracks() draws the leg links
 # from the same numbers, so a link can never drift off the pad it shorts.
 #
-# S2 sits at y 37.5, not the 39.0 the KiCad rounds used.  MEASURED, and forced
-# by POUR_HOLE_MARGIN: at 39.0 the S2-1B pad lands 3.953 mm from H4, which puts
-# the L2 leg link's pour cutout 0.033 mm off that mount's hole and kills the
-# back plane.  The link cannot simply be shortened — FreeRouting only counts a
+# The link may never be SHORTENED to dodge geometry: FreeRouting only counts a
 # protected wire as reaching a pin when it ENDS on the pin, so a trimmed link
 # stops being the short it exists to declare and the router reports S2-1 and
-# S2-1B as an open connection.  Moving the part is the fix that keeps both the
-# electrical statement and the geometry true: at 37.5 the link reads +1.336 and
-# S2-1B's own dead ring +0.416, both decisively outside the band.
-BUTTONS = {"S1": (47.0, 13.0), "S2": (47.0, 37.5)}
+# S2-1B as an open connection.  When a link's pour cutout grazes a mount hole,
+# the part moves — that keeps both the electrical statement and the geometry
+# true.  (On the 56x48 board this forced S2 to y 37.5, off the 39.0 the KiCad
+# rounds used, where the cutout read +0.033 against H4 and killed the back
+# plane; perturb_leg() is the negative control that still proves the scan sees
+# it.)
+#
+# SPREAD 2026-08-01 with the ring: the enlarged ring's copper now reaches
+# x 43.67, so the whole right strip moved outboard (+7 in x) and the two buttons
+# followed the ring centre (+4 in y).  S2 no longer needs its own y exception —
+# on the grown board the L2 leg link reads +5.36 against H4, decisively outside
+# POUR_HOLE_MARGIN's band — so S1 and S2 sit symmetrically again about the ring
+# centre line, 12 mm apart from it.
+BUTTONS = {"S1": (57.5, 19.0), "S2": (57.5, 41.0)}
 BTN_DX, BTN_DY = 3.25, 2.25
+# The right strip's series resistors.  R15_XY is NAMED because fixed_tracks()
+# draws the S1_R link from it, and its y is CHOSEN so that R15's pin 1 (a 1206
+# rotated 90 puts pin 1 one half-pitch BELOW centre, 1.55 mm) lands level with
+# S1's upper-left leg — the link then ends ON a pad instead of mid-span, which
+# is the form FreeRouting counts as reaching the pin.
+R15_XY = (46.0, BUTTONS["S1"][1] + BTN_DY + 1.55)
+R16_XY = (46.0, 39.0)
+# The buzzer's leads bound the lanes both button nets must use, and its y is
+# pinned from BELOW by the front legend, not by copper: dropping it to 28.5 to
+# widen L2's lane walked its lower ring into the "CATCH" legend and the front
+# silk gate convicted it at -1.15 mm (a stroke essentially on the pad).  So the
+# buzzer stays centred and the lane is bought by moving the DRIVER CELL out of
+# the y 35.4..37.1 band instead (see D1/Q2 in build_parts).
+BZ1_XY = (58.0, 30.0)
 
 # Ring position -> LED index.  SPEC grants the layout this permutation ("the
 # mapping is a LAYOUT degree of freedom ... the firmware table follows"), and
@@ -280,6 +393,13 @@ SMD_FP = {
 # OUTER edge lands on RES_OUTER.
 SMD_LEN = {k: max(abs(dx) + w / 2 for dx, _dy, w, _h in v.values()) * 2
            for k, v in SMD_FP.items()}
+
+# C1's VCC land must sit ON the VCC rail's descent (see C1_XY): pin 1 of a
+# C0805 rotated 180 lands at centre_x + half-pitch, and that has to BE the
+# rail's x.  Stated as an assertion because the alternative is an open rail
+# nobody notices until pcb-rnd hangs a rat line on it.
+assert q(C1_XY[0] + SMD_FP["C0805"]["1"][0] * -1) == VCC_DESCENT_X, \
+    "C1's pin-1 land has drifted off the VCC rail descent"
 
 
 # ---------------------------------------------------------------------------
@@ -435,39 +555,67 @@ def build_parts() -> list[Part]:
     # FreeRouting thrashed: 15 MINUTES without converging, against 27 seconds
     # at rotation 0.  A placement the router cannot solve is not an
     # improvement, whatever the wire lengths say.
-    add(smd("U1", "SOIC8W", 22.0, 26.0, 0.0))
+    add(smd("U1", "SOIC8W", RING_CX, RING_CY, 0.0))
     # C2 rotated 180 so its VCC land (pin 1) faces U1 pin 8: 2.96 mm link.
     # y 29.4, not 29.8: pulling the 1206 ring resistors inward (see
     # RES_OUTER_1206) walked their inner lands to within 0.369 of C2 — caught
     # by the independent clearance scan, NOT by pcb-rnd.  C2 moves toward U1
     # instead, which also shortens the VCC link it exists to make short.
-    add(smd("C2", "C0805", 22.0, 29.4, 180.0))
+    add(smd("C2", "C0805", RING_CX, RING_CY + 3.4, 180.0))
     # R13 + C4 sit OUTSIDE the ring near its rim, reachable from U1.1 through
-    # the gap between two LED sectors.
-    add(smd("R13", "R0603", 31.2, 10.5, 0.0))
-    add(smd("C4", "C1206", 35.5, 11.5, 0.0))
-    # Power parts at the entry ...
-    add(smd("Q1", "SOT23", 17.5, 9.5, 0.0))
-    add(smd("C1", "C0805", 11.5, 9.0, 0.0))
+    # the gap between two LED sectors.  Both slid LEFT along the strip when the
+    # ring grew (2026-08-01): the enlarged ring's lower-right leads sit at
+    # (33.2, 14.0) and the 1206 could no longer stand under them, and at its old
+    # x it collided with the ISP pin-1 silk tick.  R13 keeps its VCC land within
+    # reach of the spine end (x 29.9); C4 keeps the RESET node compact.
+    add(smd("R13", "R0603", *R13_XY, 0.0))
+    add(smd("C4", "C1206", *C4_XY))
+    # Power parts at the entry.  Q1 moved +0.5 in x to open a 0.96 mm gap to
+    # C1's new VCC land (it was 0.46), and the VCC rail's origin follows it —
+    # fixed_tracks() reads Q1_XY, so the rail can never start off the pin.
+    add(smd("Q1", "SOT23", *Q1_XY))
+    # C1 ROTATED 180 and moved so its pin-1 (VCC) land is CENTRED ON the fixed
+    # VCC rail's descent at x 14.  That closes the last of R4b's six residues by
+    # geometry instead of copper: C1-1 was a singleton because C1-2's own GND
+    # land walls the VCC land off from the rail, and a pre-placed branch around
+    # it was MEASURED to cost four other connections (see fixed_tracks).  A pad
+    # the rail already runs through costs nothing, adds no obstacle, and is the
+    # same joint the bench would solder anyway.  Pin 2 (GND) faces away, into
+    # the pour.
+    add(smd("C1", "C0805", *C1_XY, 180.0))
     # ... driver at the load: the buzzer cell lives on the BACK, under BZ1's
     # front-side body, which is empty back copper.
-    add(smd("R14", "R0805", 40.0, 26.0, 0.0))
-    add(smd("Q2", "SOT23", 44.5, 26.0, 0.0))
-    add(smd("D1", "SOT23", 43.5, 30.5, 0.0))
-    add(smd("C3", "C0603", 43.5, 22.0, 0.0))
-    add(smd("R15", "R1206", 41.0, 14.0, 90.0))
-    add(smd("R16", "R0603", 41.0, 38.0, 90.0))
+    # The buzzer cell keeps its internal geometry and moves as a BLOCK with the
+    # right strip (+7 in x, +4 in y, 2026-08-01): the grown ring's copper now
+    # reaches x 43.67, and R14 at its old x would have stood inside the LED
+    # leads.  R14-2/Q2-2 remains the board's tightest different-net pair at
+    # 0.45, exactly as measured before the move.
+    # The driver cell is packed into the band y 23..31 ON PURPOSE (2026-08-01):
+    # the two button nets can only enter their buttons from the outboard leg
+    # column, so the lanes at y 35.4..37.1 (to S2) and y 22.5..25.0 (to S1) are
+    # RESERVED ROUTING SPACE and no part may stand in them.  D1 above Q2 (its
+    # first home) put a land 0.24 mm into the S2 lane and the router abandoned
+    # L2; below Q2 it is 9 mm clear of it.
+    add(smd("R14", "R0805", 47.0, 30.0, 0.0))
+    add(smd("Q2", "SOT23", 52.0, 30.0, 0.0))
+    add(smd("D1", "SOT23", 52.0, 25.0, 0.0))
+    # C3 decouples the buzzer rail and may sit anywhere on it, so it is the part
+    # that YIELDS when the cell gets tight.  Packed in beside Q2 it left the
+    # R14 -> Q2 base hop with 0.298 mm of room (the law is 0.400) and put ZERO
+    # legal wire-via positions within 5 mm of Q2-3 — a cell so dense that
+    # neither the router nor a hand route could finish it.  At (49, 34) it is
+    # 0.97 mm clear of the reserved L2 lane and the cell breathes.
+    add(smd("C3", "C0603", 49.0, 34.0, 0.0))
+    add(smd("R15", "R1206", *R15_XY, 90.0))
+    add(smd("R16", "R0603", *R16_XY, 90.0))
 
     # --- ISP: six bare Ø1.8 pads on B.Cu, standard 2x3 AVR grid -------------
     #   TP1 MISO  TP2 VCC        pin 1 top-left, square-ticked in back silk
     #   TP3 SCK   TP4 MOSI
-    #   TP5 RST   TP6 GND
-    # x0 = 38.0, not SPEC's ~37: at 37 the "SCK" label lands 0.02 mm from SW1's
-    # unused blade ring, and silk must stay 0.3 clear of a solderable pad.
-    isp_x, isp_y = 38.0, 3.0
+    #   TP5 RST   TP6 GND       (grid origin and its measured x0 at ISP_X0)
     for i, ref in enumerate(("TP5", "TP6", "TP3", "TP4", "TP1", "TP2")):
-        px = isp_x + ISP_PITCH * (i % 2)
-        py = isp_y + ISP_PITCH * (i // 2)
+        px = ISP_X0 + ISP_PITCH * (i % 2)
+        py = ISP_Y0 + ISP_PITCH * (i // 2)
         add(Part(ref, "ISP", "back",
                  [Pin(ref, "1", px, py, ("circ", ISP_PAD))], 0))
 
@@ -493,7 +641,8 @@ def build_parts() -> list[Part]:
                       ("1", bx + BTN_DX, by - BTN_DY),
                       ("1B", bx + BTN_DX, by + BTN_DY)],
                 hole=HOLE_BTN, ring=RING_LED))
-    add(tht("BZ1", [("1", 48.0, 26.0 - 3.8), ("2", 48.0, 26.0 + 3.8)],
+    add(tht("BZ1", [("1", BZ1_XY[0], BZ1_XY[1] - 3.8),
+                    ("2", BZ1_XY[0], BZ1_XY[1] + 3.8)],
             hole=HOLE_BZ, ring=RING_LED))
     return parts
 
@@ -571,6 +720,34 @@ def circle_pts(cx: float, cy: float, r: float, seg: int = 16):
             (polar(cx, cy, 360.0 * k / seg, r) for k in range(seg))]
 
 
+# The pour's declared holes must lie WHOLLY INSIDE the pour, and this is checked
+# at emit time rather than in a gate because the failure it guards is SILENT:
+# a hole that crosses its polygon's boundary is degenerate, pcb-rnd's boolean
+# gives up on it once there is enough other copper to subtract, and the answer
+# is a DISCARDED POUR that still parses, still passes DRC, and only shows up as
+# connectivity nobody can explain (MEASURED 2026-08-01 — see MOUNT_INSET).  A
+# generator that can emit that file should refuse to, not report it later.
+POUR_HOLE_INSIDE_MIN = 0.30      # same margin class as POUR_HOLE_MARGIN
+
+
+def assert_pour_holes_inside() -> float:
+    """-> the tightest margin.  Raises if any M3 keep-out escapes the pour."""
+    edge = rounded_rect(EDGE_CLEAR)
+    worst, who = 99.0, None
+    for ref, (mx, my) in MOUNTS.items():
+        d = min(pt_seg(mx, my, a[0], a[1], b[0], b[1])
+                for a, b in zip(edge, edge[1:] + edge[:1])) - MOUNT_KEEPOUT_R
+        if d < worst:
+            worst, who = d, ref
+    if worst < POUR_HOLE_INSIDE_MIN:
+        raise SystemExit(
+            f"refusing to emit: {who}'s Ø{2 * MOUNT_KEEPOUT_R} copper keep-out "
+            f"reaches {-worst:.3f} mm past the pour boundary (needs "
+            f"{POUR_HOLE_INSIDE_MIN} inside) — the pour would be silently "
+            f"discarded.  Move the mount inward (MOUNT_INSET).")
+    return worst
+
+
 def fixed_tracks() -> list[tuple]:
     """(layer, net, width, [(x, y), ...]) — pre-placed and PROTECTED.
 
@@ -602,9 +779,15 @@ def fixed_tracks() -> list[tuple]:
         # passing C1-2's GND land needs x >= 13.93 — no single x satisfies
         # both, which is why the lane steps in at y 7.0.  x 13.0 then clears
         # both wire pads by 0.80 and the VBAT corridor by 0.60.
+        # The rail now also PASSES THROUGH C1's pin-1 land at (14.0, 9.0), which
+        # is why C1 was rotated and re-seated there (see build_parts): the
+        # descent leg is VCC and so is the land, so the contact is copper the
+        # bench already has to make, not a branch the router has to work around.
         ("bottom", "VCC", RAIL,
-         [(16.0, 10.45), (14.0, 10.45), (14.0, 7.0), (13.0, 7.0),
+         [(Q1_XY[0] - 1.5, Q1_XY[1] + 0.95), (VCC_DESCENT_X, 10.45),
+          (VCC_DESCENT_X, 7.0), (13.0, 7.0),
           (13.0, SPINE_Y), (SPINE_X1, SPINE_Y)]),
+        # (VCC's eastward extension is board-only: see board_only_tracks)
         # NOT a branch to C1-1.  C1's VCC land is walled off from the rail by
         # C1-2's own GND land 2.07 mm away and the router leaves it a
         # singleton, and a legal pre-placed branch down the west side of C1
@@ -618,7 +801,9 @@ def fixed_tracks() -> list[tuple]:
         # B.Cu that the router failed to find on every pass of every attempt,
         # leaving R15-1 a singleton.  The leg link it lands on is fixed too, so
         # this makes the whole S1_R node one pre-placed piece.
-        ("bottom", "S1_R", TRACK, [(41.0, 12.45), (43.75, 12.45)]),
+        ("bottom", "S1_R", TRACK,
+         [(q(R15_XY[0]), q(R15_XY[1] - 1.55)),
+          (q(BUTTONS["S1"][0] - BTN_DX), q(BUTTONS["S1"][1] + BTN_DY))]),
         # U1-4 is the brain's GND pin and it sits INSIDE U1's own pin field,
         # with seven escaping traces between it and open copper — the router
         # spent a via trying and still reported it open, and pcb-rnd hung two
@@ -642,6 +827,55 @@ def fixed_tracks() -> list[tuple]:
                         [(q(bx + dx), q(by - BTN_DY)),
                          (q(bx + dx), q(by + BTN_DY))]))
     return out
+
+
+def board_only_tracks() -> list[tuple]:
+    """(layer, net, width, [(x, y), ...]) — copper the BOARD carries and the
+    ROUTER is never shown.  Same shape as fixed_tracks(), and every oracle that
+    measures copper (clearance_scan, pour_hole_scan, the emitted lihata) counts
+    it; only emit_dsn leaves it out.
+
+    VSW — SW1's blade to the regulator input — is the sole member, and it is
+    here rather than in fixed_tracks() because BOTH ways of telling the router
+    about it were MEASURED and both are worse:
+
+      * as a `(type protect)` wire at RAIL width, FreeRouting stops converging
+        altogether: 240 s without finishing a pass, against 14 s for the same
+        board without it (the same pathology this file already records for
+        protected copper inside the ring).  At TRACK width it converges but
+        surrenders 7 more connections;
+      * as a path keepout reserving the corridor, it converges in 18 s but
+        still costs 5 connections, because the Q1-to-SW1 corridor is the artery
+        between the power entry and the bottom strip.
+
+    And it must be SOMEWHERE, because FreeRouting will not route this net at
+    all: the session carries no VSW wire and the router does not list it as
+    unrouted either — it believes the two terminals are already one node, while
+    pcb-rnd, which measures metal, correctly hangs a rat line on them.
+
+    The risk of hiding copper from the router is that it routes something else
+    through the same space, and that risk is REAL — MEASURED: told nothing, the
+    router laid GND through this corridor and pcb-rnd read "SHORT: net GND is
+    shorted to VSW at terminal Q1-3".  So the space is RESERVED with a path
+    keepout in the DSN (emit_dsn) while the copper itself stays out of the
+    router's wiring.  The keepout costs the router options, which is why Q1 was
+    aligned over SW1's blade first: the reservation is one 4.5 mm vertical drop,
+    not an L across the artery.  Both oracles still measure this copper like any
+    other, so a trespass fails the gate rather than shipping.
+    """
+    return [("bottom", "VSW", RAIL,
+             [(q(Q1_XY[0] + 1.5), q(Q1_XY[1])),
+              (q(Q1_XY[0] + 1.5), q(SW1_Y))]),
+            # VCC EAST — the spine reaching its loads.  SPEC's "spine ends
+            # x<=29.9" was written for a 56 mm board whose VCC loads all sat
+            # west of 30; on the grown board they sit at x 35..58, and a rail
+            # that stops at 29.9 leaves the router to invent the whole east-half
+            # distribution.  MEASURED across three geometries: VCC lands in 2 to
+            # 4 islands every time, and every closure joining them along the
+            # bottom edge fences a pour pocket instead.
+            ("bottom", "VCC", RAIL,
+             [(q(SPINE_X1), q(SPINE_Y)), (q(R13_VCC_X), q(SPINE_Y)),
+              (q(R13_VCC_X), q(R13_XY[1]))])]
 
 
 def dead_front_rings(parts: list[Part]) -> list[tuple]:
@@ -801,17 +1035,24 @@ def front_legend() -> list[tuple]:
     out = []
     for pos in range(1, 13):
         ang = pos_angle(pos)
-        cx, cy = polar(RING_CX, RING_CY, ang, 9.8)
+        # 3.2 inside the body pitch circle: 0.7 clear of the 5 mm body's inner
+        # edge and radially inward of the cathode hole, which is the side the
+        # cathode is on.  DERIVED from RING_R so it followed the grown ring.
+        cx, cy = polar(RING_CX, RING_CY, ang, RING_R - 3.2)
         tx, ty = polar(0.0, 0.0, ang + 90.0, 0.8)
         out.append((q(cx - tx), q(cy - ty), q(cx + tx), q(cy + ty)))
     # marker arrow at position 1, outboard of the ring
-    apex = polar(RING_CX, RING_CY, 90.0, 16.6)
+    apex = polar(RING_CX, RING_CY, 90.0, LEAD_R_OUT + 2.15)
     for dx in (-1.3, 1.3):
         out.append((q(apex[0] + dx), q(apex[1] + 1.3), q(apex[0]), q(apex[1])))
-    out += text_strokes("12", 22.0, 44.6)
-    out += text_strokes("3", 39.6, 26.0)
-    out += text_strokes("6", 22.0, 8.4)
-    out += text_strokes("9", 4.4, 26.0)
+    # The 12/3/6/9 numerals moved INSIDE the ring when it grew (2026-08-01).
+    # Outboard they would have wanted r 22.6, which on the grown ring runs the
+    # "9" off the left edge and drives the "6" into SW1's blade ring — and the
+    # answer to that is not a bigger board still, because a clock face reads
+    # correctly with its numbers inside the hands.  r 11.5 keeps them 2.0 mm
+    # clear of the cathode rings and over nothing but back-side copper.
+    for label, ang in (("12", 90.0), ("3", 0.0), ("6", -90.0), ("9", 180.0)):
+        out += text_strokes(label, *polar(RING_CX, RING_CY, ang, 11.5))
     # Each button's legend sits 4.8 mm outboard of its body centre, so START
     # followed S2 down when POUR_HOLE_MARGIN moved it (see BUTTONS).
     out += text_strokes("CATCH", *polar(BUTTONS["S1"][0], BUTTONS["S1"][1],
@@ -821,8 +1062,8 @@ def front_legend() -> list[tuple]:
     out += text_strokes("ON", SW1_X, 8.1)
     out += text_strokes("+", 16.0, 7.0)      # follows the layout, not the note:
     out += text_strokes("-", 10.0, 7.0)      # PAD1 (+) is the right-hand pad
-    out += text_strokes("ORBIT V1", 22.0, 28.2)
-    out += text_strokes(DATE_STAMP, 22.0, 24.4)
+    out += text_strokes("ORBIT V1", RING_CX, RING_CY + 2.2)
+    out += text_strokes(DATE_STAMP, RING_CX, RING_CY - 1.6)
     return out
 
 
@@ -850,14 +1091,17 @@ def back_legend(parts: list[Part]) -> list[tuple]:
     for ref, txt in ISP_LABEL.items():
         pad = by[ref].pins[0]
         w, _ = text_size(txt, 1.0)
-        left = pad.x < 39.0
+        left = pad.x < ISP_X0 + ISP_PITCH / 2
         # 0.3 is the law between silk INK and pad copper, so the half-stroke
         # counts: leaving it out put every ISP label 0.175 from its own pad.
         cx = pad.x + (-1 if left else 1) * (ISP_PAD / 2 + 0.3 + SILK_W / 2
                                             + w / 2)
         out += text_strokes(txt, cx, pad.y, 1.0, mirror=True)
-    out += box_strokes(36.6, 9.7, 0.8)       # pin-1 (TP1) square tick
-    out += text_strokes("SIDE B", 28.0, 45.5, mirror=True)
+    # pin-1 (TP1) square tick, placed RELATIVE to TP1 so it follows the grid
+    tp1 = by["TP1"].pins[0]
+    out += box_strokes(tp1.x - 1.4, tp1.y + 1.62, 0.8)
+    # centred on the flip mirror line, 1.25 below the top edge
+    out += text_strokes("SIDE B", BOARD_W / 2, BOARD_H - 2.0, mirror=True)
     return out
 
 
@@ -1037,7 +1281,8 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
                              thermal_lids=(L.LID_TOP_CU, L.LID_BOT_CU)
                              if vnet == "GND" else ()))
 
-    for i, (layer, fnet, width, path) in enumerate(fixed_tracks()):
+    for i, (layer, fnet, width, path) in enumerate(fixed_tracks()
+                                                   + board_only_tracks()):
         for k, (a, b) in enumerate(zip(path, path[1:])):
             # GND welds into the pour on the same terms as routed GND copper:
             # a pre-placed GND stub that CLEARED the fill would cut itself a
@@ -1057,6 +1302,7 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
     # At COPPER_CLEAR it clears.  Same lesson as every other margin here: a
     # number that must pass a '<' test cannot BE the number in the test.
     pour = L.polygon(30000, rounded_rect(EDGE_CLEAR), COPPER_CLEAR)
+    assert_pour_holes_inside()
     holes = "".join(
         "\n       ta:hole {\n" +
         "\n".join(f"        {{ {x}mm; {y}mm }}" for x, y in
@@ -1111,6 +1357,13 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
 #     NullPointerException in AutorouteControl.init_net if a net has no via rule
 #   * rule widths at law + DRC_MARGIN, so um quantization still lands legal
 FCU, BCU = "F.Cu", "B.Cu"
+
+# Nets the router is NEVER shown, because the board already carries them as
+# fixed copper (board_only_tracks) and their corridors are reserved as keepouts.
+# Offering a net the router cannot legally complete is not neutral: on RESET it
+# cost >13 minutes of non-convergence and no session at all.  Withheld here,
+# closed in copper, and judged by the galvanic gate like everything else.
+DSN_OMIT_NETS = {"VSW"}
 VIA_NAME = "VIA_STITCH"
 
 # NEGATIVE CONTROL HOOK (R4b gate D, R3's pattern).  Set to a pid to describe
@@ -1189,6 +1442,16 @@ def emit_dsn(parts: list[Part], nets: dict) -> str:
         for lay in (FCU, BCU):
             out.append(f'    (keepout "" (circle {lay} '
                        f"{dsn_len(2 * ROUTE_MOUNT_KEEPOUT_R)} {x} {y}))")
+    # The board-only copper's corridor, RESERVED so the router cannot lay a
+    # different net through metal it was never shown (see board_only_tracks:
+    # untold, it shorted GND to VSW at Q1-3).  Aperture = the track's own width
+    # plus a full clearance on each side, so the router's copper lands legal by
+    # construction rather than by luck.
+    for layer, _net, width, pts in board_only_tracks():
+        lay = FCU if layer == "top" else BCU
+        path = " ".join(f"{x} {y}" for x, y in (dsn_xy(*p) for p in pts))
+        out.append(f'    (keepout "" (path {lay} '
+                   f"{dsn_len(width + 2 * ROUTE_CLEAR)} {path}))")
     out.append("  )")
 
     out.append("  (placement")
@@ -1242,10 +1505,14 @@ def emit_dsn(parts: list[Part], nets: dict) -> str:
 
     out.append("  (network")
     for name in sorted(nets):
+        if name in DSN_OMIT_NETS:
+            continue
         out.append(f"    (net {name}")
         out.append("      (pins " + " ".join(sorted(nets[name])) + ")")
         out.append("    )")
-    out.append("    (class signal " + " ".join(sorted(nets)))
+    out.append("    (class signal "
+               + " ".join(n for n in sorted(nets)
+                          if n not in DSN_OMIT_NETS))
     out.append(f"      (circuit (use_via {VIA_NAME}))")
     out.append(f"      (rule (width {dsn_len(ROUTE_TRACK)}) "
                f"(clearance {dsn_len(ROUTE_CLEAR)}))")
@@ -1495,7 +1762,7 @@ def copper_objects(parts: list[Part], route: dict | None = None) -> list[tuple]:
         for layer in ("top", "bottom"):
             anon += 1
             out.append((f"__gauge{anon}", layer, [(gx, gy)], RING_GAUGE / 2))
-    for layer, net, width, pts in fixed_tracks():
+    for layer, net, width, pts in fixed_tracks() + board_only_tracks():
         for a, b in zip(pts, pts[1:]):
             out.append((net, layer, [a, b], width / 2))
     # R4b's routed copper, carried back from the LIHATA frame into the board
@@ -1539,7 +1806,7 @@ def copper_lines(parts: list[Part], route: dict | None = None) -> list[tuple]:
     out += [(f"dead ring {pid}", x, y, x, y, dia)
             for pid, x, y, dia, _j in dead_front_rings(parts)
             if pid not in promoted]
-    for _layer, net, width, pts in fixed_tracks():
+    for _layer, net, width, pts in fixed_tracks() + board_only_tracks():
         for a, b in zip(pts, pts[1:]):
             out.append((f"fixed {net}", a[0], a[1], b[0], b[1], width))
     for i, (_lay, x1, y1, x2, y2, w) in enumerate((route or {}).get("tracks", ())):
@@ -1581,11 +1848,22 @@ def pour_hole_scan(parts: list[Part], route: dict | None = None) -> tuple:
 
 
 def perturb_leg(parts: list[Part]) -> dict:
-    """NEGATIVE CONTROL 3: put S2 back at y 39.0, where the KiCad rounds left it
-    and where the L2 leg link's pour cutout grazes H4's hole by 0.033 mm."""
+    """NEGATIVE CONTROL 3 for pour_hole_scan: walk S2 up until its L2 leg link's
+    pour cutout grazes H4's hole, the failure that silently kills a plane.
+
+    The y is DERIVED, not a literal, and that is the lesson of 2026-08-01: the
+    control was written as "put S2 back at 39.0", which convicted on the 56x48
+    board (+0.033) and then silently stopped convicting when the board grew
+    (+5.36 — decisively safe).  A negative control that quietly passes because
+    the geometry moved under it is worse than none, so this one now SOLVES for
+    the y that lands the L2 leg link 0.25 mm inside the fatal band against
+    whatever corner H4 currently occupies."""
     keep, out = BUTTONS["S2"], {}
+    hx, hy = MOUNTS["H4"]
+    dx = abs(keep[0] + BTN_DX - hx)
+    want = MOUNT_KEEPOUT_R + TRACK / 2 + COPPER_CLEAR - 0.25
     try:
-        BUTTONS["S2"] = (keep[0], 39.0)
+        BUTTONS["S2"] = (keep[0], hy - math.sqrt(want ** 2 - dx ** 2) - BTN_DY)
         out["worst"], out["bad"] = pour_hole_scan(parts)
     finally:
         BUTTONS["S2"] = keep
@@ -1593,15 +1871,23 @@ def perturb_leg(parts: list[Part]) -> dict:
 
 
 def perturb(parts: list[Part]) -> list[Part]:
-    """NEGATIVE CONTROL: shove R14 0.30 mm into Q2's GND land.  The honest
-    board's tightest different-net pair is R14-2/Q2-2 at 0.45; this makes it
-    0.15, which both oracles must convict."""
+    """NEGATIVE CONTROL: shove R14 toward Q2's GND land until the gap reads
+    0.15 — a quarter of the law, which both oracles must convict.
+
+    The SHOVE IS SOLVED FOR, not a literal.  It used to be a flat 0.30 mm,
+    which worked only while R14-2/Q2-2 happened to sit at 0.45: when the right
+    strip was spread on 2026-08-01 the same 0.30 left the pair legal and the
+    control silently stopped convicting.  A negative control has to bite
+    whatever board it is handed."""
     import copy
     out = copy.deepcopy(parts)
+    by = {p.pid: p for part in out for p in part.pins}
+    gap = shape_gap((by["R14-2"].corners(), 0.0), (by["Q2-2"].corners(), 0.0))
+    shove = q(gap - 0.15)
     for part in out:
         if part.ref == "R14":
             for p in part.pins:
-                p.x = q(p.x + 0.30)
+                p.x = q(p.x + shove)
     return out
 
 
@@ -1763,13 +2049,20 @@ def gate(b: dict) -> int:
     for layer, net, width, pts in fixed_tracks():
         path = " -> ".join(f"({x},{y})" for x, y in pts)
         print(f"    {net:6s} {layer:6s} w{width}  {path}")
+    print("  BOARD-ONLY tracks (in the .lht, HIDDEN from the router — the "
+          "clearance scan is what keeps the router honest about them):")
+    for layer, net, width, pts in board_only_tracks():
+        path = " -> ".join(f"({x},{y})" for x, y in pts)
+        print(f"    {net:6s} {layer:6s} w{width}  {path}")
     dual = sorted(p.pid for part in parts for p in part.pins if p.dual)
     print(f"  DUAL-SOLDER-CAPABLE pins ({len(dual)}), all UNDECLARED at R4a — "
           f"promoting one costs a bench joint on the reflow side:")
     print(f"    {' '.join(dual)}")
     print("  MANDATORY promotion: PAD2-1 is the only GND through-hole, so it "
           "is the sole conductor that can make the FRONT pour live.")
-    print(f"  Via budget: 6 planned / 10 ceiling, prototype "
+    print(f"  Via budget: 6 planned, NO hard ceiling (operator ruling "
+          f"2026-08-01 — a wire via costs about what a jumper wire costs; "
+          f"they are ledgered and reported, never gated), prototype "
           f"WIRE_VIA_STITCHED (Ø{HOLE_VIA}/Ø{RING_VIA}), declared set empty.")
     print(f"\n### {npass}/{npass + nfail} checks passed, {nfail} failed ###")
     return 1 if nfail else 0
