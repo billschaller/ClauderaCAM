@@ -1,0 +1,506 @@
+(pcb orbit
+  (parser
+    (string_quote ")
+    (space_in_quoted_tokens on)
+    (host_cad "ClauderaCAM")
+    (host_version "R4a")
+  )
+  (resolution um 10)
+  (unit um)
+  (structure
+    (layer F.Cu (type signal) (property (index 0)))
+    (layer B.Cu (type signal) (property (index 1)))
+    (boundary (path pcb 0  540000 -480000 542610 -479830 545180 -479320 547650 -478480 550000 -477320 552180 -475870 554140 -474140 555870 -472180 557320 -470000 558480 -467650 559320 -465180 559830 -462610 560000 -460000 560000 -20000 559830 -17390 559320 -14820 558480 -12350 557320 -10000 555870 -7820 554140 -5860 552180 -4130 550000 -2680 547650 -1520 545180 -680 542610 -170 540000 0 20000 0 17390 -170 14820 -680 12350 -1520 10000 -2680 7820 -4130 5860 -5860 4130 -7820 2680 -10000 1520 -12350 680 -14820 170 -17390 0 -20000 0 -460000 170 -462610 680 -465180 1520 -467650 2680 -470000 4130 -472180 5860 -474140 7820 -475870 10000 -477320 12350 -478480 14820 -479320 17390 -479830 20000 -480000  540000 -480000))
+    (via VIA_STITCH)
+    (rule (width 6200) (clearance 4400))
+    (keepout "" (circle F.Cu 32400 221400 -430000))
+    (keepout "" (circle F.Cu 32400 270000 -430000))
+    (keepout "" (circle F.Cu 32400 318600 -430000))
+    (keepout "" (circle F.Cu 24400 437500 -372500))
+    (keepout "" (circle F.Cu 24400 437500 -327500))
+    (keepout "" (circle F.Cu 24400 502500 -372500))
+    (keepout "" (circle F.Cu 24400 502500 -327500))
+    (keepout "" (circle F.Cu 24400 437500 -127500))
+    (keepout "" (circle F.Cu 24400 437500 -82500))
+    (keepout "" (circle F.Cu 24400 502500 -127500))
+    (keepout "" (circle F.Cu 24400 502500 -82500))
+    (keepout "" (circle F.Cu 24400 480000 -258000))
+    (keepout "" (circle F.Cu 24400 480000 -182000))
+    (keepout "" (circle F.Cu 17000 80000 -400000))
+    (keepout "" (circle B.Cu 17000 80000 -400000))
+    (keepout "" (circle F.Cu 17000 480000 -400000))
+    (keepout "" (circle B.Cu 17000 480000 -400000))
+    (keepout "" (circle F.Cu 17000 80000 -60000))
+    (keepout "" (circle B.Cu 17000 80000 -60000))
+    (keepout "" (circle F.Cu 17000 480000 -60000))
+    (keepout "" (circle B.Cu 17000 480000 -60000))
+    (keepout "" (circle F.Cu 78400 35000 -445000))
+    (keepout "" (circle B.Cu 78400 35000 -445000))
+    (keepout "" (circle F.Cu 78400 525000 -445000))
+    (keepout "" (circle B.Cu 78400 525000 -445000))
+    (keepout "" (circle F.Cu 78400 35000 -35000))
+    (keepout "" (circle B.Cu 78400 35000 -35000))
+    (keepout "" (circle F.Cu 78400 525000 -35000))
+    (keepout "" (circle B.Cu 78400 525000 -35000))
+  )
+  (placement
+    (component IMG_LED8 (place LED8 220000 -104500 front 0))
+    (component IMG_LED7 (place LED7 277750 -119970 front 0))
+    (component IMG_LED12 (place LED12 320030 -162250 front 0))
+    (component IMG_LED11 (place LED11 335500 -220000 front 0))
+    (component IMG_LED9 (place LED9 320030 -277750 front 0))
+    (component IMG_LED10 (place LED10 277750 -320030 front 0))
+    (component IMG_LED2 (place LED2 220000 -335500 front 0))
+    (component IMG_LED1 (place LED1 162250 -320030 front 0))
+    (component IMG_LED6 (place LED6 119970 -277750 front 0))
+    (component IMG_LED5 (place LED5 104500 -220000 front 0))
+    (component IMG_LED3 (place LED3 119970 -162250 front 0))
+    (component IMG_LED4 (place LED4 162250 -119970 front 0))
+    (component IMG_R8 (place R8 220000 -129000 front 0))
+    (component IMG_R7 (place R7 264250 -143360 front 0))
+    (component IMG_R12 (place R12 299780 -173940 front 0))
+    (component IMG_R11 (place R11 311000 -220000 front 0))
+    (component IMG_R9 (place R9 299780 -266060 front 0))
+    (component IMG_R10 (place R10 264250 -296640 front 0))
+    (component IMG_R2 (place R2 220000 -311000 front 0))
+    (component IMG_R1 (place R1 175750 -296640 front 0))
+    (component IMG_R6 (place R6 140220 -266060 front 0))
+    (component IMG_R5 (place R5 129000 -220000 front 0))
+    (component IMG_R3 (place R3 140220 -173940 front 0))
+    (component IMG_R4 (place R4 175750 -143360 front 0))
+    (component IMG_U1 (place U1 184130 -200950 front 0))
+    (component IMG_C2 (place C2 230380 -186000 front 0))
+    (component IMG_R13 (place R13 302870 -375000 front 0))
+    (component IMG_C4 (place C4 339380 -365000 front 0))
+    (component IMG_Q1 (place Q1 160000 -394500 front 0))
+    (component IMG_C1 (place C1 104630 -390000 front 0))
+    (component IMG_R14 (place R14 390000 -220000 front 0))
+    (component IMG_Q2 (place Q2 430000 -229500 front 0))
+    (component IMG_D1 (place D1 420000 -184500 front 0))
+    (component IMG_C3 (place C3 426380 -260000 front 0))
+    (component IMG_R15 (place R15 410000 -355500 front 0))
+    (component IMG_R16 (place R16 410000 -109130 front 0))
+    (component IMG_TP5 (place TP5 380000 -450000 front 0))
+    (component IMG_TP6 (place TP6 405400 -450000 front 0))
+    (component IMG_TP3 (place TP3 380000 -424600 front 0))
+    (component IMG_TP4 (place TP4 405400 -424600 front 0))
+    (component IMG_TP1 (place TP1 380000 -399200 front 0))
+    (component IMG_TP2 (place TP2 405400 -399200 front 0))
+    (component IMG_PAD1 (place PAD1 160000 -440000 front 0))
+    (component IMG_PAD2 (place PAD2 100000 -440000 front 0))
+    (component IMG_SW1 (place SW1 221400 -430000 front 0))
+    (component IMG_S1 (place S1 437500 -372500 front 0))
+    (component IMG_S2 (place S2 437500 -127500 front 0))
+    (component IMG_BZ1 (place BZ1 480000 -258000 front 0))
+  )
+  (library
+    (image IMG_LED8
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 0 29000)
+    )
+    (image IMG_LED7
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 14500 25110)
+    )
+    (image IMG_LED12
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 25110 14500)
+    )
+    (image IMG_LED11
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 29000 0)
+    )
+    (image IMG_LED9
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 25110 -14500)
+    )
+    (image IMG_LED10
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 14500 -25110)
+    )
+    (image IMG_LED2
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 0 -29000)
+    )
+    (image IMG_LED1
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 -14500 -25110)
+    )
+    (image IMG_LED6
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 -25110 -14500)
+    )
+    (image IMG_LED5
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 -29000 0)
+    )
+    (image IMG_LED3
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 -25110 14500)
+    )
+    (image IMG_LED4
+      (pin PS_THRU_2M44 1 0 0)
+      (pin PS_THRU_2M44 2 -14500 25110)
+    )
+    (image IMG_R8
+      (pin PS_SMD_1M200x1M400r270M0 1 0 0)
+      (pin PS_SMD_1M200x1M400r270M0 2 0 -20000)
+    )
+    (image IMG_R7
+      (pin PS_SMD_1M300x1M750r240M0 1 0 0)
+      (pin PS_SMD_1M300x1M750r240M0 2 -15500 -26840)
+    )
+    (image IMG_R12
+      (pin PS_SMD_0M975x0M950r210M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r210M0 2 -15800 -9120)
+    )
+    (image IMG_R11
+      (pin PS_SMD_1M200x1M400r180M0 1 0 0)
+      (pin PS_SMD_1M200x1M400r180M0 2 -20000 0)
+    )
+    (image IMG_R9
+      (pin PS_SMD_0M975x0M950r150M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r150M0 2 -15800 9120)
+    )
+    (image IMG_R10
+      (pin PS_SMD_1M300x1M750r120M0 1 0 0)
+      (pin PS_SMD_1M300x1M750r120M0 2 -15500 26840)
+    )
+    (image IMG_R2
+      (pin PS_SMD_1M200x1M400r90M0 1 0 0)
+      (pin PS_SMD_1M200x1M400r90M0 2 0 20000)
+    )
+    (image IMG_R1
+      (pin PS_SMD_1M300x1M750r60M0 1 0 0)
+      (pin PS_SMD_1M300x1M750r60M0 2 15500 26840)
+    )
+    (image IMG_R6
+      (pin PS_SMD_0M975x0M950r30M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r30M0 2 15800 9120)
+    )
+    (image IMG_R5
+      (pin PS_SMD_1M200x1M400r0M0 1 0 0)
+      (pin PS_SMD_1M200x1M400r0M0 2 20000 0)
+    )
+    (image IMG_R3
+      (pin PS_SMD_0M975x0M950r330M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r330M0 2 15800 -9120)
+    )
+    (image IMG_R4
+      (pin PS_SMD_1M300x1M750r300M0 1 0 0)
+      (pin PS_SMD_1M300x1M750r300M0 2 15500 -26840)
+    )
+    (image IMG_U1
+      (pin PS_SMD_1M625x0M650r0M0 1 0 0)
+      (pin PS_SMD_1M625x0M650r0M0 2 0 -12700)
+      (pin PS_SMD_1M625x0M650r0M0 3 0 -25400)
+      (pin PS_SMD_1M625x0M650r0M0 4 0 -38100)
+      (pin PS_SMD_1M625x0M650r0M0 5 71740 -38100)
+      (pin PS_SMD_1M625x0M650r0M0 6 71740 -25400)
+      (pin PS_SMD_1M625x0M650r0M0 7 71740 -12700)
+      (pin PS_SMD_1M625x0M650r0M0 8 71740 0)
+    )
+    (image IMG_C2
+      (pin PS_SMD_1M175x1M450r180M0 1 0 0)
+      (pin PS_SMD_1M175x1M450r180M0 2 -20760 0)
+    )
+    (image IMG_R13
+      (pin PS_SMD_0M975x0M950r0M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r0M0 2 18250 0)
+    )
+    (image IMG_C4
+      (pin PS_SMD_1M325x1M800r0M0 1 0 0)
+      (pin PS_SMD_1M325x1M800r0M0 2 31240 0)
+    )
+    (image IMG_Q1
+      (pin PS_SMD_1M900x0M800r0M0 1 0 0)
+      (pin PS_SMD_1M900x0M800r0M0 2 0 19000)
+      (pin PS_SMD_1M900x0M800r0M0 3 30000 9500)
+    )
+    (image IMG_C1
+      (pin PS_SMD_1M175x1M450r0M0 1 0 0)
+      (pin PS_SMD_1M175x1M450r0M0 2 20740 0)
+    )
+    (image IMG_R14
+      (pin PS_SMD_1M200x1M400r0M0 1 0 0)
+      (pin PS_SMD_1M200x1M400r0M0 2 20000 0)
+    )
+    (image IMG_Q2
+      (pin PS_SMD_1M900x0M800r0M0 1 0 0)
+      (pin PS_SMD_1M900x0M800r0M0 2 0 19000)
+      (pin PS_SMD_1M900x0M800r0M0 3 30000 9500)
+    )
+    (image IMG_D1
+      (pin PS_SMD_1M900x0M800r0M0 1 0 0)
+      (pin PS_SMD_1M900x0M800r0M0 2 0 19000)
+      (pin PS_SMD_1M900x0M800r0M0 3 30000 9500)
+    )
+    (image IMG_C3
+      (pin PS_SMD_1M075x0M950r0M0 1 0 0)
+      (pin PS_SMD_1M075x0M950r0M0 2 17240 0)
+    )
+    (image IMG_R15
+      (pin PS_SMD_1M300x1M750r90M0 1 0 0)
+      (pin PS_SMD_1M300x1M750r90M0 2 0 31000)
+    )
+    (image IMG_R16
+      (pin PS_SMD_0M975x0M950r90M0 1 0 0)
+      (pin PS_SMD_0M975x0M950r90M0 2 0 18260)
+    )
+    (image IMG_TP5
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_TP6
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_TP3
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_TP4
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_TP1
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_TP2
+      (pin PS_PAD_1M80 1 0 0)
+    )
+    (image IMG_PAD1
+      (pin PS_THRU_3M60 1 0 0)
+    )
+    (image IMG_PAD2
+      (pin PS_THRU_3M60 1 0 0)
+    )
+    (image IMG_SW1
+      (pin PS_BACK_3M24 1 0 0)
+      (pin PS_BACK_3M24 2 48600 0)
+      (pin PS_BACK_3M24 3 97200 0)
+    )
+    (image IMG_S1
+      (pin PS_BACK_2M44 2 0 0)
+      (pin PS_BACK_2M44 2B 0 45000)
+      (pin PS_BACK_2M44 1 65000 0)
+      (pin PS_BACK_2M44 1B 65000 45000)
+    )
+    (image IMG_S2
+      (pin PS_BACK_2M44 2 0 0)
+      (pin PS_BACK_2M44 2B 0 45000)
+      (pin PS_BACK_2M44 1 65000 0)
+      (pin PS_BACK_2M44 1B 65000 45000)
+    )
+    (image IMG_BZ1
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 0 76000)
+    )
+    (padstack PS_BACK_2M44
+      (shape (circle B.Cu 24400))
+      (attach off)
+    )
+    (padstack PS_BACK_3M24
+      (shape (circle B.Cu 32400))
+      (attach off)
+    )
+    (padstack PS_PAD_1M80
+      (shape (circle B.Cu 18000))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r0M0
+      (shape (polygon B.Cu 0 -4875 -4750 4875 -4750 4875 4750 -4875 4750 -4875 -4750))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r150M0
+      (shape (polygon B.Cu 0 6597 1676 -1847 6551 -6597 -1676 1847 -6551 6597 1676))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r210M0
+      (shape (polygon B.Cu 0 1847 6551 -6597 1676 -1847 -6551 6597 -1676 1847 6551))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r30M0
+      (shape (polygon B.Cu 0 -1847 -6551 6597 -1676 1847 6551 -6597 1676 -1847 -6551))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r330M0
+      (shape (polygon B.Cu 0 -6597 -1676 1847 -6551 6597 1676 -1847 6551 -6597 -1676))
+      (attach off)
+    )
+    (padstack PS_SMD_0M975x0M950r90M0
+      (shape (polygon B.Cu 0 4750 -4875 4750 4875 -4750 4875 -4750 -4875 4750 -4875))
+      (attach off)
+    )
+    (padstack PS_SMD_1M075x0M950r0M0
+      (shape (polygon B.Cu 0 -5375 -4750 5375 -4750 5375 4750 -5375 4750 -5375 -4750))
+      (attach off)
+    )
+    (padstack PS_SMD_1M175x1M450r0M0
+      (shape (polygon B.Cu 0 -5875 -7250 5875 -7250 5875 7250 -5875 7250 -5875 -7250))
+      (attach off)
+    )
+    (padstack PS_SMD_1M175x1M450r180M0
+      (shape (polygon B.Cu 0 5875 7250 -5875 7250 -5875 -7250 5875 -7250 5875 7250))
+      (attach off)
+    )
+    (padstack PS_SMD_1M200x1M400r0M0
+      (shape (polygon B.Cu 0 -6000 -7000 6000 -7000 6000 7000 -6000 7000 -6000 -7000))
+      (attach off)
+    )
+    (padstack PS_SMD_1M200x1M400r180M0
+      (shape (polygon B.Cu 0 6000 7000 -6000 7000 -6000 -7000 6000 -7000 6000 7000))
+      (attach off)
+    )
+    (padstack PS_SMD_1M200x1M400r270M0
+      (shape (polygon B.Cu 0 -7000 6000 -7000 -6000 7000 -6000 7000 6000 -7000 6000))
+      (attach off)
+    )
+    (padstack PS_SMD_1M200x1M400r90M0
+      (shape (polygon B.Cu 0 7000 -6000 7000 6000 -7000 6000 -7000 -6000 7000 -6000))
+      (attach off)
+    )
+    (padstack PS_SMD_1M300x1M750r120M0
+      (shape (polygon B.Cu 0 10828 -1254 4328 10004 -10828 1254 -4328 -10004 10828 -1254))
+      (attach off)
+    )
+    (padstack PS_SMD_1M300x1M750r240M0
+      (shape (polygon B.Cu 0 -4328 10004 -10828 -1254 4328 -10004 10828 1254 -4328 10004))
+      (attach off)
+    )
+    (padstack PS_SMD_1M300x1M750r300M0
+      (shape (polygon B.Cu 0 -10828 1254 -4328 -10004 10828 -1254 4328 10004 -10828 1254))
+      (attach off)
+    )
+    (padstack PS_SMD_1M300x1M750r60M0
+      (shape (polygon B.Cu 0 4328 -10004 10828 1254 -4328 10004 -10828 -1254 4328 -10004))
+      (attach off)
+    )
+    (padstack PS_SMD_1M300x1M750r90M0
+      (shape (polygon B.Cu 0 8750 -6500 8750 6500 -8750 6500 -8750 -6500 8750 -6500))
+      (attach off)
+    )
+    (padstack PS_SMD_1M325x1M800r0M0
+      (shape (polygon B.Cu 0 -6625 -9000 6625 -9000 6625 9000 -6625 9000 -6625 -9000))
+      (attach off)
+    )
+    (padstack PS_SMD_1M625x0M650r0M0
+      (shape (polygon B.Cu 0 -8125 -3250 8125 -3250 8125 3250 -8125 3250 -8125 -3250))
+      (attach off)
+    )
+    (padstack PS_SMD_1M900x0M800r0M0
+      (shape (polygon B.Cu 0 -9500 -4000 9500 -4000 9500 4000 -9500 4000 -9500 -4000))
+      (attach off)
+    )
+    (padstack PS_THRU_2M44
+      (shape (circle F.Cu 24400))
+      (shape (circle B.Cu 24400))
+      (attach off)
+    )
+    (padstack PS_THRU_3M60
+      (shape (circle F.Cu 36000))
+      (shape (circle B.Cu 36000))
+      (attach off)
+    )
+    (padstack VIA_STITCH
+      (shape (circle F.Cu 24400))
+      (shape (circle B.Cu 24400))
+      (attach off)
+    )
+  )
+  (network
+    (net GND
+      (pins C1-2 C2-2 C3-2 C4-2 D1-1 PAD2-1 Q1-1 Q2-2 R15-2 R16-2 TP6-1 U1-4)
+    )
+    (net L0
+      (pins LED1-2 LED3-2 LED5-2 R2-2 R4-2 R6-2 TP4-1 U1-5)
+    )
+    (net L1
+      (pins LED2-2 LED7-2 LED9-2 R1-2 R10-2 R8-2 TP1-1 U1-6)
+    )
+    (net L2
+      (pins LED11-2 LED4-2 LED8-2 R12-2 R3-2 R7-2 S2-1 S2-1B TP3-1 U1-7)
+    )
+    (net L3
+      (pins LED10-2 LED12-2 LED6-2 R11-2 R5-2 R9-2 S1-1 S1-1B U1-2)
+    )
+    (net LED10_K
+      (pins LED10-1 R10-1)
+    )
+    (net LED11_K
+      (pins LED11-1 R11-1)
+    )
+    (net LED12_K
+      (pins LED12-1 R12-1)
+    )
+    (net LED1_K
+      (pins LED1-1 R1-1)
+    )
+    (net LED2_K
+      (pins LED2-1 R2-1)
+    )
+    (net LED3_K
+      (pins LED3-1 R3-1)
+    )
+    (net LED4_K
+      (pins LED4-1 R4-1)
+    )
+    (net LED5_K
+      (pins LED5-1 R5-1)
+    )
+    (net LED6_K
+      (pins LED6-1 R6-1)
+    )
+    (net LED7_K
+      (pins LED7-1 R7-1)
+    )
+    (net LED8_K
+      (pins LED8-1 R8-1)
+    )
+    (net LED9_K
+      (pins LED9-1 R9-1)
+    )
+    (net RESET
+      (pins C4-1 R13-2 TP5-1 U1-1)
+    )
+    (net S1_R
+      (pins R15-1 S1-2 S1-2B)
+    )
+    (net S2_R
+      (pins R16-1 S2-2 S2-2B)
+    )
+    (net SND
+      (pins R14-1 U1-3)
+    )
+    (net SND_B
+      (pins Q2-1 R14-2)
+    )
+    (net SND_C
+      (pins BZ1-2 D1-3 Q2-3)
+    )
+    (net VBAT
+      (pins PAD1-1 SW1-2)
+    )
+    (net VCC
+      (pins BZ1-1 C1-1 C2-1 C3-1 D1-2 Q1-2 R13-1 TP2-1 U1-8)
+    )
+    (net VSW
+      (pins Q1-3 SW1-1)
+    )
+    (class signal GND L0 L1 L2 L3 LED10_K LED11_K LED12_K LED1_K LED2_K LED3_K LED4_K LED5_K LED6_K LED7_K LED8_K LED9_K RESET S1_R S2_R SND SND_B SND_C VBAT VCC VSW
+      (circuit (use_via VIA_STITCH))
+      (rule (width 6200) (clearance 4400))
+    )
+  )
+  (wiring
+    (wire (path B.Cu 8000 160000 -440000 160000 -457000) (net VBAT) (type protect))
+    (wire (path B.Cu 8000 160000 -457000 270000 -457000) (net VBAT) (type protect))
+    (wire (path B.Cu 8000 270000 -457000 270000 -430000) (net VBAT) (type protect))
+    (wire (path B.Cu 8000 160000 -375500 140000 -375500) (net VCC) (type protect))
+    (wire (path B.Cu 8000 140000 -375500 140000 -410000) (net VCC) (type protect))
+    (wire (path B.Cu 8000 140000 -410000 130000 -410000) (net VCC) (type protect))
+    (wire (path B.Cu 8000 130000 -410000 130000 -471000) (net VCC) (type protect))
+    (wire (path B.Cu 8000 130000 -471000 299000 -471000) (net VCC) (type protect))
+    (wire (path B.Cu 6000 410000 -355500 437500 -355500) (net S1_R) (type protect))
+    (wire (path B.Cu 6000 437500 -372500 437500 -327500) (net S1_R) (type protect))
+    (wire (path B.Cu 6000 502500 -372500 502500 -327500) (net L3) (type protect))
+    (wire (path B.Cu 6000 437500 -127500 437500 -82500) (net S2_R) (type protect))
+    (wire (path B.Cu 6000 502500 -127500 502500 -82500) (net L2) (type protect))
+  )
+)

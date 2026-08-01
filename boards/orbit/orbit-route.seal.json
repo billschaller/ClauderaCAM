@@ -1,0 +1,22 @@
+{
+ "connections": 70,
+ "dsn_sha256": "1f9087901afacf2faaa1c8e35266282c74024627f8c1c49520c51eba33fdfcfd",
+ "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses",
+ "pruned_for": "f25bdb88b5783d2b60c345dbe4e6ee2ed9554f004286cf81353b5d1a12da1f93",
+ "redundant_vias": [
+  [
+   35.151,
+   45.372,
+   "GND"
+  ]
+ ],
+ "router_open_pairs": [
+  "via -> U1-4",
+  "TP4-1 -> R2-2",
+  "R13-2 -> U1-1",
+  "S1-2 -> R15-1",
+  "SW1-1 -> Q1-3"
+ ],
+ "router_unrouted": 5,
+ "ses_sha256": "f25bdb88b5783d2b60c345dbe4e6ee2ed9554f004286cf81353b5d1a12da1f93"
+}
