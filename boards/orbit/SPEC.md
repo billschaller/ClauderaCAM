@@ -32,7 +32,7 @@ rows marked **NEW** exist only because this board flips.
 | copper **Δ** | **F.Cu + B.Cu**, double-sided 1.5 mm FR-1/FR-4, 35 µm both faces | SMD reflows on B.Cu (back); THT bodies on F.Cu (front), leads solder on the back |
 | clearance | ≥ 0.4 mm, both sides | one pass of the 0.2 mm-tip 30° vee at Z−0.15 (kerf ≈0.28) clears a 0.4 gap from both sides |
 | track | ≥ 0.5 mm min; 0.6 signal / 0.8 rails | conservative, hand-solderable, no mask needed to survive |
-| vias **Δ NEW** | **unplated WIRE vias only**: Ø1.0 hole, Ø2.4 pad BOTH sides, hand-soldered both faces, **budget 6 / ceiling 10** | no plating exists; every via is two hand joints in a board that gets handled — see the via section |
+| vias **Δ NEW** | **unplated WIRE vias only**: Ø1.0 hole, Ø2.4 pad BOTH sides, hand-soldered both faces, **planning budget 6, NO hard ceiling** (operator ruling 2026-08-01 — a via is cost-class of a jumper wire; minimize and ledger, never gate) | no plating exists; every via is two hand joints in a board that gets handled — see the via section |
 | THT annular **Δ** | ≥ **0.7 mm** (was 0.6) on every hole-centered pad, BOTH sides | must be solderable on both faces AND annularly scrubbable on side 2 (see the scrub delta) |
 | copper-to-edge | ≥ 0.4 mm, both sides | edge cut is a separate phase |
 | tab-zone copper **NEW** | ≥ 1.0 mm clear of every cutout tab, both sides | tabs are snapped by hand; a tab that bridges copper tears it off the laminate |
@@ -308,7 +308,12 @@ joints — one of them on the reflowed side, made after reflow. Every via
 is therefore a permanent liability in a board that gets picked up and
 played with, and the design's job is to need as few as possible.
 
-**Count: 6 planned (V1–V6), hard ceiling 10.** The layout review reports
+**Count: 6 planned (V1–V6).** ~~Hard ceiling 10~~ — REPEALED by
+operator ruling 2026-08-01: "there's no need to think of vias as
+having a hard ceiling ... not much more annoying than measuring,
+cutting, and soldering jumper wires." Vias are minimized and every
+one is ledgered with a justification; the count is reported, not
+gated. The layout review reports
 the final count with a one-line justification per via; exceeding 10 is a
 redesign of the ring wiring, not a footnote.
 
@@ -571,7 +576,9 @@ here with its consequence:
    is an Article II incident and the law changes on evidence.
 5. **Vias → trial then permute**: route once with the default matrix;
    if the trial wants more than the 10 ceiling, the ring→pair mapping
-   is permuted before any via is added. Budget 6 / ceiling 10 stands.
+   is permuted before any via is added. Budget 6 stands as the
+   planning number; the ceiling was repealed 2026-08-01 (see the via
+   section — a via is cost-class of a jumper wire).
 6. + 7. **Crib blockers → bench inventory sheet**: the operator fills
    `parts/bench-inventory-sheet.md` (ATtiny85, THT bins, buzzer, via
    wire, dowels, blanks, 74HC595) and the crib files are written from

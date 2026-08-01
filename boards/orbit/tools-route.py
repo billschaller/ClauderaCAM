@@ -81,7 +81,11 @@ LAYER = {"F.Cu": "top", "B.Cu": "bottom"}
 # the router happens to land front copper on it (SPEC "vias" lever 3).
 MANDATORY = {"PAD2-1"}
 
-VIA_BUDGET, VIA_CEILING = 6, 10          # SPEC "Wire vias"
+VIA_BUDGET = 6                           # SPEC "Wire vias" planning number
+# The hard ceiling was REPEALED by operator ruling 2026-08-01: "there's
+# no need to think of vias as having a hard ceiling ... not much more
+# annoying than measuring, cutting, and soldering jumper wires." Vias
+# are a minimized, LEDGERED bench cost — reported, never gated.
 
 
 # ---------------------------------------------------------------------------
@@ -373,7 +377,8 @@ def write_matrix(b: dict) -> None:
                  f"{TB.RES_PKG[led]} |")
     L += ["", "## Wire vias — hand-stitched, one threaded wire each", "",
           f"Ø{TB.HOLE_VIA} hole, Ø{TB.RING_VIA} ring, `WIRE_VIA_STITCHED`, "
-          f"hplated=1.  SPEC budget {VIA_BUDGET}, hard ceiling {VIA_CEILING}; "
+          f"hplated=1.  SPEC planning budget {VIA_BUDGET}, no hard ceiling "
+          f"(operator ruling 2026-08-01: a via ~ a jumper wire); "
           f"this board spends **{len(m['vias'])}**.", ""]
     L += [f"- `{r}`" for r in via_ledger(m, parts)] or ["- none"]
     if b["seal"].get("redundant_vias"):
@@ -539,11 +544,13 @@ def gate(b: dict) -> int:
     if seal.get("redundant_vias"):
         print(f"    (pruned {len(seal['redundant_vias'])} via(s) that carried "
               f"no connection: {seal['redundant_vias']})")
-    chk(f"wire vias within the hard ceiling of {VIA_CEILING}",
-        len(m["vias"]) <= VIA_CEILING, True)
+    chk(f"every wire via ledgered ({len(m['vias'])} total; no ceiling — "
+        f"operator ruling 2026-08-01)",
+        len(via_ledger(m, parts)) == len(m["vias"]), True)
     if len(m["vias"]) > VIA_BUDGET:
-        print(f"    NOTE: {len(m['vias'])} vias is over SPEC's budget of "
-              f"{VIA_BUDGET}; every one above is an extra bench joint.")
+        print(f"    NOTE: {len(m['vias'])} vias vs SPEC's planning budget of "
+              f"{VIA_BUDGET}; each is one threaded-wire bench joint pair, "
+              f"cost-class of a jumper wire (ruling 2026-08-01).")
 
     print("### G. POURS ###")
     gnd_prom = sorted(p for p in m["promoted"]

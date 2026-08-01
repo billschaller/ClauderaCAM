@@ -23,7 +23,7 @@ Ring positions run CLOCKWISE from 12 o'clock.  The position->LED permutation is 
 
 ## Wire vias — hand-stitched, one threaded wire each
 
-Ø1.0 hole, Ø2.44 ring, `WIRE_VIA_STITCHED`, hplated=1.  SPEC budget 6, hard ceiling 10; this board spends **10**.
+Ø1.0 hole, Ø2.44 ring, `WIRE_VIA_STITCHED`, hplated=1.  SPEC planning budget 6, no hard ceiling (operator ruling 2026-08-01: a via ~ a jumper wire); this board spends **10**.
 
 - `V1  (39.383, 16.985)  GND     carries GND between the faces; nearest GND terminal D1-1 at 3.0 mm`
 - `V2  (40.740, 30.061)  GND     carries GND between the faces; nearest GND terminal R15-2 at 2.4 mm`
