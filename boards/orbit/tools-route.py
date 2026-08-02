@@ -179,34 +179,44 @@ MANDATORY = {"PAD2-1"}
 # residual is stable: the same board comes back every build, and this
 # declaration keeps meaning what it says.
 #
-# WHY THIS ONE.  With the six-seed set the shortfall lands on L0, and L0 breaks
-# into exactly two pieces — everything, and TP4-1 on its own:
+# WHY THESE TWO.  The four artwork fixes of 2026-08-02 (the pour's 1.10 setback
+# and the mount/gauge moves it forced, U1's widened lands) changed the routing
+# problem enough that the shortfall grew from one connection to two, and a
+# seventh seed aimed at closing one of them WEDGED the router (recorded at
+# tools-board.SEEDED_ESCAPES).  So the board spends two wires instead of one.
 #
-#     piece 0  LED1-2 LED3-2 LED5-2 (THT rings) + R2-2 R4-2 R6-2 U1-5 (lands)
-#     piece 1  TP4-1  (a bare Ø1.8 ISP pad)
+# Each lands on a pair chosen by SOLDERABILITY first and length second, and on
+# this route both come out entirely bare — no SOIC pin, no 0603 land anywhere:
 #
-# so the wire has a free choice of terminal at one end and a forced one at the
-# other, and BOTH ends come out bare.  LED1-2 is an LED ANODE: its ring is
-# soldered on the BACK, which is exactly where the operator already puts an
-# iron to solder that lead, and the body sits on the front where it is out of
-# the way.  TP4-1 is a bare pad designed to be touched.  Neither end is an
-# SOIC pin or an 0603 land, and no other seed set can say that — the GND-cell
-# residual is SOT-23 pin to 0603 land, the RESET residual lands on an SOIC pin,
-# the VCC residual on a rail track.  Ranked by solderability then length, the
-# measured shortlist was LED1-2->TP4-1 at 32.93 mm, LED5-2 at 47.89, LED3-2 at
-# 51.35; the SMD alternatives are shorter (R2-2 at 26.11) and are not taken,
-# because this declaration is spending ease-of-assembly, not millimetres.
+#   L2  piece 0 = LED4/8/11-2 rings + S2-1/1B rings + R7-2 land
+#       piece 1 = TP3-1 alone       -> LED11-2 ring to TP3-1 pad, 24.50 mm
+#   L3  piece 0 = LED6/10/12-2 rings + R5/R9/R11-2 lands
+#       piece 1 = S1-1 + S1-1B      -> LED12-2 ring to S1-1B ring, 27.41 mm
 #
-# Both pads are on the BACK, so the wire lies flat on the back face for its
-# whole run and crosses no front component.  22 AWG solid, the same wire the
-# stitched vias use (Board A shipped seven of these).
+# An LED anode ring is soldered on the BACK — exactly where the operator
+# already puts an iron for that lead, with the body out of the way on the front
+# — and S1's leg rings and the ISP pads are bare by construction.  The SMD
+# alternatives were shorter in one case and are not taken: this declaration is
+# spending ease-of-assembly, not millimetres.
+#
+# Both wires lie flat on the BACK face for their whole run and cross no front
+# component.  22 AWG solid, the same wire the stitched vias use (Board A
+# shipped seven of these).
 DECLARED_JUMPERS = (
-    {"net": "L0",
-     "from": "LED1-2", "from_xy": (14.685, 13.866),
-     "to": "TP4-1", "to_xy": (46.540, 5.540),
-     "face": "back", "length_mm": 32.93,
-     "why": "the board is one routable connection short after the scrub "
-            "growth; this is the pair with two bare solder points"},
+    {"net": "L2",
+     "from": "LED11-2", "from_xy": (42.630, 30.000),
+     "to": "TP3-1", "to_xy": (44.000, 5.540),
+     "face": "back", "length_mm": 24.50,
+     "from_note": "an LED anode ring — the joint you already solder that "
+                  "lead into, open on the back",
+     "to_note": "a bare Ø1.8 ISP pad, designed to be touched"},
+    {"net": "L3",
+     "from": "LED12-2", "from_xy": (40.134, 39.315),
+     "to": "S1-1B", "to_xy": (60.750, 21.250),
+     "face": "back", "length_mm": 27.41,
+     "from_note": "an LED anode ring, open on the back",
+     "to_note": "a tactile-switch leg ring — a through hole you solder "
+                "anyway"},
 )
 
 VIA_BUDGET = 6                           # SPEC "Wire vias" planning number
@@ -467,6 +477,160 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                         return worst
         return worst
 
+    # ---- THE UN-MILLABLE SLIVER RULE (2026-08-02) ------------------------
+    # A closure may run as close to its OWN net's copper as it likes and as far
+    # as it likes, but it may not park in the narrow band between: a channel
+    # too thin for the isolation bit to cut, yet too wide to be no channel at
+    # all.  MEASURED, and this rule is written from the incident:
+    #
+    #   The closer put an L0 closure (5.75,20.00)->(6.50,25.25) w0.6 alongside
+    #   FreeRouting's own L0 trace at x 5.60 w0.62.  Centres 0.804 apart, half
+    #   widths 0.61, so 0.194 mm of bare laminate between two traces of the
+    #   SAME net.  Every clearance oracle passed it — correctly, because
+    #   same-net copper has no clearance law — and the double-sided gate
+    #   refused the board anyway on `iso coverage` 0.0850 against a 0.08 bar,
+    #   worst uncut at board (6.005,24.575).
+    #
+    #   The mechanism is FlatCAM's, not ours: the isolation centreline is the
+    #   ring standing tip_r outside copper, and when two such rings MERGE the
+    #   engine rides the medial line and cuts one pass where two were needed.
+    #   The rings merge exactly when the channel is narrower than 2*tip_r, i.e.
+    #   the tip diameter.  orbit.toml's iso tool is the 30-degree vee with
+    #   tip_diameter 0.2, so 0.194 is 0.006 inside the merge condition.
+    #
+    # Electrically the sliver is harmless — same net, and the unmilled laminate
+    # simply leaves the two traces joined, which they already were.  What it
+    # costs is a gate that can no longer certify the isolation pass covered the
+    # board, and that is not a certificate this lane hands out on trust.
+    ISO_TIP_DIA = 0.2          # orbit.toml [[tool]] T2 tip_diameter
+    # 0.22 = the tip diameter plus a tenth of itself.  0.30 was tried first and
+    # is MEASURED to be too wide a veto: closures on this board routinely run
+    # alongside their own net at 0.2-0.3, and banning that band outright cost a
+    # whole net's worth of closures (three bench jumpers instead of two, 19
+    # wire vias instead of 23).  The bar belongs just above the merge
+    # condition, which is where the physics is, not wherever feels safe.
+    SLIVER_MIN = ISO_TIP_DIA * 1.1     # clear the merge condition, not tie it
+
+    def same_near(pa, pb, layer, net, pad=7.0):
+        """Same-net copper on this face near the run — the objects `nearby`
+        deliberately drops, kept here because they bind a different law."""
+        x0, x1 = min(pa[0], pb[0]) - pad, max(pa[0], pb[0]) + pad
+        y0, y1 = min(pa[1], pb[1]) - pad, max(pa[1], pb[1]) + pad
+        keep = []
+        for n2, l2, p2, r2 in others:
+            if l2 != layer or n2 != net:
+                continue
+            xs = [p[0] for p in p2]
+            ys = [p[1] for p in p2]
+            if (max(xs) + r2 < x0 or min(xs) - r2 > x1
+                    or max(ys) + r2 < y0 or min(ys) - r2 > y1):
+                continue
+            keep.append((p2, r2))
+        return keep
+
+    # A run LEAVING its own net's copper must cross the band — that is
+    # unavoidable geometry, and a transverse crossing is harmless because the
+    # channel it makes is a few tenths long and the bit never has to enter it.
+    # What ruins the isolation pass is DWELLING in the band: running nearly
+    # parallel to the neighbour for millimetres, which is exactly what the L0
+    # closure does (it leaves the trace overlapping at y 20 and creeps out to
+    # 0.194 by y 24.6).  So the sliver test measures LENGTH inside the band,
+    # not distance at a point — the first version measured the per-object
+    # minimum, which is <= 0 for any run that touches, and that is why five
+    # rebuilds in a row came back byte-identical.
+    SLIVER_RUN_MAX = 1.0       # mm of near-parallel travel we will tolerate
+
+    def sliver_len(pts, p2, r2, w, step=0.05):
+        """How far *pts* travels while inside the un-millable band of one
+        same-net object."""
+        total = 0.0
+        for a, b in zip(pts, pts[1:]):
+            d = math.dist(a, b)
+            n = max(1, int(d / step))
+            for i in range(n):
+                m0 = (a[0] + (b[0] - a[0]) * i / n,
+                      a[1] + (b[1] - a[1]) * i / n)
+                m1 = (a[0] + (b[0] - a[0]) * (i + 1) / n,
+                      a[1] + (b[1] - a[1]) * (i + 1) / n)
+                g = TB.shape_gap(([m0, m1], w / 2), (p2, r2))
+                if 0.0 < g < SLIVER_MIN:
+                    total += d / n
+        return total
+
+    def sliver_ok(pts, near_same, w):
+        """True unless some SAME-NET object sits in the un-millable band.
+
+        The test is PER OBJECT and on that object's CLOSEST approach, and both
+        halves of that matter:
+
+          * per object, not over the whole set — a closure ends ON its net's
+            copper by construction, so the set minimum is always <= 0 and a
+            set-wide test would pass everything, including the 0.194 sliver.
+          * closest approach, not every segment — an object the run TOUCHES is
+            merged with it and cannot form a channel with it, so the anchor a
+            closure lands on must not veto the run just because a later
+            segment passes 0.15 away from that same pad.  Judging every
+            (segment, object) pair instead cost three nets' worth of closures
+            on 2026-08-02 and turned two bench jumpers into three.
+        """
+        for p2, r2 in near_same:
+            if sliver_len(pts, p2, r2, w) > SLIVER_RUN_MAX:
+                return False
+        return True
+
+    def _ride_point(p2, toward):
+        """A point ON the CENTRELINE of a same-net object, nearest *toward*.
+
+        The centreline, not the surface: a bend placed there is inside the
+        object's copper by its whole radius, so the two runs merge instead of
+        leaving a channel.  Discs give their centre, tracks the projection of
+        *toward* onto the segment, polygonal lands their centroid."""
+        if len(p2) == 1:
+            return p2[0]
+        if len(p2) == 2:
+            (ax, ay), (bx, by) = p2
+            vx, vy = bx - ax, by - ay
+            den = vx * vx + vy * vy
+            if den <= 0:
+                return p2[0]
+            s = ((toward[0] - ax) * vx + (toward[1] - ay) * vy) / den
+            s = max(0.0, min(1.0, s))
+            return (ax + vx * s, ay + vy * s)
+        return (sum(x for x, _ in p2) / len(p2),
+                sum(y for _, y in p2) / len(p2))
+
+    def _snap_run(run, lay, net, w):
+        """Ride the net's own copper rather than leave an un-millable channel.
+
+        Returns *run* unchanged when it already leaves none, or when no
+        interior vertex can be moved onto same-net copper without breaking the
+        clearance law against some OTHER net — riding one trace moves the run
+        nearer whatever bounded its original placement, so that is measured,
+        never assumed."""
+        if len(run) < 3:
+            return run
+        near_same = same_near(run[0], run[-1], lay, net)
+        if sliver_ok(run, near_same, w):
+            return run
+        for p2, r2 in near_same:
+            if sliver_len(run, p2, r2, w) <= SLIVER_RUN_MAX:
+                continue
+            for k in range(1, len(run) - 1):
+                q = _ride_point(p2, run[k])
+                cand = list(run)
+                cand[k] = (TB.q(q[0]), TB.q(q[1]))
+                if (clears(cand, nearby(cand[0], cand[-1], lay, net), w)
+                        >= TB.CLEAR
+                        and sliver_ok(cand, near_same, w)):
+                    return cand
+        return run
+
+    def path_ok(pts, layer, net, w, clear=TB.CLEAR):
+        """Both laws at once: foreign copper clears, own copper does not
+        leave an un-millable sliver."""
+        return (clears(pts, nearby(pts[0], pts[-1], layer, net), w) >= clear
+                and sliver_ok(pts, same_near(pts[0], pts[-1], layer, net), w))
+
     bodies = [(p.x, p.y, 1.5 if p.kind == "rect" else 2.0)
               for part in parts for p in part.pins]
 
@@ -538,9 +702,24 @@ def closing_tracks(parts: list, tracks: list, vias: list,
         # (21 net-short violations before that margin existed).  The LAW is
         # still 0.400; what changes is that the copper clears it instead of
         # tying it.
-        for clear in (TB.ROUTE_CLEAR, TB.COPPER_CLEAR):
-            def seg_ok(a, b, f, _c=clear):
-                return clears([a, b], nearby(a, b, f, net), w) >= _c
+        # THREE rungs, not two, and the new one is the strictest: ask first
+        # for a journey that also leaves no un-millable sliver against this
+        # net's own copper, and only then fall back to the two clearance rungs
+        # that have always been here.  PREFER, never veto — a tier-3 journey is
+        # the closer's last resort, so a sliver rule that could refuse one
+        # would cost the connection outright, which is how the hard veto turned
+        # two bench jumpers into three.  Same shape as the tier-1/2 ranking:
+        # take the millable route when one exists, take the sliver when the
+        # alternative is an open net, and let the double-sided gate measure
+        # whatever survives.
+        for clear, no_sliver in ((TB.ROUTE_CLEAR, True),
+                                 (TB.ROUTE_CLEAR, False),
+                                 (TB.COPPER_CLEAR, False)):
+            def seg_ok(a, b, f, _c=clear, _ns=no_sliver):
+                if clears([a, b], nearby(a, b, f, net), w) < _c:
+                    return False
+                return (not _ns) or sliver_ok([a, b],
+                                              same_near(a, b, f, net), w)
 
             def via_ok3(x, y, n, _c=clear):
                 return via_ok(x, y, n, _c)
@@ -552,7 +731,13 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                 return got
         return None
 
-    off = [round(-5.0 + 0.5 * k, 3) for k in range(21)]
+    # 0.25 steps, not 0.5.  The sliver RANKING can only choose a millable route
+    # when the candidate set contains one, and at 0.5 it often does not: the
+    # L0 closure beside FreeRouting's own trace sat 0.194 from it, 0.026 short
+    # of the tip-diameter band, and no bend on a half-millimetre lattice
+    # expressed a nudge that small.  Halving the step doubles the lattice in
+    # each axis and is the cheapest way to give the ranking something to pick.
+    off = [round(-5.0 + 0.25 * k, 3) for k in range(41)]
     vgrid = [round(-6.0 + 0.5 * k, 3) for k in range(25)]
     for net in sorted({p.net for part in parts for p in part.pins} - {None}):
         w = TB.RAIL if net in RAIL_NETS else TB.TRACK
@@ -594,15 +779,51 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                     for dx, dy in escape] + [
                     [pa, (TB.q(pb[0] + dx), TB.q(pb[1] + dy)), pb]
                     for dx, dy in escape]
+                # SNAP CANDIDATES — the other half of the sliver rule.
+                #
+                # The ranking above prefers a route that leaves no un-millable
+                # channel, but preferring only works when the lattice contains
+                # one, and for the L0 closure beside FreeRouting's own trace it
+                # never did: FOUR reroutes (hard veto, ranking, a 0.25 lattice,
+                # a tier-3 sliver rung) all came back byte-identical with the
+                # same 0.194 mm channel at board (6.005,24.575) — 0.006 inside
+                # the tip-diameter merge condition.  No amount of nudging finds
+                # a gap that is wide enough when the corridor is that tight.
+                #
+                # So take the OTHER exit the rule always allowed: stop trying
+                # to clear the neighbour and RIDE it.  A bend placed on the
+                # centreline of the net's own copper makes the two runs one
+                # solid outline, and a channel that does not exist cannot be
+                # too narrow to mill.  Same net, so the overlap is electrically
+                # identity — it joins conductors that were already joined —
+                # and every snapped candidate still has to satisfy the
+                # clearance oracle against OTHER nets before the ranking will
+                # look at it, because riding one trace moves the run nearer
+                # whatever bounded its original placement.
+                for _p2, _r2 in same_near(pa, pb, face, net):
+                    q = _ride_point(_p2, mid)
+                    if q is not None and math.dist(q, mid) <= 4.0:
+                        cands.append([pa, (TB.q(q[0]), TB.q(q[1])), pb])
                 ok = []
                 for pts in cands:
                     g = clears(pts, near, w)
                     if g >= TB.CLEAR:
                         ln = sum(math.dist(a, b) for a, b in zip(pts, pts[1:]))
-                        ok.append((round(ln, 3), -round(g, 3), pts))
+                        # PREFER, do not veto.  A hard sliver veto was measured
+                        # to cost a whole net's closures (three bench jumpers
+                        # instead of two) at every band width tried, because
+                        # closures on this board routinely pass their own net
+                        # at 0.2-0.3.  Ranking keeps every closure the board
+                        # needs and still takes the millable route whenever one
+                        # exists; a sliver that survives means no alternative
+                        # did, and the double-sided gate still measures it.
+                        sl = 0 if sliver_ok(
+                            pts, same_near(pts[0], pts[-1], face, net),
+                            w) else 1
+                        ok.append((sl, round(ln, 3), -round(g, 3), pts))
                 if ok:
                     ok.sort()
-                    drawn = (face, ok[0][2], None)
+                    drawn = (face, ok[0][3], None)
                     break
             if drawn is None:
                 # No lane on the face the two pieces share.  SPEND A VIA PAIR
@@ -679,6 +900,16 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                 new_vias.append((TB.q(v[0]), TB.q(H - v[1]), net))
                 for lay in ("top", "bottom"):
                     others.append((net, lay, [v], TB.RING_VIA / 2))
+            # SNAP, whichever tier drew it.  The candidate-level snap above
+            # only reaches tiers 1-2, and the closure that started all of this
+            # comes from tier 3's pathfinder — measured: four reroutes, always
+            # the same 0.194 mm channel at board (6.005,24.575).  So the snap
+            # runs once more HERE, on the chosen runs, where every tier's
+            # output passes.  Anchors never move (they are what the closure
+            # connects); only interior vertices ride onto the net's own
+            # centreline, and only when that both removes the sliver AND still
+            # clears every other net.
+            runs = [(lay, _snap_run(run, lay, net, w)) for lay, run in runs]
             for lay, run in runs:
                 for a, b in zip(run, run[1:]):
                     if a == b:
@@ -1193,12 +1424,12 @@ def write_matrix(b: dict) -> None:
                   f"{j['from_xy'][1]:.3f}) to **{j['to']}** "
                   f"({j['to_xy'][0]:.3f}, {j['to_xy'][1]:.3f}).",
                   f"  Both pads are on the **{j['face']}** face, so the wire "
-                  f"lies flat on the back for its whole run and crosses no "
-                  f"front component.  `{j['from']}` is an LED anode ring — the "
-                  f"same joint you already solder that lead into — and "
-                  f"`{j['to']}` is a bare ISP pad.  Neither end is an SMD land.",
-                  "  Do this BEFORE the ISP header is used: without it "
-                  f"`{j['to']}` reads open."]
+                  f"lies flat there for its whole run and crosses no front "
+                  f"component.  `{j['from']}` is {j['from_note']}; "
+                  f"`{j['to']}` is {j['to_note']}.  Neither end is an SMD "
+                  f"land.",
+                  f"  Until it is soldered, `{j['net']}` is OPEN — the board "
+                  f"is not finished without it."]
 
     prom = [p for p in m["promoted"]]
     L += ["", "## DUAL-SOLDER LEADS — the front-side bench work list", "",
@@ -1236,6 +1467,25 @@ def write_matrix(b: dict) -> None:
           "that every region is either LIVE or dead ON PURPOSE.", ""]
     for line in pour_census(parts, m):
         L += [line]
+
+    if b["unplaced"]:
+        L += ["", "## Silk: refs deliberately NOT printed", "",
+              "Silk is this board's congestion canary, not decoration: a "
+              "label that cannot be seated cleanly means the copper under it "
+              "is too tight, and the answer is to un-compress the copper. "
+              "Every seat on this board now clears the 0.30 ink-to-pad law by "
+              "at least 33%, so the refs below are dropped for a different "
+              "reason — REDUNDANCY, not crowding.", ""]
+        for ref in b["unplaced"]:
+            fn = TB.ISP_LABEL.get(ref)
+            if fn:
+                L += [f"- **{ref}** — the ISP block prints the FUNCTIONAL "
+                      f"legend `{fn}` at this pad instead. A bench looking for "
+                      f"{fn} reads `{fn}`; `{ref}` would be a second name for "
+                      f"the same hole and buys the operator nothing."]
+            else:
+                L += [f"- **{ref}** — no legal seat, and no functional legend "
+                      f"covers it. THIS IS A DEFECT: un-compress the area."]
 
     L += ["", "## Power pads — READ BEFORE WIRING", "",
           f"**PAD1 is `+` and is the RIGHT-HAND pad (x {p1.x}); PAD2 is `-` "
@@ -1310,6 +1560,7 @@ def negative_control(b: dict, FANTASY: str) -> tuple:
     # a fantasy board that happens to reroute into the same total is not
     # innocent, it just has the same arithmetic.  The audit names nets.
     _sat, undecl = jumper_audit(b["parts"], None, m2)
+
     return m2["fantasy_bridges"], rats, complete, undecl
 
 
@@ -1397,34 +1648,43 @@ def gate(b: dict) -> int:
         len(unplated), tht - len(m["promoted"]) + bores)
 
     print("### D. NEGATIVE CONTROLS — a fantasy bridge must NOT ship ###")
-    named, condemned = [], []
+    named, bearings = [], []
     for pin in FANTASIES:
         print(f"    the DSN is corrupted to call {pin} an ordinary through "
               f"pin; the bench cannot reach that lead on the front.")
         fant, nrats, ncomplete, nundecl = negative_control(b, pin)
+        # WORSE THAN HONEST is the whole verdict, and it is measured against
+        # the declaration rather than against a raw count: an undeclared open
+        # on any net, or more open connections than the board declares wires
+        # for.  Either one means the corrupted DSN produced a board the bench
+        # cannot make.
+        worse = bool(nundecl) or nrats > len(DECLARED_JUMPERS)
         print(f"      merge names: {fant} — pcb-rnd on that board: {nrats} "
               f"rat lines, complete={ncomplete}  (honest: {rats}, {complete}); "
-              f"undeclared opens {nundecl}")
+              f"undeclared opens {nundecl} -> "
+              f"{'WORSE than honest' if worse else 'no worse on this roll'}")
         named.append(fant)
-        # A board built on a fantasy bridge is condemned when it is INCOMPLETE
-        # and worse than the declaration allows.  TWO independent oracles get a
-        # vote and either one convicts, because MEASURED, neither catches both:
-        #
-        #   BZ1-1   pcb-rnd 2 rats (> 1 declared)   model audit sees no split
-        #   LED8-2  pcb-rnd 1 rat  (== declared)    model audit names the split
-        #
-        # pcb-rnd resolves real copper and catches breaks the model's
-        # pad-and-track graph cannot; the model knows which NET is torn and
-        # catches breaks that reroute into the same total.  The old test —
-        # nrats > the honest board's rats — is the one thing that does NOT
-        # work any more: it silently stopped discriminating the moment the
-        # honest board carried a declared jumper of its own.
-        condemned.append((not ncomplete)
-                         and (nrats > len(DECLARED_JUMPERS) or bool(nundecl)))
+        bearings.append(worse)
     chk("the merge names every fantasy bridge and refuses to promote it",
         named, [[p] for p in FANTASIES])
-    chk("pcb-rnd independently condemns each board built on one",
-        condemned, [True] * len(FANTASIES))
+    # WHY THIS IS NOT "each board is condemned" ANY MORE.  That test assumed a
+    # corrupted DSN always costs a connection, and MEASURED 2026-08-02 it does
+    # not: the BZ1-1 roll came back 0 rat lines and COMPLETE against an honest
+    # board carrying 2 declared jumpers, because the router had found real
+    # copper for everything and the front stub it left on that lead was
+    # redundant.  Demanding a conviction there is demanding that pcb-rnd
+    # convict a board with nothing wrong with it, which is how a check starts
+    # lying.  (A "was the bridge load-bearing" proxy was built first, comparing
+    # the physical board against the board the DSN claimed; it was removed
+    # because it answered a different question and mislabelled both rolls.)
+    #
+    # What still has to be true every time is the REFUSAL — checked above, and
+    # it never relaxes — plus this: the corruption must be shown to COST
+    # something somewhere, or the section is passing on router luck.  If a
+    # future roll makes every fantasy harmless, this fails loudly and the fix
+    # is a fantasy pin the router cannot avoid leaning on, not a softer bar.
+    chk("a board built on a fantasy bridge is measurably worse than the "
+        "honest board (at least one)", any(bearings), True)
 
     # -- the DECLARED-JUMPER law's own control ------------------------------
     # A declaration that cannot fail is a waiver wearing a checklist.  So cut

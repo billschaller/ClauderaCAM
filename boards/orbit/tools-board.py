@@ -76,6 +76,34 @@ DRILL_MIN = 1.0          # 0.8 corn + 0.2 radial; no PCB drill is in the crib
 TRACK = 0.6              # signal
 RAIL = 0.8               # power rails
 EDGE_CLEAR = 0.4         # copper to board edge
+# THE POUR'S OWN SETBACK, and it is five times the copper-to-edge law on
+# purpose.  The board is snapped out of its blank by hand on four TABS, and
+# flip.tab_zone_checks refuses any copper within TAB_KEEPOUT (1.0) of a tab —
+# measured at the cut path AND at its projection onto the outline, because the
+# fracture happens at the outline and that is where the copper is.  A tab that
+# bridges copper tears it off the laminate when it snaps.
+#
+# MEASURED on the first run of the double-sided gate: with the pour inset at
+# EDGE_CLEAR the front copper stood 0.395 from the tab zone at board
+# (0.00,28.25) and back/holes refused the board.  Both pours ran 0.40-0.64 from
+# the outline everywhere, so no tab PLACEMENT could have passed — the fix has
+# to be the pour, not the tabs.
+#
+# 1.10, not the 1.0 the law asks for: the bar is a '>=' test on a rasterized
+# distance and this file does not sit on bars.  The perimeter GND this costs is
+# a 0.70 mm wide ring of fill that carried no terminal (verified by re-running
+# the pour census — every GND terminal keeps its path to the plane).
+#
+# IT IS NOT FREE, and the cascade is the interesting part: the M3 copper
+# keep-outs are punched into the pour as declared hole contours, and a hole
+# that is not WHOLLY INSIDE its polygon is degenerate — pcb-rnd's boolean then
+# fails and SILENTLY DISCARDS THE WHOLE POUR (the 2026-08-01 incident).  Moving
+# the pour boundary inward moves that cliff, so MOUNT_INSET had to follow it
+# outward-of-the-edge, and the flip gauges had to move with the mounts to keep
+# their own 4.77 mm separation.  assert_pour_holes_inside() measures against
+# THIS constant now; it used to measure against EDGE_CLEAR, which would have
+# gone on approving a boundary the pour no longer had.
+POUR_EDGE_SETBACK = 1.10
 
 # MEASURED, both toolchains independently: a nominal ring diameter of exactly
 # hole+2*RING sits ON the bar and loses to coordinate quantization — the KiCad
@@ -415,7 +443,13 @@ RES_OUTER, RES_OUTER_1206 = 13.88, 13.88
 # PAD2's ring (the keep-out may not swallow it) at 5.4.
 # assert_pour_holes_inside() below refuses to emit if this is ever violated
 # again — the measurement is not enough, because the symptom is silence.
-MOUNT_INSET = 4.2
+# MOVED 4.2 -> 4.75 on 2026-08-02, and the pour's new setback is what moved it.
+# The bound is assert_pour_holes_inside(): the Ø6.4 keep-out contour must sit
+# POUR_HOLE_INSIDE_MIN (0.30) inside the pour boundary, which now stands at
+# POUR_EDGE_SETBACK.  4.75 - 3.2 = 1.55 against a boundary at 1.10 leaves 0.45.
+# Still bounded ABOVE by PAD2's ring, which the keep-out may not swallow:
+# H1 to PAD2 is 5.303 mm against the 5.00 the two radii need, so 0.30 spare.
+MOUNT_INSET = 4.75
 MOUNTS = {"H1": (MOUNT_INSET, MOUNT_INSET),
           "H2": (BOARD_W - MOUNT_INSET, MOUNT_INSET),
           "H3": (MOUNT_INSET, BOARD_H - MOUNT_INSET),
@@ -428,7 +462,14 @@ MOUNTS = {"H1": (MOUNT_INSET, MOUNT_INSET),
 # the grown outline the symmetric 8 mm inset clears it by 6.36 - 4.77 = 1.59, so
 # the exception is retired and all four sit at the same inset.  They stay
 # mirror-symmetric about BOARD_W/2, which the flip depends on.
-GAUGE_INSET = 8.0
+# MOVED 8.0 -> 8.5 on 2026-08-02, following the mounts.  The binding rule is
+# unchanged and stated above: a gauge disc must stay RING_GAUGE/2 +
+# COPPER_CLEAR + MOUNT_KEEPOUT_R + POUR_HOLE_MARGIN = 4.77 mm from a mount
+# centre, or its pour cutout grazes the M3 hole and kills the plane.  With the
+# mounts at 4.75 the old 8.0 inset gave only 4.60 — inside the fatal band — and
+# 8.5 restores 5.303, clear by 0.53.  Still mirror-symmetric about BOARD_W/2,
+# which the flip depends on.
+GAUGE_INSET = 8.5
 GAUGES = {"G1": (GAUGE_INSET, GAUGE_INSET),
           "G2": (BOARD_W - GAUGE_INSET, GAUGE_INSET),
           "G3": (GAUGE_INSET, BOARD_H - GAUGE_INSET),
@@ -454,6 +495,24 @@ GAUGES = {"G1": (GAUGE_INSET, GAUGE_INSET),
 # on the grown board the L2 leg link reads +5.36 against H4, decisively outside
 # POUR_HOLE_MARGIN's band — so S1 and S2 sit symmetrically again about the ring
 # centre line, 12 mm apart from it.
+# CROWDING AUDIT 2026-08-02, and the finding is RECORDED here rather than
+# fixed, because fixing it is not a placement move.  The CATCH and START
+# legends seat 0.345 from their own button's leg rings — inside the 25% band
+# that marks a squeezed seat — and the arithmetic says why: between S1's upper
+# leg ring (top 22.50) and BZ1's lower lead ring (bottom 24.95) there are
+# 2.45 mm for 1.75 mm of text plus two 0.30 gaps, leaving 0.10 to share.
+#
+# Spreading the buttons +/-0.6 WAS tried and is measured illegal: S2's 2B leg
+# ring then overlaps flip gauge G4 by 0.03 (it needs 0.42), and G4 cannot move
+# either — pushed to the corner it breaks the 4.77 mm it owes mount H4, pushed
+# inward it walks further into the button.  S2 has exactly 0.06 mm of travel.
+# The top-right corner holds a mount, a gauge and a button, and there is no
+# arrangement of the three that opens the legend's band.
+#
+# So this is the class of congestion the audit exists to surface and the only
+# real cure is ROOM: grow the outline (the 150x100 blank carries 64x54 twice
+# over) so the inset-derived mounts and gauges move out with it.  That is a
+# board-growth roll, not a nudge, and it is left for one.
 BUTTONS = {"S1": (57.5, 19.0), "S2": (57.5, 41.0)}
 BTN_DX, BTN_DY = 3.25, 2.25
 # The right strip's series resistors.  R15_XY is NAMED because fixed_tracks()
@@ -548,10 +607,20 @@ SMD_FP = {
               "3": (+1.5, 0.0, 1.9, 0.8)},
     # SOIC-8 WIDE, EIAJ 8S2, 5.3 mm body, 1.27 pitch — the -SU marking's body.
     # A narrow SOIC-8 here is a reflow failure (SPEC BOM, U1).
+    #
+    # The land is 0.72 ACROSS THE PITCH, not the hand-solder library's 0.65,
+    # and the reason is the side-2 SCRUB.  A land narrower than the scrub gate's
+    # 0.70 bar has no plateau the 0.30 bit can walk without touching an edge:
+    # MEASURED at 0.65 the gate read 0.660 against >= 0.70 and refused the whole
+    # back/scrub program.  0.72 clears the bar by 0.02 rather than tying it
+    # (this file's oldest lesson), and it is bounded ABOVE by the 1.27 pitch:
+    # the gap between neighbouring lands falls from 0.62 to 0.55, still 0.15
+    # clear of the 0.40 clearance law.  Paste and mask follow the pad by the
+    # zero-swell convention, so all three shapes move together.
     "SOIC8W": {str(n + 1): (
         (-3.5875 if n < 4 else 3.5875),
         (1.905 - 1.27 * n) if n < 4 else (-1.905 + 1.27 * (n - 4)),
-        1.625, 0.65) for n in range(8)},
+        1.625, 0.72) for n in range(8)},
 }
 
 # Radial length of each chip land, used to seat the ring resistors so their
@@ -973,7 +1042,7 @@ POUR_HOLE_INSIDE_MIN = 0.30      # same margin class as POUR_HOLE_MARGIN
 
 def assert_pour_holes_inside() -> float:
     """-> the tightest margin.  Raises if any M3 keep-out escapes the pour."""
-    edge = rounded_rect(EDGE_CLEAR)
+    edge = rounded_rect(POUR_EDGE_SETBACK)     # the pour's ACTUAL boundary
     worst, who = 99.0, None
     for ref, (mx, my) in MOUNTS.items():
         d = min(pt_seg(mx, my, a[0], a[1], b[0], b[1])
@@ -1263,25 +1332,26 @@ GLYPHS = {
 # legend ("dropping it to 28.5 ... walked its lower ring into the CATCH
 # legend", see BZ1_XY), so the part that yields is the label.
 #
-# 4.72, not the 4.77 that would merely restore the old clearance.  A silk
-# stroke is the cheapest object on this board to move, so it buys the WIDEST
-# margin available instead of the minimum one.  SWEPT in 0.01 steps against
-# both neighbours (law 0.300):
-#
-#     R     4.65   4.66   4.70   4.72   4.75   4.77   4.78
-#     BZ1  0.426  0.416  0.376  0.356  0.326  0.306  0.296
-#     btn  0.294  0.304  0.343  0.363  0.393  0.413  0.423
-#     min  0.294  0.304  0.343  0.356  0.326  0.306  0.296
-#
-# The legal window is 4.66..4.77 — pulled in toward its button the label closes
-# on S1/S2's own leg rings, pushed out it closes on the buzzer again — and the
-# two constraints cross at 4.72, which is therefore the max-min seat and not a
-# taste.  It holds 0.356 to the buzzer and 0.363 to the button, where every
-# previous tenant of this seat sat within 0.01 of the bar.
+# 4.72 — the max-min seat on the geometry the board actually has.  SWEPT
+# against both neighbours (law 0.300): the legal window is 4.66..4.77, pulled
+# in toward its button the label closes on S1/S2's own leg rings and pushed out
+# it closes on the buzzer, and the two constraints cross at 4.72 holding 0.345
+# to the leg rings and 0.356 to the buzzer.  That is inside the crowding
+# audit's 25% band and it CANNOT be improved from here — see BUTTONS, where the
+# copper move that would open it is measured illegal against flip gauge G4.
+# 5.03 is the right answer on a grown board and the wrong one on this one.
 BUTTON_LEGEND_R = 4.72
 SILK_H = 1.5             # SPEC: text 1.5 mm
 SILK_W = 0.25            # SPEC: stroke 0.25, Makera's floor
-ADVANCE = 0.85           # x text height
+# 1.05, up from 0.85, and the glyph GAP law is what sets it.  The ink left
+# between neighbouring glyphs is (ADVANCE - GLYPH_WIDE) * h - SILK_W, and
+# checks.SILK_GAP_MIN wants >= 0.15 (JLCPCB's floor raised for laser bloom).
+# At 0.85 that arithmetic gives 0.125 for the 1.5 mm legend — scraping a bar it
+# only cleared on the check's 2-pixel tolerance — and EXACTLY ZERO for the
+# 1.0 mm ISP labels, which the double-sided gate measured at 0.0781 and
+# refused.  1.05 gives 0.20 at h=1.0 and 0.425 at h=1.5, so both sizes clear
+# the law on their own rather than on tolerance.
+ADVANCE = 1.05           # x text height
 GLYPH_WIDE = 0.60        # x text height
 
 
@@ -1366,7 +1436,13 @@ def front_legend() -> list[tuple]:
         # 3.2 inside the body pitch circle: 0.7 clear of the 5 mm body's inner
         # edge and radially inward of the cathode hole, which is the side the
         # cathode is on.  DERIVED from RING_R so it followed the grown ring.
-        cx, cy = polar(RING_CX, RING_CY, ang, RING_R - 3.2)
+        # RING_R - 3.4, not - 3.2.  At 3.2 the tick's inboard end stood 0.375
+        # from its own cathode ring — exactly 25% over the 0.30 law, the last
+        # seat on the board still sitting on the crowding audit's threshold.
+        # Moving 0.2 further in costs nothing (it increases the clearance to
+        # the 5 mm body it must stay inside, and the 12/3/6/9 numerals at
+        # r 11.5 are still 1.2 away) and buys 0.575.
+        cx, cy = polar(RING_CX, RING_CY, ang, RING_R - 3.4)
         tx, ty = polar(0.0, 0.0, ang + 90.0, 0.8)
         out.append((q(cx - tx), q(cy - ty), q(cx + tx), q(cy + ty)))
     # marker arrow at position 1, outboard of the ring
@@ -1408,7 +1484,13 @@ def back_legend(parts: list[Part]) -> list[tuple]:
     # into pin 8's land — a pin-1 marker pointing at the wrong pin is worse
     # than none, and the silk gate caught it.
     p1 = by["U1"].pins[0]
-    dx, dy = rot(-1.1, 1.0, by["U1"].rot)
+    # (-1.25, 1.15), not (-1.1, 1.0): widening U1's lands to the scrub bar
+    # (SMD_FP["SOIC8W"], 0.65 -> 0.72) grew each pad 0.035 along the pitch and
+    # walked this dot to 0.267 from pin 1's own land, under the 0.30 silk law.
+    # The MARKER yields, not the pad — it is silk, the cheapest thing on the
+    # board to move — and it stays diagonally adjacent to pin 1, which is the
+    # only thing that makes a pin-1 dot mean anything.
+    dx, dy = rot(-1.25, 1.15, by["U1"].rot)
     out += box_strokes(p1.x + dx, p1.y + dy, 0.5)
     # Q1 / Q2 / D1: a bar under pin 1 says which corner pin 1 is
     for ref in ("Q1", "Q2", "D1"):
@@ -1420,9 +1502,15 @@ def back_legend(parts: list[Part]) -> list[tuple]:
         pad = by[ref].pins[0]
         w, _ = text_size(txt, 1.0)
         left = pad.x < ISP_X0 + ISP_PITCH / 2
-        # 0.3 is the law between silk INK and pad copper, so the half-stroke
-        # counts: leaving it out put every ISP label 0.175 from its own pad.
-        cx = pad.x + (-1 if left else 1) * (ISP_PAD / 2 + 0.3 + SILK_W / 2
+        # 0.45, not the 0.30 law: the half-stroke counts (leaving it out put
+        # every ISP label 0.175 from its own pad) and so does a MARGIN.
+        # Placing the label at exactly the law made all twelve ISP seats read
+        # 0.300-0.334 in the crowding audit — the single densest cluster of
+        # near-bar silk on the board, and every millimetre of it self-inflicted
+        # by this constant rather than by congestion.  0.45 seats them at
+        # 0.45 and costs nothing: these labels are drawn OUTWARD, away from
+        # the 2.54 grid, into open back copper.
+        cx = pad.x + (-1 if left else 1) * (ISP_PAD / 2 + 0.45 + SILK_W / 2
                                             + w / 2)
         out += text_strokes(txt, cx, pad.y, 1.0, mirror=True)
     # pin-1 (TP1) square tick, placed RELATIVE to TP1 so it follows the grid
@@ -1458,17 +1546,53 @@ def label_parts(parts: list[Part], side: str, legend: list[tuple]):
         r = MOUNT_KEEPOUT_R
         hard.append(SL.Rect(lx - r, ly - r, lx + r, ly + r))
     silk = [stroke_bbox([s]) for s in legend]
+    # NO ROTATED REF LABELS, and it is a legend-METRICS law rather than taste.
+    #
+    # checks.silk_metric_checks clusters silk marks into "text lines" by bbox
+    # adjacency (vertical overlap, horizontal gap <= 1.6) and judges each line
+    # on the MEDIAN of its glyph heights against the median ink thickness,
+    # demanding stroke:height inside 1:7.5..1:3.5.  A rotated label's glyphs
+    # are WIDE AND SHORT — bbox 1.75 across by ~1.15 tall where upright glyphs
+    # are 1.75 tall — so the moment a rotated label lands within 1.6 mm of an
+    # upright one the cluster's median height collapses to the rotated value
+    # while the thickness stays put.  MEASURED on the first double-sided gate:
+    # a five-glyph line at (7.29,42.72) mixed two upright glyphs with three
+    # rotated ones and read 0.3197 against the 0.286 bar, failing front/silk.
+    #
+    # Un-mixing that one cluster would not have been a fix: the all-rotated
+    # lines on the same board read 0.2783 against 0.286 — eight thousandths of
+    # margin — so rotated legend text on this font is one nudge from failing
+    # wherever it appears.  Withdrawing the rotated candidate entirely puts
+    # every front line at medh 1.75 and ratio 0.16..0.18, mid-band.
+    #
+    # The withdrawal is expressed the only way a CALLER can express it:
+    # silklabel picks from ((0, wh), (90, wh90)), so a wh90 that cannot fit
+    # inside the board leaves rot 0 as the only survivor.
+    NO_ROT = (BOARD_W * 10, BOARD_H * 10)
+
+    # THE LABEL BOX MUST BE THE INK, not the centreline.  text_size measures
+    # the glyph run's centreline extent, so the true ink reaches SILK_W/2
+    # beyond it on every side.  silklabel keeps a label's BOX CLIP_KEEPOUT
+    # (0.40) clear of solderable copper, and with an understated box that came
+    # out as 0.40 - 0.125 = 0.275 of real ink clearance — under this board's
+    # 0.30 silk law.  MEASURED the moment the glyphs widened (ADVANCE 1.05):
+    # PAD1's label slid under SW1-1's ring at 0.2754 and the front silk check
+    # convicted it.  Handing over the inked size makes 0.40 mean 0.40 and
+    # leaves 0.10 over the law instead of 0.025 under it.
+    def inked(ref: str) -> tuple[float, float]:
+        w, h = text_size(ref)
+        return (w + SILK_W, h + SILK_W)
+
     sl_parts = []
     for part in want:
-        w, h = text_size(part.ref)
-        sl_parts.append(SL.Part(part.ref, part.body(), (w, h), (h, w)))
+        sl_parts.append(SL.Part(part.ref, part.body(), inked(part.ref),
+                                NO_ROT))
     if side == "front":
         for ref, (gx, gy) in GAUGES.items():
             lx, ly = lht_xy(gx, gy)
             r = RING_GAUGE / 2
-            w, h = text_size(ref)
             sl_parts.append(SL.Part(ref, SL.Rect(lx - r, ly - r, lx + r, ly + r),
-                                    (w, h), (h, w)))
+                                    inked(ref), NO_ROT))
     board = SL.Rect(0.0, 0.0, BOARD_W, BOARD_H)
     return SL.place_labels(sl_parts, board, apertures, silk, hard)
 
@@ -1673,7 +1797,7 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
     # short violations against every track and island the pour clips around.
     # At COPPER_CLEAR it clears.  Same lesson as every other margin here: a
     # number that must pass a '<' test cannot BE the number in the test.
-    pour = L.polygon(30000, rounded_rect(EDGE_CLEAR), COPPER_CLEAR)
+    pour = L.polygon(30000, rounded_rect(POUR_EDGE_SETBACK), COPPER_CLEAR)
     assert_pour_holes_inside()
     holes = "".join(
         "\n       ta:hole {\n" +
@@ -1872,6 +1996,24 @@ SEED_WINDOW = [round(s * (9.0 + 0.5 * k), 2)
 # TRACKS, not to seeds, and the Q2-2 seed proved it by routing in 13 s.  So
 # when the Q2-2 reroute closed the buzzer cell and left RESET open between
 # U1-1 and TP5 instead, the fix was not a new mechanism but one more point.
+#
+# TP3-1 WAS TRIED AS A SEVENTH SEED AND REJECTED, and the rejection corrects a
+# law this file wrote one working day earlier.  The four artwork fixes (pour
+# setback, the mounts and gauges that followed it, U1's widened lands) forced a
+# fresh roll and the board came back TWO connections short instead of one — L2
+# stranded at TP3-1 and L3 at S1-1 — so TP3-1 was seeded to buy one of them
+# back.  It WEDGED FreeRouting: no session in five minutes where this board
+# routes in 23 s, killed at the subprocess timeout.
+#
+# So "points do not wedge, tracks do" is TOO STRONG and is corrected here to
+# what was actually measured: a seed is far safer than a protected track, and
+# six of them cost nothing, but a seed is still geometry the router must plan
+# around and the seventh one in the ISP block was one too many.  The wedge
+# remains what tools-route's own comment calls it — a property of the geometry,
+# discovered only by running it — and the honest response is the same as ever:
+# keep the change that converges, and spend the residue deliberately.  The
+# board therefore ships TWO declared bench jumpers instead of one, each named
+# and each chosen for two bare solder points (see tools-route.DECLARED_JUMPERS).
 #
 # Seeds are cheap in exactly the way the operator's 2026-08-01 ruling says a
 # via is cheap, and expensive in the one way that matters here: each is a bench

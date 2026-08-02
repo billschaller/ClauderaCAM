@@ -114,7 +114,7 @@ annular = 0.7
 [[rules.gauge]]
 name = "flip gauge G1"
 annular = 0.3
-positions = [[8.0, 46.0]]                 # board frame (8, 8)
+positions = [[8.5, 45.5]]                 # board frame (8.5, 8.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -122,7 +122,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G2"
 annular = 0.3
-positions = [[56.0, 46.0]]                # board frame (56, 8)
+positions = [[55.5, 45.5]]                # board frame (55.5, 8.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -130,7 +130,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G3"
 annular = 0.3
-positions = [[8.0, 8.0]]                  # board frame (8, 46)
+positions = [[8.5, 8.5]]                  # board frame (8.5, 45.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -138,7 +138,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G4"
 annular = 0.3
-positions = [[56.0, 8.0]]                 # board frame (56, 46)
+positions = [[55.5, 8.5]]                 # board frame (55.5, 45.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -228,6 +228,13 @@ plunge = 200
 # offset 0.10, not 0.05. At 0.05 the clearing contour lands exactly on the
 # gate's opening bar (tool centre 0.450 from copper for an 0.8 corn) and a job
 # that asks for exactly a bar is a coin flip against any honest measurement.
+#
+# overlap stays at Board A's 25. It was tried at 40 to chase the single
+# 0.01mm2 residual sliver at board (11.72,18.28) and the sliver did not move
+# (`residual copper` read 0.9505 at both settings, same cell), so the sliver
+# is not a cusp between adjacent passes and overlap is not its knob. The
+# deviation bought nothing measurable and was reverted rather than left in the
+# file with a reason that is not true.
 tool = 3
 depth = -0.15
 margin = 1.4
@@ -309,10 +316,20 @@ feed = 100
 # across a O1.0 hole drops in and levers the pad off. Every hole-centred pad
 # therefore gets an ANNULAR lap — tool edge >= 0.15 inside copper AND >= 0.20
 # outside the hole rim — which reemit.annular_laps generates from this table.
+#
+# offset 0.20 on THIS side only (side 1 keeps Board A's 0.15, and passed at
+# it). Measured: at 0.15 a disc lap on the merged pad+track island at board
+# (35.67,36.94) rides 0.2968mm inside copper, i.e. tool edge 0.1468 against
+# the 0.15 `annular scrub inside copper` bar — short by 0.0032mm. That is a
+# job asking for exactly a bar again, and the fix is margin, not a smaller
+# bar. 0.20 is the largest value that keeps the annular band alive: the lap
+# radius is pinned at rc=0.900 (rc_min = hole_r + r + 0.25 = rc_max =
+# pad_r - r - 0.20 on the O2.50 pad), and rc_max's mask term
+# (mask_r - r - max(offset, 0.15)) only stops binding while offset <= 0.25.
 tool = 5
 depth = -0.21
 overlap = 45
-offset = 0.15
+offset = 0.20
 feed = 400
 plunge = 200
 
@@ -321,10 +338,21 @@ plunge = 200
 # tool's own cutting data set the stepdown — 1mm tools like conservative").
 # The tabs are law, not taste (SPEC: >= 2 of >= 1.0mm): a freed board grabs
 # the cutter. The cutout runs LAST of everything, in the second setup.
+#
+# gaps = "2lr", not 4.  A plain count lets FlatCAM spread the tabs around the
+# whole perimeter, and on this board that put one on the BOTTOM edge at
+# (30.75, 0.00) — 0.505 from the pre-placed VCC spine, which sits at
+# SPINE_Y 0.9 with a 0.8 rail and cannot move without lifting the entire
+# bottom-strip power stack.  flip.tab_zone_checks refuses any copper within
+# 1.0 of a tab (a tab that bridges copper tears it off the laminate when it is
+# snapped), so the tabs move instead of the copper: "2lr" puts two tabs on
+# each of the LEFT and RIGHT edges, where the only copper is the GND pour and
+# POUR_EDGE_SETBACK holds it 1.10 back.  Four tabs either way, so the tab
+# census and SPEC's ">= 2 of >= 1.0mm" are unchanged.
 tool = 7
 depth = -1.7
 dpp = 0.3
-gaps = 4
+gaps = "2lr"
 gapsize = 1.5
 feed = 500
 plunge = 200
