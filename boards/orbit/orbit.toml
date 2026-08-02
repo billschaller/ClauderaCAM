@@ -12,13 +12,22 @@
 #
 # THE FRAME IS MEASURED, NOT TYPED. tools-fab.py reads the exported Edge_Cuts
 # with boardmaps.extents(cross_check=True) and asserts:
-#     extents  x 0.000..64.000   y 0.000..54.000   (64 x 54, SPEC's board)
-#     flip line at anchor (0,0)  x = 32.000        (= BOARD_W/2, exactly)
+#     extents  x 0.000..66.000   y 0.000..56.000   (66 x 56)
+#     flip line at anchor (0,0)  x = 33.000        (= BOARD_W/2, exactly)
 # so `anchor = [0.0, 0.0]` is what puts the board's SW corner on G54 zero and
 # lands the mirror line on the board centreline. Note the export frame is
-# Y-MIRRORED against tools-board.py's board frame (export_y = 54 - board_y):
+# Y-MIRRORED against tools-board.py's board frame (export_y = 56 - board_y):
 # harmless for machining, but it is why the gauge positions below are listed in
 # the EXPORT frame and cross-referenced to their board-frame names.
+#
+# GROWN 2026-08-02 from 64 x 54, and it is SPEC's board no longer: the crowding
+# audit found the CATCH/START legends seated at +15% over the 0.30 ink-to-pad
+# law because a mount, a flip gauge and a button share the top-right corner,
+# and the outline is the only thing that moves all three apart (the full
+# reasoning is at tools-board.BOARD_W). Every number in this file that follows
+# from the outline moved with it, and each one is MEASURED downstream rather
+# than trusted here — the extents assert above, and the gauge-to-hole match in
+# pcbjob.load for the four [[rules.gauge]] blocks.
 #
 # AT THE MACHINE: blank fixtured on two steel pins through the waste, board
 # copper UP for side 1 (front), flipped about the pins for side 2 (back). The
@@ -34,8 +43,9 @@ out = "out"
 
 [blank]
 # Same 150x100x1.5 copper-clad stock as Board A, long side along X. The board
-# is 64 x 54 and the pins sit 8mm off each short edge, so the blank must cover
-# 64 x 70 plus pin clearance — this stock clears that twice over.
+# is 66 x 56 and the pins sit 8mm off each short edge, so the blank must cover
+# 66 x 72 plus pin clearance — this stock clears that comfortably (pcbjob.load
+# measures the span: 76.0 in y against the blank's 100).
 width = 150.0
 height = 100.0
 thickness = 1.5
@@ -58,7 +68,7 @@ inventory = "../../jobs/inventory.toml"
 [twosided]
 # Flip about the Y axis: the blank rotates about the board's vertical
 # centreline, which boardmaps.flip_line DERIVES from Edge_Cuts + anchor as
-# x = 32.000. The pins below sit ON that line so the flip is a pure involution.
+# x = 33.000. The pins below sit ON that line so the flip is a pure involution.
 flip_axis = "y"
 
 [pins]
@@ -68,12 +78,13 @@ flip_axis = "y"
 # coordinates (a pin is not on the board); the gauge positions in [rules] are
 # GERBER-frame. With anchor [0,0] the two frames coincide for the front setup,
 # which is why these read as board coordinates — verified against the grammar's
-# own symmetry test (flip about x=32.000 maps the pair onto itself) and its
-# keep-out test (machined envelope -3.4..67.4 x -3.4..57.4 after growing by the
-# 1.4 clear margin and pin_r + PIN_CLEAR; both pins fall outside).
+# own symmetry test (flip about x=33.000 maps the pair onto itself) and its
+# keep-out test (machined envelope -3.4..69.4 x -3.4..59.4 after growing by the
+# 1.4 clear margin and pin_r + PIN_CLEAR; both pins fall outside — y -8.0 and
+# y 64.0 against a band that ends at -3.4 and 59.4).
 diameter = 2.0
 length = 12.0
-positions = [[32.0, -8.0], [32.0, 62.0]]
+positions = [[33.0, -8.0], [33.0, 64.0]]
 # Decision Q11: BOTH allowances declared 0. seat_extra 0 because the pin is cut
 # to the blank+spoilboard stack and seating proud is caught at the bench, not
 # bought with depth; tip_allowance 0 because the pin is accepted seating on the
@@ -110,11 +121,13 @@ annular = 0.7
 # measurement that the flip registered. They are NOT solderable and NOT in the
 # scrub set, so they are also the declared exemption for the mask-blind check.
 # Positions are GERBER frame; the export is Y-mirrored against the board frame
-# (export_y = 54 - board_y), so each block names both.
+# (export_y = 56 - board_y), so each block names both. All four follow
+# tools-board.GAUGE_INSET (8.5) off the GROWN outline's corners, so the pair on
+# the right and the pair on the top moved with it on 2026-08-02.
 [[rules.gauge]]
 name = "flip gauge G1"
 annular = 0.3
-positions = [[8.5, 45.5]]                 # board frame (8.5, 8.5)
+positions = [[8.5, 47.5]]                 # board frame (8.5, 8.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -122,7 +135,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G2"
 annular = 0.3
-positions = [[55.5, 45.5]]                # board frame (55.5, 8.5)
+positions = [[57.5, 47.5]]                # board frame (57.5, 8.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -130,7 +143,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G3"
 annular = 0.3
-positions = [[8.5, 8.5]]                  # board frame (8.5, 45.5)
+positions = [[8.5, 8.5]]                  # board frame (8.5, 47.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""
@@ -138,7 +151,7 @@ squeegee. Not solderable, not in the scrub set."""
 [[rules.gauge]]
 name = "flip gauge G4"
 annular = 0.3
-positions = [[55.5, 8.5]]                 # board frame (55.5, 45.5)
+positions = [[57.5, 8.5]]                 # board frame (57.5, 47.5)
 reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
 gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
 squeegee. Not solderable, not in the scrub set."""

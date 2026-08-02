@@ -202,22 +202,30 @@ MANDATORY = {"PAD2-1"}
 # Both wires lie flat on the BACK face for their whole run and cross no front
 # component.  22 AWG solid, the same wire the stitched vias use (Board A
 # shipped seven of these).
-DECLARED_JUMPERS = (
-    {"net": "L2",
-     "from": "LED11-2", "from_xy": (42.630, 30.000),
-     "to": "TP3-1", "to_xy": (44.000, 5.540),
-     "face": "back", "length_mm": 24.50,
-     "from_note": "an LED anode ring — the joint you already solder that "
-                  "lead into, open on the back",
-     "to_note": "a bare Ø1.8 ISP pad, designed to be touched"},
-    {"net": "L3",
-     "from": "LED12-2", "from_xy": (40.134, 39.315),
-     "to": "S1-1B", "to_xy": (60.750, 21.250),
-     "face": "back", "length_mm": 27.41,
-     "from_note": "an LED anode ring, open on the back",
-     "to_note": "a tactile-switch leg ring — a through hole you solder "
-                "anyway"},
-)
+# EMPTY ON THE GROWN BOARD (66 x 56, 2026-08-02), and that is the growth roll's
+# second dividend.  Everything above is the record of the 64 x 54 board, which
+# was one — then two — routable connections short; this board is short of
+# NOTHING.  pcb-rnd on the final layout: 0 rat lines, `layout is complete`, 0
+# clipper failures.
+#
+# The two wires retired here were L2 (LED11-2 -> TP3-1, 24.50 mm) and L3
+# (LED12-2 -> S1-1B, 27.41 mm).  They are not deleted quietly: a stale
+# declaration is exactly the hazard jumper_audit's first question exists to
+# catch ("is every declared jumper still NEEDED"), and leaving these two in
+# place would have made the gate say STALE rather than let them rot.
+#
+# WHAT PAID FOR THEM was not the outline directly but the room it bought the
+# router: two more escape seeds (tools-board.SEEDED_ESCAPES, U1-3 and TP5-1),
+# the seventh of which is the one that WEDGED FreeRouting on the old board and
+# routes it in 54 s on this one.  The full migration table is at that constant.
+# Net bench cost: 23 threaded wire vias and one dual-solder lead, against the
+# old board's 23 vias + 1 lead + 2 jumper wires.
+#
+# THE MECHANISM STAYS ARMED.  This is a declaration, not a repair, and the next
+# change to this board can put a connection back out of reach — in which case
+# the entry goes back here, named, with its two BARE terminals and its reason,
+# and the gate goes back to judging the declaration instead of the law.
+DECLARED_JUMPERS = ()
 
 VIA_BUDGET = 6                           # SPEC "Wire vias" planning number
 # The hard ceiling was REPEALED by operator ruling 2026-08-01: "there's
@@ -1594,8 +1602,30 @@ def gate(b: dict) -> int:
     # `rats == 0 and complete` check character for character.
     njump = len(DECLARED_JUMPERS)
     chk(f"open connections == declared bench jumpers ({njump})", rats, njump)
+    # pcb-rnd announces SUCCESS with the sentence "The layout is complete and
+    # has no shorted nets." — which contains the very word this check greps
+    # for.  MEASURED 2026-08-02, and the board-growth roll is what exposed it:
+    # orbit had never before been COMPLETE with zero rat lines.  Every previous
+    # checkpoint carried at least one declared bench jumper, so pcb-rnd printed
+    # a rat-line tally and never reached the congratulation — and the first
+    # board that closed entirely in copper was convicted by its own clean bill
+    # of health.  A check that fires only on the good boards is worse than no
+    # check, and this is the whole of the defect: a substring test against a
+    # sentence that asserts the opposite.
+    #
+    # The fix removes exactly that ONE fixed sentence and applies the SAME test
+    # to what is left, so every other spelling of the word stays fatal.  PROVEN
+    # rather than asserted — with R14 shoved until its SND_B land OVERLAPS
+    # Q2's GND land, pcb-rnd writes
+    #     W: SHORT: net "GND" is shorted to "SND_B" at terminal R14-2
+    # and the stripped test still convicts.  Note which control that is: the
+    # clearance control at tools-board.perturb stops at a 0.15 mm GAP, which is
+    # illegal copper but not metal contact, so pcb-rnd correctly reports no
+    # short and it cannot prove anything about this check.  The control for a
+    # SHORT has to actually short.
+    SHORT_OK = "The layout is complete and has no shorted nets."
     chk("no shorted nets", "shorted" not in TB.pcb_rnd(
-        "AddRats(AllRats)\n", FINAL_LHT).lower(), True)
+        "AddRats(AllRats)\n", FINAL_LHT).replace(SHORT_OK, "").lower(), True)
     if njump == 0:
         chk("every net complete", complete, True)
     else:

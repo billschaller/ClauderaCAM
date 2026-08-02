@@ -82,8 +82,10 @@ from gerber_filter import filter_file                        # noqa: E402
 PCBRND = Path(os.path.expanduser("~/.clauderacam/tools/pcbrnd/pcb-rnd.sh"))
 STEM = "orbit"
 OUT = HERE / "gerbers-rnd"
-BOARD_H = 54.0          # tools-board.BOARD_H — the Y-flip constant
-BOARD_W = 64.0
+BOARD_H = 56.0          # tools-board.BOARD_H — the Y-flip constant
+BOARD_W = 66.0          # (both grown from 64 x 54 on 2026-08-02; the FRAME
+#                         MISMATCH assert below is what makes this a check and
+#                         not a duplicate — it reads the exported Edge_Cuts)
 
 # The lane's filenames, and the pcb-rnd layer each is drawn from. Coordinate
 # formats are the lab's: nanometer for gerber, micron for excellon.

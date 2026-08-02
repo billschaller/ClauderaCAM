@@ -145,17 +145,46 @@ COPPER_CLEAR = CLEAR + DRC_MARGIN
 # corridors where there was not one.  The board grows to carry the bigger ring.
 #
 # DOWNSTREAM CONSEQUENCES OF THESE TWO NUMBERS, stated here because they live in
-# other files: the flip mirror line is BOARD_W/2 (now x = 30.0, was 28.0) and
-# the registration pins sit ON it at (BOARD_W/2, -8.0) and (BOARD_W/2,
-# BOARD_H+8.0) = (30, -8) and (30, 62); the blank must cover BOARD_W x
-# (BOARD_H+16) = 60 x 70, which the operator's 150 x 100 stock clears twice
-# over.  Pins and job frames are declared in the JOB TOML, not here.
+# other files: the flip mirror line is BOARD_W/2 (now x = 33.0) and the
+# registration pins sit ON it at (BOARD_W/2, -8.0) and (BOARD_W/2, BOARD_H+8.0)
+# = (33, -8) and (33, 64); the blank must cover BOARD_W x (BOARD_H+16) = 66 x
+# 72, which the operator's 150 x 100 stock clears comfortably.  Pins and job
+# frames are declared in the JOB TOML, not here — and tools-fab.py MEASURES the
+# exported Edge_Cuts extents against them rather than trusting either file.
 # W grew a second time (60 -> 64) for the RIGHT STRIP, measured the same way:
 # both button nets (L2, L3) can only enter their button from its outboard leg
 # column, and on the 60-wide board the only lane into S2's was 1.67 mm against a
 # 1.46 mm need — with D1 standing in it.  Widening the strip and clearing the
 # lane is the ruling's answer; being clever with a 0.2 mm margin is not.
-BOARD_W, BOARD_H = 64.0, 54.0
+#
+# GROWN A THIRD TIME 2026-08-02, 64 x 54 -> 66 x 56, and this one is the
+# CROWDING AUDIT's roll: it is the fix the audit asked for in writing and could
+# not perform itself (see BUTTONS, where the finding was recorded rather than
+# fixed).  The CATCH and START legends seated 0.345 from their own button's leg
+# rings — inside the +25% band that marks a squeezed seat — because the
+# top-right corner holds a mount, a flip gauge and a button at once and S2 had
+# 0.06 mm of travel: spreading the buttons the +/-0.6 that opens the band put
+# S2's 2B leg ring 0.03 INTO flip gauge G4, which needs 0.42 and cannot move
+# either (pushed cornerward it breaks the 4.77 mm it owes mount H4).
+#
+# GROWTH IS THE ONLY LEVER THAT MOVES THAT CORNER, because the mounts and the
+# gauges are DERIVED from the outline's insets and the buttons are not: +2 in
+# each axis carries H2/H4 and G2/G4 outward while S1/S2 stay on their strip, so
+# the S2-to-G4 gap goes from 0.474 (and -0.03 once spread) to 2.787.  The
+# legends then seat at 0.645/0.655 — +117% over the 0.30 ink-to-pad law, where
+# the audit asks for +25% — and the board reports ZERO crowding flags for the
+# first time.  Operator directive, 2026-08-02: "if labels can't be placed
+# cleanly it suggests the board is congested and needs to un-compress."
+#
+# NOTHING ELSE IN THIS FILE MOVES WITH IT, on purpose.  The ring, the bottom
+# strip, the ISP block, the driver cell and the right strip are all absolute
+# coordinates, so the 2 mm lands entirely in the top and right margins — which
+# is where the congestion was.  What re-derives: MOUNTS, GAUGES, the pour and
+# its holes (assert_pour_holes_inside re-measured after the move and still
+# clears — the mounts keep their 4.75 inset from the new edge, so every margin
+# in that check is unchanged by construction), rounded_rect, lht_xy, the DSN
+# boundary, "SIDE B", and the seed searches' board-bounds tests.
+BOARD_W, BOARD_H = 66.0, 56.0
 CORNER_R = 2.0
 # Ring centre moved with the growth: +2 in x so the enlarged ring keeps a 4.3 mm
 # pour margin on the left edge, +4 in y so its lowest lead still clears the
@@ -513,7 +542,29 @@ GAUGES = {"G1": (GAUGE_INSET, GAUGE_INSET),
 # real cure is ROOM: grow the outline (the 150x100 blank carries 64x54 twice
 # over) so the inset-derived mounts and gauges move out with it.  That is a
 # board-growth roll, not a nudge, and it is left for one.
-BUTTONS = {"S1": (57.5, 19.0), "S2": (57.5, 41.0)}
+#
+# THE ROLL HAPPENED (2026-08-02, see BOARD_W): the outline is 66 x 56 and G4
+# now sits at (57.5, 47.5) instead of (55.5, 45.5), so the +/-0.6 spread this
+# comment measured illegal is legal on the board that exists.  SPREAD, and the
+# arithmetic is the same one that convicted it:
+#
+#   S2's 2B leg ring (54.25, 43.85) to G4 (57.5, 47.5) = 4.887 centre to
+#   centre, minus 1.25 and 0.85 of ring = 2.787 mm, against the 0.42 it needs.
+#   On the old board the same pair read -0.03.
+#
+# The buttons do NOT follow the outline — they belong to the right strip's
+# absolute geometry, and moving them outboard as well would just carry the
+# congestion along with them.  They move APART instead, which is what the
+# legends between them and the buzzer were short of: the band between S1's
+# upper leg ring and BZ1's lower lead ring goes from 2.45 mm to 3.65, and a
+# symmetric spread of d gives each legend (9.45 + d)/2 - 4.375 of margin (see
+# BUTTON_LEGEND_R for the derivation and the seat it picks).
+#
+# R15 follows S1 by construction (R15_XY reads BUTTONS), so the S1_R link still
+# ends ON a pad rather than mid-span, which is the form FreeRouting counts as
+# reaching the pin.  R16 does not move: it sits at x 46 with nothing but open
+# back copper between it and S2's new y.
+BUTTONS = {"S1": (57.5, 18.4), "S2": (57.5, 41.6)}
 BTN_DX, BTN_DY = 3.25, 2.25
 # The right strip's series resistors.  R15_XY is NAMED because fixed_tracks()
 # draws the S1_R link from it, and its y is CHOSEN so that R15's pin 1 (a 1206
@@ -1332,15 +1383,31 @@ GLYPHS = {
 # legend ("dropping it to 28.5 ... walked its lower ring into the CATCH
 # legend", see BZ1_XY), so the part that yields is the label.
 #
-# 4.72 — the max-min seat on the geometry the board actually has.  SWEPT
-# against both neighbours (law 0.300): the legal window is 4.66..4.77, pulled
-# in toward its button the label closes on S1/S2's own leg rings and pushed out
-# it closes on the buzzer, and the two constraints cross at 4.72 holding 0.345
-# to the leg rings and 0.356 to the buzzer.  That is inside the crowding
-# audit's 25% band and it CANNOT be improved from here — see BUTTONS, where the
-# copper move that would open it is measured illegal against flip gauge G4.
-# 5.03 is the right answer on a grown board and the wrong one on this one.
-BUTTON_LEGEND_R = 4.72
+# 4.72 was the max-min seat on the 64 x 54 board.  SWEPT against both
+# neighbours (law 0.300): the legal window was 4.66..4.77, pulled in toward its
+# button the label closes on S1/S2's own leg rings and pushed out it closes on
+# the buzzer, and the two constraints crossed at 4.72 holding 0.345 to the leg
+# rings and 0.356 to the buzzer.  That was inside the crowding audit's 25% band
+# and could not be improved from there — see BUTTONS, where the copper move
+# that would open it was measured illegal against flip gauge G4.
+#
+# 5.03 IS THE RIGHT ANSWER ON A GROWN BOARD, and the board is grown, so it is
+# the answer now.  The seat is DERIVED, not swept, because the geometry is a
+# one-dimensional squeeze and its max-min has a closed form.  Reading up from
+# S1 (START is the mirror image about the buzzer, so one number serves both):
+#
+#   leg ring top      S1y + BTN_DY + RING_LED/2      = S1y + 3.500
+#   label ink bottom  S1y + R - SILK_H/2 - SILK_W/2  = S1y + R - 0.875
+#   label ink top     S1y + R + 0.875
+#   BZ1 ring bottom   BZ1y - 3.8 - RING_LED/2        = 24.950
+#
+# so the two gaps are R - 4.375 and 24.075 - S1y - R, equal at R = (28.45 -
+# S1y)/2 — which is 4.725 at the old S1y 19.0 and 5.025 at the new 18.4.  5.03
+# is that value on this file's 0.01 grid and it lands 0.655 against the leg
+# rings and 0.645 against the buzzer, both +115% or better over the 0.30 law
+# where the audit asks for +25%.  The 0.01 of asymmetry is rounding, not
+# design; sweeping it away would buy 0.005 mm and cost the closed form.
+BUTTON_LEGEND_R = 5.03
 SILK_H = 1.5             # SPEC: text 1.5 mm
 SILK_W = 0.25            # SPEC: stroke 0.25, Makera's floor
 # 1.05, up from 0.85, and the glyph GAP law is what sets it.  The ink left
@@ -2019,7 +2086,33 @@ SEED_WINDOW = [round(s * (9.0 + 0.5 * k), 2)
 # via is cheap, and expensive in the one way that matters here: each is a bench
 # joint, so this list is kept as short as the board's rat count allows and
 # every entry names the connection it bought.
-SEEDED_ESCAPES = ("C2-1", "Q2-2", "U1-1", "U1-2", "TP1-1", "C3-1")
+#
+# U1-3 AND TP5-1 ADDED 2026-08-02 ON THE GROWN BOARD (66 x 56), and between
+# them they retire BOTH declared bench jumpers.  The seventh seed is the one
+# the record above says wedged the router; it does not wedge here, and the
+# reason is the reason for the whole roll — the board has 2 mm more of it.
+#
+# THE MIGRATION, measured, one full reroute per row (the same experiment the
+# DECLARED_JUMPERS block runs on the old board, repeated on this one):
+#
+#     seeds                        vias  residual open connection
+#     6 (as before the growth)      25   SND    U1-3   -> R14-1
+#     7 (+U1-3)                     21   RESET  U1-1.. -> TP5-1
+#     8 (+TP5-1)                    23   NONE — pcb-rnd: 0 rat lines, complete
+#
+# and the first two rows are why the eighth seed is not a treadmill step but
+# the end of one.  A residue is only SPENDABLE as a declared jumper if both its
+# terminals are bare metal — that is the declaration's own law (bare rings and
+# pads over SMD lands) and jumper_audit enforces it by construction, since it
+# resolves an endpoint by matching the pin's centre against the copper object's
+# first point, which is the centre for a ring or an ISP pad and a CORNER for an
+# SMD land.  SND's two pieces are U1-3 (a SOIC pin) and R14-1 (an 0805 land):
+# no bare metal at all.  RESET's are {U1-1, R13-2, C4-1} and {TP5-1}: one bare
+# pad against three lands.  NEITHER can be declared, so on this board a residue
+# is not a thing to spend — it is a thing to close, and the seed is what closes
+# it.  The eighth seed was chosen for that reason and not for the count.
+SEEDED_ESCAPES = ("C2-1", "Q2-2", "U1-1", "U1-2", "TP1-1", "C3-1", "U1-3",
+                  "TP5-1")
 SEED_ESCAPE_R = [round(3.0 + 0.25 * k, 2) for k in range(21)]
 VIA_BODY_SMD, VIA_BODY_THT = 1.5, 2.0     # SPEC "Via geometry": iron access
 LED_POS = {led: pos for pos, led in POS_LED.items()}
