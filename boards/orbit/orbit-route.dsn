@@ -58,18 +58,18 @@
     (component IMG_LED5 (place LED5 84500 -240000 front 0))
     (component IMG_LED3 (place LED3 105330 -162250 front 0))
     (component IMG_LED4 (place LED4 162250 -105330 front 0))
-    (component IMG_R8 (place R8 240000 -109000 front 0))
-    (component IMG_R7 (place R7 304250 -128720 front 0))
-    (component IMG_R12 (place R12 354420 -173940 front 0))
-    (component IMG_R11 (place R11 371000 -240000 front 0))
-    (component IMG_R9 (place R9 354420 -306060 front 0))
-    (component IMG_R10 (place R10 304250 -351280 front 0))
-    (component IMG_R2 (place R2 240000 -371000 front 0))
-    (component IMG_R1 (place R1 175750 -351280 front 0))
-    (component IMG_R6 (place R6 125580 -306060 front 0))
-    (component IMG_R5 (place R5 109000 -240000 front 0))
-    (component IMG_R3 (place R3 125580 -173940 front 0))
-    (component IMG_R4 (place R4 175750 -128720 front 0))
+    (component IMG_R8 (place R8 240000 -106900 front 0))
+    (component IMG_R7 (place R7 306300 -125170 front 0))
+    (component IMG_R12 (place R12 356240 -172890 front 0))
+    (component IMG_R11 (place R11 373100 -240000 front 0))
+    (component IMG_R9 (place R9 356240 -307110 front 0))
+    (component IMG_R10 (place R10 306300 -354830 front 0))
+    (component IMG_R2 (place R2 240000 -373100 front 0))
+    (component IMG_R1 (place R1 173700 -354830 front 0))
+    (component IMG_R6 (place R6 123760 -307110 front 0))
+    (component IMG_R5 (place R5 106900 -240000 front 0))
+    (component IMG_R3 (place R3 123760 -172890 front 0))
+    (component IMG_R4 (place R4 173700 -125170 front 0))
     (component IMG_U1 (place U1 204130 -220950 front 0))
     (component IMG_C2 (place C2 250380 -206000 front 0))
     (component IMG_R13 (place R13 350870 -435000 front 0))
@@ -97,52 +97,52 @@
   )
   (library
     (image IMG_LED8
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 0 29000)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 0 29000)
     )
     (image IMG_LED7
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 14500 25110)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 14500 25110)
     )
     (image IMG_LED12
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 25110 14500)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 25110 14500)
     )
     (image IMG_LED11
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 29000 0)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 29000 0)
     )
     (image IMG_LED9
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 25110 -14500)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 25110 -14500)
     )
     (image IMG_LED10
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 14500 -25110)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 14500 -25110)
     )
     (image IMG_LED2
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 0 -29000)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 0 -29000)
     )
     (image IMG_LED1
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 -14500 -25110)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 -14500 -25110)
     )
     (image IMG_LED6
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 -25110 -14500)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 -25110 -14500)
     )
     (image IMG_LED5
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 -29000 0)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 -29000 0)
     )
     (image IMG_LED3
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 -25110 14500)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 -25110 14500)
     )
     (image IMG_LED4
-      (pin PS_THRU_2M44 1 0 0)
-      (pin PS_THRU_2M44 2 -14500 25110)
+      (pin PS_BACK_2M44 1 0 0)
+      (pin PS_BACK_2M44 2 -14500 25110)
     )
     (image IMG_R8
       (pin PS_SMD_1M200x1M400r270M0 1 0 0)
@@ -386,11 +386,6 @@
       (shape (polygon B.Cu 0 -9500 -4000 9500 -4000 9500 4000 -9500 4000 -9500 -4000))
       (attach off)
     )
-    (padstack PS_THRU_2M44
-      (shape (circle F.Cu 24400))
-      (shape (circle B.Cu 24400))
-      (attach off)
-    )
     (padstack PS_THRU_3M60
       (shape (circle F.Cu 36000))
       (shape (circle B.Cu 36000))
@@ -478,12 +473,118 @@
     (net VCC
       (pins BZ1-1 C1-1 C2-1 C3-1 D1-2 Q1-2 R13-1 TP2-1 U1-8)
     )
-    (class signal GND L0 L1 L2 L3 LED10_K LED11_K LED12_K LED1_K LED2_K LED3_K LED4_K LED5_K LED6_K LED7_K LED8_K LED9_K RESET S1_R S2_R SND SND_B SND_C VBAT VCC
+    (net __dead_LED8_1
+      (pins )
+    )
+    (net __dead_LED8_2
+      (pins )
+    )
+    (net __dead_LED7_1
+      (pins )
+    )
+    (net __dead_LED7_2
+      (pins )
+    )
+    (net __dead_LED12_1
+      (pins )
+    )
+    (net __dead_LED12_2
+      (pins )
+    )
+    (net __dead_LED11_1
+      (pins )
+    )
+    (net __dead_LED11_2
+      (pins )
+    )
+    (net __dead_LED9_1
+      (pins )
+    )
+    (net __dead_LED9_2
+      (pins )
+    )
+    (net __dead_LED10_1
+      (pins )
+    )
+    (net __dead_LED10_2
+      (pins )
+    )
+    (net __dead_LED2_1
+      (pins )
+    )
+    (net __dead_LED2_2
+      (pins )
+    )
+    (net __dead_LED1_1
+      (pins )
+    )
+    (net __dead_LED1_2
+      (pins )
+    )
+    (net __dead_LED6_1
+      (pins )
+    )
+    (net __dead_LED6_2
+      (pins )
+    )
+    (net __dead_LED5_1
+      (pins )
+    )
+    (net __dead_LED5_2
+      (pins )
+    )
+    (net __dead_LED3_1
+      (pins )
+    )
+    (net __dead_LED3_2
+      (pins )
+    )
+    (net __dead_LED4_1
+      (pins )
+    )
+    (net __dead_LED4_2
+      (pins )
+    )
+    (class signal GND L0 L1 L2 L3 LED10_K LED11_K LED12_K LED1_K LED2_K LED3_K LED4_K LED5_K LED6_K LED7_K LED8_K LED9_K RESET S1_R S2_R SND SND_B SND_C VBAT VCC __dead_LED8_1 __dead_LED8_2 __dead_LED7_1 __dead_LED7_2 __dead_LED12_1 __dead_LED12_2 __dead_LED11_1 __dead_LED11_2 __dead_LED9_1 __dead_LED9_2 __dead_LED10_1 __dead_LED10_2 __dead_LED2_1 __dead_LED2_2 __dead_LED1_1 __dead_LED1_2 __dead_LED6_1 __dead_LED6_2 __dead_LED5_1 __dead_LED5_2 __dead_LED3_1 __dead_LED3_2 __dead_LED4_1 __dead_LED4_2
       (circuit (use_via VIA_STITCH))
       (rule (width 6200) (clearance 4400))
     )
   )
   (wiring
+    (wire (path F.Cu 24400 239999 -84500 240001 -84500) (net __dead_LED8_1) (type protect))
+    (wire (path F.Cu 24400 239999 -55500 240001 -55500) (net __dead_LED8_2) (type protect))
+    (wire (path F.Cu 24400 317749 -105330 317751 -105330) (net __dead_LED7_1) (type protect))
+    (wire (path F.Cu 24400 332249 -80220 332251 -80220) (net __dead_LED7_2) (type protect))
+    (wire (path F.Cu 24400 374669 -162250 374671 -162250) (net __dead_LED12_1) (type protect))
+    (wire (path F.Cu 24400 399779 -147750 399781 -147750) (net __dead_LED12_2) (type protect))
+    (wire (path F.Cu 24400 395499 -240000 395501 -240000) (net __dead_LED11_1) (type protect))
+    (wire (path F.Cu 24400 424499 -240000 424501 -240000) (net __dead_LED11_2) (type protect))
+    (wire (path F.Cu 24400 374669 -317750 374671 -317750) (net __dead_LED9_1) (type protect))
+    (wire (path F.Cu 24400 399779 -332250 399781 -332250) (net __dead_LED9_2) (type protect))
+    (wire (path F.Cu 24400 317749 -374670 317751 -374670) (net __dead_LED10_1) (type protect))
+    (wire (path F.Cu 24400 332249 -399780 332251 -399780) (net __dead_LED10_2) (type protect))
+    (wire (path F.Cu 24400 239999 -395500 240001 -395500) (net __dead_LED2_1) (type protect))
+    (wire (path F.Cu 24400 239999 -424500 240001 -424500) (net __dead_LED2_2) (type protect))
+    (wire (path F.Cu 24400 162249 -374670 162251 -374670) (net __dead_LED1_1) (type protect))
+    (wire (path F.Cu 24400 147749 -399780 147751 -399780) (net __dead_LED1_2) (type protect))
+    (wire (path F.Cu 24400 105329 -317750 105331 -317750) (net __dead_LED6_1) (type protect))
+    (wire (path F.Cu 24400 80219 -332250 80221 -332250) (net __dead_LED6_2) (type protect))
+    (wire (path F.Cu 24400 84499 -240000 84501 -240000) (net __dead_LED5_1) (type protect))
+    (wire (path F.Cu 24400 55499 -240000 55501 -240000) (net __dead_LED5_2) (type protect))
+    (wire (path F.Cu 24400 105329 -162250 105331 -162250) (net __dead_LED3_1) (type protect))
+    (wire (path F.Cu 24400 80219 -147750 80221 -147750) (net __dead_LED3_2) (type protect))
+    (wire (path F.Cu 24400 162249 -105330 162251 -105330) (net __dead_LED4_1) (type protect))
+    (wire (path F.Cu 24400 147749 -80220 147751 -80220) (net __dead_LED4_2) (type protect))
+    (via VIA_STITCH 173880 -412250 (net L0) (type protect))
+    (via VIA_STITCH 123890 -96620 (net L2) (type protect))
+    (via VIA_STITCH 57770 -268860 (net L0) (type protect))
+    (via VIA_STITCH 96620 -356110 (net L3) (type protect))
+    (via VIA_STITCH 306120 -67750 (net L1) (type protect))
+    (via VIA_STITCH 211140 -57770 (net L2) (type protect))
+    (via VIA_STITCH 412250 -306120 (net L1) (type protect))
+    (via VIA_STITCH 356110 -383380 (net L3) (type protect))
+    (via VIA_STITCH 422230 -211140 (net L2) (type protect))
+    (via VIA_STITCH 383380 -123890 (net L3) (type protect))
     (wire (path B.Cu 8000 160000 -500000 160000 -517000) (net VBAT) (type protect))
     (wire (path B.Cu 8000 160000 -517000 270000 -517000) (net VBAT) (type protect))
     (wire (path B.Cu 8000 270000 -517000 270000 -490000) (net VBAT) (type protect))

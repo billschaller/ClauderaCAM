@@ -1,25 +1,21 @@
 {
  "connections": 68,
- "dsn_sha256": "9647d2dae13af8d99db559378ac835071a79996e0718ab34844c8a6d6388f5d2",
- "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses",
- "pruned_for": "d6a446dd9f70519fb31723bff822143e4838357f0d82652e2e99764c68d61460",
+ "dsn_sha256": "64dd0307482d749af684c15061881d527608cc19322331e114466035a5988173",
+ "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses FREEROUTING__ROUTER__MAX_PASSES=0",
+ "pruned_for": "fdf1e6bdc5efa7343a758620ad1e4f30dae7304b258dedbe5498ec59101a87a7",
  "redundant_vias": [
   [
-   50.051,
-   48.489,
-   "GND"
+   38.338,
+   12.389,
+   "L3"
   ]
  ],
  "router_open_pairs": [
-  "PAD2-1 -> C1-2",
-  "C2-2 -> U1-4",
-  "Q1-1 -> PAD2-1",
-  "C4-2 -> TP6-1",
-  "S2-1 -> LED11-2",
-  "U1-1 -> C4-1",
-  "C1-1 -> Q1-2",
-  "R13-1 -> via"
+  "C3-2 -> R16-2",
+  "Q1-2 -> C1-1",
+  "TP2-1 -> R13-1",
+  "Q1-2 -> via"
  ],
- "router_unrouted": 8,
- "ses_sha256": "2bf9b1a7ee7908f75577b26cb94d87cf789bf0336fdaecab263c12345808972a"
+ "router_unrouted": 4,
+ "ses_sha256": "137ffb509a8831bfb682fbbef6adb18a9474b7792f472779594bd8c932e01f02"
 }

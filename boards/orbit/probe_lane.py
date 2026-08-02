@@ -46,18 +46,24 @@ def labeled_objects(parts, route):
     """
     out = []
     anon = 0
+    promoted = set((route or {}).get("promoted", ()))
     for part in parts:
         for p in part.pins:
+            # netless copper carries a private pseudo-net, exactly as the
+            # oracle gives it one (tools-board.copper_objects)
+            net = p.net if p.net is not None else f"__nc_{p.pid}"
             if p.kind == "rect":
-                out.append((f"{p.pid} land", p.net, "bottom", p.corners(), 0.0))
+                out.append((f"{p.pid} land", net, "bottom", p.corners(), 0.0))
             elif p.kind == "circ":
-                out.append((f"{p.pid} pad", p.net, "bottom", [(p.x, p.y)],
+                out.append((f"{p.pid} pad", net, "bottom", [(p.x, p.y)],
                             p.shape[1] / 2))
             else:
                 r = p.shape[2] / 2
-                out.append((f"{p.pid} ring", p.net, "bottom", [(p.x, p.y)], r))
-                out.append((f"{p.pid} front ring", p.net, "top",
-                            [(p.x, p.y)], r))
+                out.append((f"{p.pid} ring", net, "bottom", [(p.x, p.y)], r))
+                # a dead front ring is on no net until a human solders it
+                out.append((f"{p.pid} front ring",
+                            net if p.pid in promoted
+                            else f"__dead_{p.pid}", "top", [(p.x, p.y)], r))
     for ref, (gx, gy) in TB.GAUGES.items():
         for layer in ("top", "bottom"):
             anon += 1

@@ -27,10 +27,13 @@ conducts on one face only unless a human puts metal through it.  So:
     that no metal bridges — the board would report "layout is complete" while
     the operator holds an open circuit.
   * hplated=1 is a DECLARATION that the bench will stitch that hole.  At R4a
-    the declared set is EMPTY: the wire-via prototype and the dual-solder LED
-    lead prototype both exist, but no pin is promoted.  R4b promotes exactly
-    the leads its router actually uses, and each promotion is a bench joint the
-    assembly card must repeat.
+    the declared set is EMPTY: the wire-via prototype and the dual-solder wire
+    PAD prototype both exist, but no pin is promoted.  R4b promotes exactly the
+    leads its router actually uses, and each promotion is a bench joint the
+    assembly card must repeat.  Since the operator ruling of 2026-08-01 only
+    the two bare wire pads are promotable at all (build_parts, at the LEDs):
+    a lead with the part's own body over it is not a joint a human can make,
+    so the layer change is bought with a wire via instead.
 
 Laws in force (SPEC process table, R2 surface-3 thresholds): clearance 0.4,
 annular ring 0.7, drill 1.0, track 0.5 min / 0.6 signal / 0.8 rails.
@@ -230,7 +233,19 @@ C1_XY = (VCC_DESCENT_X - 1.0375, 9.0)
 # (inner edge at LEAD_R_IN - RING_LED/2 = 14.33) by >= CLEAR.  Both numbers grew
 # by the same 4.00 mm as LEAD_R_IN, so the outer annulus is unchanged (0.63) and
 # all 4.00 mm of new room lands in the INTERIOR, where U1 is.
-RES_OUTER, RES_OUTER_1206 = 13.7, 13.5
+# RUNG 2, 2026-08-02: both radii pushed to the CEILING the cathode ring allows.
+# The bound is stated two comments above — a land's outer edge must stop
+# CLEAR (0.40) short of the cathode ring's inner edge at 14.33, i.e. 13.93 —
+# and the old 13.7/13.5 left 0.23 and 0.43 mm of that slack unspent.  13.93
+# itself is NOT usable, and that is this file's oldest lesson repeating: at
+# 13.93 the land edge sits at exactly 0.400 from the cathode ring, ties the
+# law, and pcb-rnd convicts the UNROUTED board 12 times.  13.91 leaves
+# COPPER_CLEAR (0.42) and reads clean.  Spending
+# it moves every resistor outward, which is the only way to widen the INTERIOR
+# annulus: the 1206 inner lands go from radius 9.10 to 9.53, and that annulus
+# is the escape space U1's west pins (U1-1 RESET, U1-2 L3) have to reach open
+# copper through now that the LED anodes are no longer layer bridges.
+RES_OUTER, RES_OUTER_1206 = 13.91, 13.91
 
 # DERIVED from the edges, not hard-coded: these four bores belong to the corners
 # of the outline, so when the outline grows they move WITH it (2026-08-01).
@@ -413,8 +428,11 @@ class Pin:
       ("tht", hole, ring) through hole.  The TERMINAL owns the BACK ring only;
                           the front ring is emitted separately as a dead island.
     `dual` marks the dual-solder-CAPABLE class: leads the bench can reach on
-    both faces (LED leads, wire pads).  Capable is not declared — at R4a every
-    pin is undeclared and `promoted` is empty; R4b promotes what it uses.
+    both faces.  Since the operator ruling of 2026-08-01 that class is the two
+    bare WIRE PADS (PAD1, PAD2) and nothing else — see build_parts for the
+    ruling verbatim.  A part with a body over its own lead (an LED flange, a
+    buzzer can, a switch housing) is NOT in it, because "capable" means an iron
+    tip can reach the front ring with the part seated normally.
     """
     __slots__ = ("ref", "term", "x", "y", "shape", "dual", "net", "prot")
 
@@ -523,7 +541,43 @@ def build_parts() -> list[Part]:
         ang = pos_angle(pos)
         kx, ky = polar(RING_CX, RING_CY, ang, LEAD_R_IN)
         ax, ay = polar(RING_CX, RING_CY, ang, LEAD_R_OUT)
-        add(tht(f"LED{led}", [("1", kx, ky), ("2", ax, ay)], dual=True))
+        # OPERATOR RULING (Bill, 2026-08-01), recorded verbatim:
+        #
+        #   "seating an LED 1.5mm proud for an under-flange front joint is
+        #    EXTREMELY annoying by hand — ten promoted LED anodes is
+        #    unacceptable. A bare wire via (open access, both faces) is
+        #    jumper-class and fine. Therefore: LED leads may no longer be
+        #    layer bridges."
+        #
+        # So an LED lead is an ordinary back-only through terminal now: every
+        # LED seats FLUSH and is soldered on the BACK alone, and the layer
+        # changes the ten anode joints used to carry are bought with wire vias,
+        # which the operator ruled are jumper-class and unbudgeted.
+        #
+        # HOW the dead front ring is shown to the router is the whole story,
+        # and it was MEASURED the expensive way first.  Dropping `dual` alone
+        # makes emit_dsn fence each of the 24 rings with a KEEPOUT, like it
+        # does for SW1/BZ1/S1/S2 — and that board cannot be routed at all:
+        # FreeRouting 2.2.4 reports 23 unrouted at pass #1 (against 8 for the
+        # whole board before) and WEDGES inside pass #3, writing no session
+        # ever.  Three runs: unbounded 60 min (killed by our own subprocess
+        # timeout), MAX_PASSES=5 (7 min), JOB_TIMEOUT=00:02:00 (5.5 min — that
+        # timeout is only honoured BETWEEN passes, so it never fires).  Before:
+        # 20.10 seconds and a session.  This file's "interior keepouts are
+        # POISON to this router" law at its strongest: those ten promotions
+        # WERE the router's way across the ring, and 24 keepouts where they
+        # used to be leaves it nothing but a fence.
+        #
+        # The ruling that unblocked it (operator, 2026-08-01): the wedge is the
+        # KEEPOUTS, not the copper.  So an LED's dead front ring goes into the
+        # DSN as VISIBLE COPPER — a protected wire on its own single-member
+        # `__dead_<pid>` pseudo-net (see emit_dsn) — which FreeRouting treats
+        # as an ordinary foreign-copper clearance obstacle and not as topology.
+        # The router gets the ring area back as routable space minus 24 round
+        # obstacles, and pays for its crossings in wire vias, which is the
+        # intended outcome.  The 13 keepouts that predate the wedge (SW1, BZ1,
+        # S1, S2) are UNCHANGED — they never caused it.
+        add(tht(f"LED{led}", [("1", kx, ky), ("2", ax, ay)]))
 
     # --- 12 series resistors, RADIAL around U1 ------------------------------
     # Tangential 1206s were MEASURED to wall off 8 of the 12 crossing gaps and
@@ -561,6 +615,24 @@ def build_parts() -> list[Part]:
     # RES_OUTER_1206) walked their inner lands to within 0.369 of C2 — caught
     # by the independent clearance scan, NOT by pcb-rnd.  C2 moves toward U1
     # instead, which also shortens the VCC link it exists to make short.
+    # C2 STAYS at the ring centre line, and the alternative was MEASURED and
+    # rejected on 2026-08-02.  The case for moving it was strong: with the LED
+    # anodes no longer layer bridges, U1-1 (RESET) has exactly one back escape,
+    # a 3.00 mm CUL-DE-SAC at bearing 65, and no wire via could be threaded
+    # into it because C2's pin-2 land sat 1.77 mm away where a via a human can
+    # solder needs 2.72 (SPEC "Via geometry": 1.5 mm of body clearance plus the
+    # ring).  Sweeping C2 over its whole legal neighbourhood — every position
+    # keeping the SPEC decoupling link and passing the clearance scan — the
+    # cul-de-sac opens at dx >= +2.50: a via at 3.00 mm from U1-1 with 2.509 mm
+    # of clearance, against 1.77 blocked before, and it shortened the SPEC
+    # decoupling link from 2.96 to 1.51 mm into the bargain.
+    # It still loses, because the ROUTER is the scarcer resource: with C2 at
+    # +2.75 FreeRouting wedges in pass #4 instead of #9 and the last completed
+    # pass leaves 19 connections open, against 8 with C2 where it is.  Trading
+    # 8 stragglers for 19 to unblock one pin is not a trade.  The wedge point
+    # moves with ANY change to this board — that is the standing hazard here,
+    # and it is why every geometry move is measured against the router and not
+    # just against the clearance law.
     add(smd("C2", "C0805", RING_CX, RING_CY + 3.4, 180.0))
     # R13 + C4 sit OUTSIDE the ring near its rim, reachable from U1.1 through
     # the gap between two LED sectors.  Both slid LEFT along the strip when the
@@ -605,6 +677,25 @@ def build_parts() -> list[Part]:
     # legal wire-via positions within 5 mm of Q2-3 — a cell so dense that
     # neither the router nor a hand route could finish it.  At (49, 34) it is
     # 0.97 mm clear of the reserved L2 lane and the cell breathes.
+    # C3 moved to (51.5, 27.5) on 2026-08-02, and this part is the DESIGNATED
+    # one to move: it decouples the buzzer rail and may sit anywhere on it, so
+    # it yields when the cell gets tight — which is exactly what happened.  At
+    # (49, 34) the router walled its VCC land in completely: C3-1 came out as a
+    # one-land island and neither the closer nor its path search could reach it
+    # (measured: NO LEGAL PATH on either face).  Sweeping every position that
+    # keeps the clearance scan clean, stays out of the two reserved button
+    # lanes, and does not put C3's body on top of D1 or Q2 — a collision the
+    # clearance scan CANNOT see, because it skips same-net pairs and would
+    # happily overlap C3-1 onto D1-2 — the new seat puts C3-1 1.56 mm from the
+    # nearest VCC terminal instead of 8, a hop the router closes on its own.
+    # C3 STAYS at (49, 34).  Two alternatives were measured on 2026-08-02 and
+    # both lose: at (51.5, 27.5) — the roomiest seat in a full sweep — the
+    # router wedges in pass #2 with 20 unrouted; and seating it so its VCC land
+    # MERGES with D1-2's (the C1 trick, connection by construction, no routing
+    # demand at all) lets the router finish but costs three other connections
+    # where it was buying one.  The wedge point and the residue both move with
+    # any change to this cell, so the part that "yields" only helps if the
+    # router agrees, and here it does not.
     add(smd("C3", "C0603", 49.0, 34.0, 0.0))
     add(smd("R15", "R1206", *R15_XY, 90.0))
     add(smd("R16", "R0603", *R16_XY, 90.0))
@@ -1380,6 +1471,199 @@ def is_thru(pin: Pin) -> bool:
     return pin.dual or pin.pid == FANTASY_PIN
 
 
+def dead_net(pid: str) -> str:
+    """The private pseudo-net of one dead front ring.
+
+    SINGLE-MEMBER by design: one net, one piece of copper, no pins.  A shared
+    pseudo-net would tell the router that 24 scattered discs are one node and
+    invite it to go and connect them; a net with nothing to connect is inert.
+    """
+    return "__dead_" + pid.replace("-", "_")
+
+
+def shows_dead_copper(part: Part) -> bool:
+    """Which parts' dead front rings are shown to the router as COPPER rather
+    than fenced off with a keepout.
+
+    The LED ring only, and the distinction is empirical, not aesthetic: the
+    keepout encoding is what wedges FreeRouting (see build_parts), and it
+    wedges because the 24 LED rings sit across the router's only crossing of
+    the ring.  The other 13 keepouts predate the wedge and never caused it, so
+    they are left exactly as they are — this changes ONE thing at a time.
+    """
+    return part.ref.startswith("LED")
+
+
+# The crossings the forbidden anode bridges used to carry, PRE-SEEDED into the
+# DSN as wire vias the router INHERITS instead of having to invent.
+#
+# Measured necessity (see build_parts): with the bridges simply removed, the
+# router reports 23 unrouted at pass #1 against 8 before, and wedges — under
+# either encoding of the dead rings, and with vias made cheap.  The +15 are the
+# ring crossings, and FreeRouting will not buy them with vias of its own.  So
+# the board buys them, which is exactly the trade the operator ruled for: "a
+# bare wire via (open access, both faces) is jumper-class and fine."
+#
+# The LIST is the old promoted set, unchanged, because the crossing DEMAND has
+# not moved — these are the ten places the routed front copper actually reached
+# the back through an anode.  LED2-2 and LED3-2 are absent for the same reason
+# they were never promoted: nothing crossed there.
+SEEDED_BRIDGES = ("LED1-2", "LED4-2", "LED5-2", "LED6-2", "LED7-2",
+                  "LED8-2", "LED9-2", "LED10-2", "LED11-2", "LED12-2")
+# The seed sits on the anode pitch circle, offset along it from its own anode.
+# At LEAD_R_OUT two rings 15 deg apart are 2*18.45*sin(7.5) = 4.82 mm centre to
+# centre — 2.38 mm of copper gap against both neighbouring leads, where the law
+# needs 0.40 — and the geometry admits any offset in 8.83..21.17 deg on either
+# side.  Which one is a MEASUREMENT, not the midpoint: the ring is not alone on
+# this board, and the first version of this code took a flat +15 deg and put
+# LED1's seed 0.109 mm from the VCC rail as it leaves Q1.  The window is swept
+# and the roomiest offset wins.
+SEED_WINDOW = [round(s * (9.0 + 0.5 * k), 2)
+               for k in range(25) for s in (1, -1)]
+
+# A SECOND class of seed, MEASURED AND REJECTED — kept as the record of why
+# the three stragglers below are not closed this way.  Adding an escape seed
+# re-wedges FreeRouting: all three (13 seeds) hangs, and so does the single
+# non-interior one (11 seeds, TP1-1, 5 min, no session).  The pass-8 bound is
+# tuned to the ten-seed DSN — it is the last pass that COMPLETES on that board,
+# and the wedge point moves when the board does.  Set this back to a non-empty
+# tuple only with a router that does not wedge.
+#
+# The reasoning that motivated it still stands and is the record of the
+# residue.  With
+# the ten anode crossings inherited, FreeRouting converges (11.4 s, 8 unrouted,
+# the same figure the bridged board finished with) but three connections stay
+# open that no closer can finish: U1-1 (RESET), U1-2 (L3) and TP1-1 (L1).
+# probe_lane measured why — U1-1's only back escape is a 3.00 mm CUL-DE-SAC at
+# bearing 65 (corridor 0.334), and no wire via fits inside it because C2's land
+# is 1.77 mm away where a threadable via needs 2.72.  A pin that cannot reach
+# open copper and cannot change layer is not a routing problem, it is a
+# geometry problem, and the closer works on a FROZEN board.  The router does
+# not: give it a layer change within reach and it can rip up its own work to
+# get there.  So these three get a seed as well, placed by the same measured
+# search — nearest legal position wins, because a short hop is the whole point.
+SEEDED_ESCAPES = ()
+SEED_ESCAPE_R = [round(3.0 + 0.25 * k, 2) for k in range(21)]
+VIA_BODY_SMD, VIA_BODY_THT = 1.5, 2.0     # SPEC "Via geometry": iron access
+LED_POS = {led: pos for pos, led in POS_LED.items()}
+_SEED_CACHE: dict = {}
+
+
+def seed_clearance(x: float, y: float, net: str, objs: list) -> float:
+    """Tightest gap a wire via at (x, y) on *net* would hold: copper on either
+    face, the M3 keep-outs, and the board edge."""
+    worst = min((shape_gap(([(x, y)], RING_VIA / 2), (pts, rad))
+                 for n2, _lay, pts, rad in objs
+                 if n2 is not None and n2 != net), default=99.0)
+    for mx, my in MOUNTS.values():
+        worst = min(worst,
+                    math.hypot(mx - x, my - y) - MOUNT_KEEPOUT_R - RING_VIA / 2)
+    edge = rounded_rect(EDGE_CLEAR)
+    worst = min(worst, min(pt_seg(x, y, a[0], a[1], b[0], b[1])
+                           for a, b in zip(edge, edge[1:] + edge[:1]))
+                - RING_VIA / 2)
+    return worst
+
+
+def seeded_vias(parts: list[Part]) -> list[tuple]:
+    """(pid, x, y, net) — one inherited wire via per forbidden anode bridge.
+
+    Empty when the LEDs are dual-solder-capable, so this whole mechanism
+    switches itself off if the 2026-08-01 ruling is ever reverted: a seeded
+    crossing beside a lead that is ITSELF a layer bridge would be a second way
+    over the same fence, and the bench would drill it for nothing.
+
+    Deterministic: a fixed candidate sequence, scored by measured clearance,
+    tie-broken by the smallest offset and then by sign.
+    """
+    by_pid = {p.pid: p for part in parts for p in part.pins}
+    key = tuple((pid, by_pid[pid].net, by_pid[pid].dual)
+                for pid in SEEDED_BRIDGES)
+    if key in _SEED_CACHE:
+        return _SEED_CACHE[key]
+    objs = copper_objects(parts)
+    out = []
+    for pid in SEEDED_BRIDGES:
+        pin = by_pid[pid]
+        if pin.dual:
+            continue
+        base = pos_angle(LED_POS[int(pin.ref[3:])])
+        best = None
+        for off in SEED_WINDOW:
+            x, y = polar(RING_CX, RING_CY, base + off, LEAD_R_OUT)
+            x, y = q(x), q(y)
+            g = seed_clearance(x, y, pin.net, objs)
+            rank = (-round(min(g, COPPER_CLEAR), 3), abs(off), -off)
+            if best is None or rank < best[0]:
+                best = (rank, x, y, g)
+        if best is None or best[3] < CLEAR:
+            raise SystemExit(
+                f"refusing to emit: no legal pre-seeded crossing for {pid} "
+                f"anywhere on its anode circle (best "
+                f"{-1 if best is None else best[3]:.3f} mm, law {CLEAR})")
+        out.append((pid, best[1], best[2], pin.net))
+        # the seed is copper the NEXT seed has to clear, too
+        objs = objs + [(pin.net, "top", [(best[1], best[2])], RING_VIA / 2),
+                       (pin.net, "bottom", [(best[1], best[2])], RING_VIA / 2)]
+    bodies = [(p.x, p.y, VIA_BODY_SMD if p.kind == "rect" else VIA_BODY_THT)
+              for part in parts for p in part.pins]
+    for pid in SEEDED_ESCAPES:
+        pin = by_pid[pid]
+        if pin.dual:
+            continue
+        best = None
+        for rad in SEED_ESCAPE_R:
+            for deg in range(0, 360, 5):
+                x, y = polar(pin.x, pin.y, float(deg), rad)
+                x, y = q(x), q(y)
+                if not (3.0 < x < BOARD_W - 3.0 and 3.0 < y < BOARD_H - 3.0):
+                    continue
+                if any(math.hypot(bx - x, by - y) < keep + RING_VIA / 2
+                       for bx, by, keep in bodies):
+                    continue          # no iron could reach it
+                g = seed_clearance(x, y, pin.net, objs)
+                if g < COPPER_CLEAR:
+                    continue
+                rank = (rad, -round(g, 3), deg)
+                if best is None or rank < best[0]:
+                    best = (rank, x, y, g)
+            if best is not None:
+                break                 # nearest legal ring wins: a SHORT hop
+        if best is None:
+            raise SystemExit(
+                f"refusing to emit: no legal escape crossing for {pid} within "
+                f"{SEED_ESCAPE_R[-1]} mm — that pin cannot be reached at all")
+        out.append((pid, best[1], best[2], pin.net))
+        objs = objs + [(pin.net, "top", [(best[1], best[2])], RING_VIA / 2),
+                       (pin.net, "bottom", [(best[1], best[2])], RING_VIA / 2)]
+    _SEED_CACHE[key] = out
+    return out
+
+
+def assert_seeded_vias_legal(parts: list[Part]) -> float:
+    """-> the tightest gap any seed holds.  Refuses to emit an illegal one.
+
+    A seed is a hole a human drills and threads, so it is checked like any
+    other copper BEFORE it reaches the router — the alternative is discovering
+    at the gate that the board asked the bench for an impossible joint.
+    """
+    objs = copper_objects(parts)
+    seeds = seeded_vias(parts)
+    worst, who = 99.0, None
+    for i, (pid, x, y, net) in enumerate(seeds):
+        extra = [(n, lay, [(sx, sy)], RING_VIA / 2)
+                 for j, (_p, sx, sy, n) in enumerate(seeds) if j != i
+                 for lay in ("top", "bottom")]
+        g = seed_clearance(x, y, net, objs + extra)
+        if g < worst:
+            worst, who = g, pid
+    if worst < CLEAR:
+        raise SystemExit(
+            f"refusing to emit: pre-seeded crossing for {who} is "
+            f"{worst:.3f} mm from other copper, law {CLEAR}")
+    return worst
+
+
 def ps_name(pin: Pin) -> str:
     if pin.kind == "rect":
         return (f"PS_SMD_{pin.shape[1]:.3f}x{pin.shape[2]:.3f}"
@@ -1421,12 +1705,16 @@ def emit_dsn(parts: list[Part], nets: dict) -> str:
     # crosses.  Connectivity then comes from metal we can point at, and the
     # pour is what it honestly is on a milled board: a conductor where it
     # survives, and shielding where it does not.
+    dead = []            # (pid, x, y, dia) — rings shown as COPPER, not fence
     for part in parts:
         for p in part.pins:
             if p.kind == "tht" and not is_thru(p):
                 x, y = dsn_xy(p.x, p.y)
-                out.append(f'    (keepout "" (circle {FCU} '
-                           f"{dsn_len(p.shape[2])} {x} {y}))")
+                if shows_dead_copper(part):
+                    dead.append((p.pid, x, y, dsn_len(p.shape[2])))
+                else:
+                    out.append(f'    (keepout "" (circle {FCU} '
+                               f"{dsn_len(p.shape[2])} {x} {y}))")
     for gx, gy in GAUGES.values():                 # dead islands, both faces
         x, y = dsn_xy(gx, gy)
         for lay in (FCU, BCU):
@@ -1510,15 +1798,42 @@ def emit_dsn(parts: list[Part], nets: dict) -> str:
         out.append(f"    (net {name}")
         out.append("      (pins " + " ".join(sorted(nets[name])) + ")")
         out.append("    )")
+    # The dead rings' pseudo-nets are DECLARED, with no pins, so the class
+    # below can carry a via rule for them: FreeRouting 2.2.4 throws a
+    # NullPointerException in AutorouteControl.init_net for any net without
+    # one, and a net it learned about only from a wire is still a net.
+    for pid, _x, _y, _d in dead:
+        out.append(f"    (net {dead_net(pid)}")
+        out.append("      (pins )")
+        out.append("    )")
     out.append("    (class signal "
-               + " ".join(n for n in sorted(nets)
-                          if n not in DSN_OMIT_NETS))
+               + " ".join([n for n in sorted(nets)
+                           if n not in DSN_OMIT_NETS]
+                          + [dead_net(pid) for pid, _x, _y, _d in dead]))
     out.append(f"      (circuit (use_via {VIA_NAME}))")
     out.append(f"      (rule (width {dsn_len(ROUTE_TRACK)}) "
                f"(clearance {dsn_len(ROUTE_CLEAR)}))")
     out += ["    )", "  )"]
 
     out.append("  (wiring")
+    # Each dead front ring, as a disc of foreign copper the router must clear.
+    # The path is two points 0.2 um apart rather than one point repeated: a
+    # zero-length wire is a degenerate object to hand a parser, and at this
+    # length the swept shape is the Ø{ring} disc to well under the 0.1 um
+    # resolution the file is written in.
+    for pid, x, y, d in dead:
+        out.append(f"    (wire (path {FCU} {d} {x - 1} {y} {x + 1} {y}) "
+                   f"(net {dead_net(pid)}) (type protect))")
+    # The inherited crossings.  PROTECTED so the router connects to them
+    # instead of ripping them out and re-wedging; a single via POINT is not the
+    # long-protected-wire poison this file records elsewhere — the VBAT
+    # corridor is a protected run and routes fine, what breaks the router is
+    # protected copper lying ACROSS its corridors.
+    assert_seeded_vias_legal(parts)
+    for pid, x, y, net in seeded_vias(parts):
+        vx, vy = dsn_xy(x, y)
+        out.append(f"    (via {VIA_NAME} {vx} {vy} (net {net}) "
+                   f"(type protect))")
     for layer, net, width, pts in fixed_tracks():
         lay = FCU if layer == "top" else BCU
         for a, b in zip(pts, pts[1:]):
@@ -1745,6 +2060,7 @@ def copper_objects(parts: list[Part], route: dict | None = None) -> list[tuple]:
     rather than by measurement."""
     out = []
     anon = 0
+    promoted = set((route or {}).get("promoted", ()))
     for part in parts:
         for p in part.pins:
             # A NO-CONNECT terminal is copper too, and it gets a private
@@ -1768,10 +2084,23 @@ def copper_objects(parts: list[Part], route: dict | None = None) -> list[tuple]:
             else:
                 r = p.shape[2] / 2
                 out.append((net, "bottom", [(p.x, p.y)], r))
-                # the dead FRONT ring is checked at its pin's net: it is the
-                # net that copper becomes the moment a human solders the lead,
-                # which is exactly what R4b may promote it to do
-                out.append((net, "top", [(p.x, p.y)], r))
+                # The FRONT ring is that pin's net only if the bench is
+                # actually going to solder it — i.e. if the lead is PROMOTED.
+                # Otherwise it is a dead island belonging to no net (the R3
+                # finding), and it gets the same private pseudo-net treatment
+                # as a no-connect terminal so every other net must clear it.
+                #
+                # It used to be checked at the pin's net unconditionally, on
+                # the argument that this is "the net that copper becomes the
+                # moment a human solders the lead".  The 2026-08-01 ruling
+                # retires that argument for the LEDs: nobody will ever solder
+                # those rings, so a same-net trace laid across one is not a
+                # future connection, it is a trace grazing a floating island
+                # that an unsoldered lead passes through.  This is also what
+                # makes the scan agree with the DSN, where the same ring is
+                # now foreign copper on __dead_<pid>.
+                out.append((net if p.pid in promoted else f"__dead_{p.pid}",
+                            "top", [(p.x, p.y)], r))
     for gx, gy in GAUGES.values():
         for layer in ("top", "bottom"):
             anon += 1

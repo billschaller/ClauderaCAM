@@ -66,6 +66,42 @@ JAVA = os.path.expanduser(
 JAR = os.path.expanduser(
     "~/.clauderacam/tools/freerouting/freerouting-2.2.4.jar")
 
+# FreeRouting must be BOUNDED on this board, and the bound is MEASURED, not a
+# precaution.  Once the LED anodes stopped being layer bridges (2026-08-01
+# ruling) the router improves monotonically for eight passes — 19 unrouted at
+# #1, 18, 12, 13, 9, 13, 8, and 8 at #8, which is the same figure the bridged
+# board finished with — and then WEDGES in pass #9 and never returns.  Left
+# unbounded it burns an hour and writes nothing at all (our own subprocess
+# timeout is what killed it), and because -do only writes on completion, a
+# wedged run costs the whole session.
+#
+# Everything else was tried first and none of it helps: the dead rings as
+# keepouts vs. as visible copper (23 unrouted either way, wedge in pass #2-3),
+# cheap vias and cheap ripup, the router's own JOB_TIMEOUT (only honoured
+# BETWEEN passes, so it never fires inside the wedge), disabling the route
+# optimizer, and -oit.  Only stopping at the last good pass returns a session.
+#
+# ...and then the wedge went away, so the bound is OFF (0 = no limit).  Pushing
+# the ring resistors out to the ceiling the cathode ring allows (RES_OUTER,
+# 2026-08-02) widened the interior annulus by 0.23-0.43 mm, and on that board
+# FreeRouting runs to its OWN stopping rule in 19 passes and 5 unrouted — it
+# never wedges at all.  The bound is kept as a named constant, not deleted,
+# because the wedge is a property of the geometry and the next change to this
+# board can bring it back: set it to the last pass that COMPLETES (probe with
+# one unbounded run and count them) and the router returns a session again.
+#
+# The subprocess timeout below is the other half of that lesson.  It used to
+# be an hour, which is how a wedged run cost a full hour AND the session file
+# (-do only writes on completion, so a killed run leaves nothing).  Five
+# minutes is far past this board's 25 s and fails loudly instead.
+ROUTER_MAX_PASSES = "0"        # 0 = no limit (FreeRouting's own encoding)
+
+
+def router_env() -> dict:
+    env = dict(os.environ)
+    env["FREEROUTING__ROUTER__MAX_PASSES"] = ROUTER_MAX_PASSES
+    return env
+
 DSN = TB.OUT_DSN
 FINAL_LHT = TB.OUT_LHT
 UNROUTED_LHT = os.path.join(HERE, "orbit-unrouted.lht")
@@ -112,7 +148,7 @@ def route(force: bool = False) -> tuple[dict, bool]:
     r = subprocess.run(
         [JAVA, "-Djava.awt.headless=true", "-jar", JAR,
          "-de", DSN, "-do", SES, "-mt", "1"],
-        capture_output=True, text=True, timeout=3600)
+        capture_output=True, text=True, timeout=300, env=router_env())
     log = r.stdout + r.stderr
     with open(RLOG, "w", encoding="utf-8") as fh:
         fh.write(log)
@@ -127,7 +163,8 @@ def route(force: bool = False) -> tuple[dict, bool]:
         "connections": int(m.group(1)) if m else -1,
         "router_unrouted": int(n.group(1)) if n else -1,
         "router_open_pairs": ["%s -> %s" % p for p in open_pairs],
-        "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses",
+        "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses"
+                       " FREEROUTING__ROUTER__MAX_PASSES=" + ROUTER_MAX_PASSES,
     }
     with open(SEAL, "w", encoding="utf-8") as fh:
         json.dump(seal, fh, indent=1, sort_keys=True)
@@ -515,6 +552,16 @@ def merge(parts: list, ses_path: str) -> dict:
 
     fixed, tracks, echoed = fixed_keys(), [], 0
     for lay, x1, y1, x2, y2, w, net in raw_tracks:
+        # The dead front rings were handed to the router as protected wires on
+        # private pseudo-nets (tools-board.dead_net), so it echoes them back
+        # like any other protected wire.  They are ALREADY on the board as
+        # dead-island copper — dead_front_rings() emits every one of them — so
+        # taking them from the session too would stack a second disc of copper
+        # on the same spot and hand DRC a self-overlap.  Same reasoning as the
+        # `fixed` filter below, different origin.
+        if net.startswith("__dead_"):
+            echoed += 1
+            continue
         t = (LAYER[lay], TB.q(x1), TB.q(y1), TB.q(x2), TB.q(y2), round(w, 3))
         a, b = (t[1], t[2]), (t[3], t[4])
         if a == b:
@@ -541,6 +588,18 @@ def merge(parts: list, ses_path: str) -> dict:
             hits[pid] = n
     promoted = {pid for pid in hits if by_pid[pid].dual} | MANDATORY
     fantasy = sorted(pid for pid in hits if not by_pid[pid].dual)
+    # The 2026-08-01 class boundary, checked rather than assumed.  It is
+    # already true by construction — the LEDs carry dual=False, so they can
+    # neither reach `promoted` nor own a hplated=1 prototype to be emitted on —
+    # and that is exactly why it is worth the line: the failure mode is a
+    # future edit quietly handing the class back, and the symptom would be an
+    # assembly card asking the bench for ten joints under an LED flange.
+    bad = sorted(p for p in promoted if p.startswith("LED"))
+    if bad:
+        raise SystemExit(
+            f"refusing to emit: {bad} promoted to a front-face joint — the "
+            f"operator ruled on 2026-08-01 that LED leads may not be layer "
+            f"bridges (a via is jumper-class; an under-flange joint is not)")
 
     # ... and now the copper that finishes what the router left open.  AFTER
     # promotion, deliberately: a closing track may not conjure a dual-solder
@@ -588,7 +647,8 @@ def build_routed(force_route: bool = False) -> dict:
     # went on deleting a via that the NEW closures had come to depend on, and
     # pcb-rnd reported GND in two pieces on a board whose seal looked current.
     mkey = hashlib.sha256(json.dumps(
-        {"tracks": m["tracks"], "vias": m["vias"], "promoted": m["promoted"]},
+        {"tracks": m["tracks"], "vias": m["vias"], "promoted": m["promoted"],
+         "prune_policy": 2},
         sort_keys=True).encode()).hexdigest()
     if seal.get("pruned_for") != mkey:
         seal["redundant_vias"] = [list(v) for v in prune_vias(b, m)]
@@ -658,9 +718,21 @@ def via_ledger(m: dict, parts: list | None = None) -> list[str]:
     here is a bench instruction, not a statistic."""
     pins = [(p.pid, p.net) + TB.lht_xy(p.x, p.y)
             for part in (parts or ()) for p in part.pins]
+    # The pre-seeded crossings are named as their own class, because they are
+    # not the router's arithmetic — each one is the operator's ruling in
+    # copper, standing exactly where an under-flange anode joint used to.
+    seeds = {(TB.q(sx), TB.q(TB.BOARD_H - sy)): pid
+             for pid, sx, sy, _n in TB.seeded_vias(parts or ())}
     rows = []
     for i, (x, y, net) in enumerate(sorted(m["vias"],
                                            key=lambda v: (v[2], v[0]))):
+        seed = seeds.get((TB.q(x), TB.q(y)))
+        if seed:
+            rows.append(f"V{i + 1:<2d} ({x:6.3f}, {y:6.3f})  {net:6s}  "
+                        f"pre-seeded crossing for {net} beside "
+                        f"{seed.split('-')[0]} (replaces the forbidden anode "
+                        f"bridge)")
+            continue
         same = sorted((round(math.hypot(px - x, py - y), 2), pid)
                       for pid, pnet, px, py in pins if pnet == net)
         where = f"nearest {net} terminal {same[0][1]} at {same[0][0]} mm" \
@@ -685,8 +757,27 @@ def prune_vias(b: dict, m: dict) -> list:
                  out_lht=probe)
         return galvanic(probe)[0]
 
+    # A via that JOINS this net's copper on BOTH faces is never a candidate,
+    # whatever the rat count says.  MEASURED 2026-08-02: the VCC via at
+    # (25.707, 29.897) was the only conductor between a bottom track ending
+    # there and a top track starting there, and dropping it did not raise the
+    # rat count — because VCC stays connected by another path entirely — so the
+    # rat-count oracle called it redundant.  What it left behind was two traces
+    # meeting at a point on opposite faces with nothing between them, and
+    # pcb-rnd's OTHER check convicted it: "broken net: insufficient overlap".
+    # Connectivity is not the only thing a via does; it is also the metal that
+    # makes a layer change exist on the milled board.
+    joins = set()
+    for x, y, net in m["vias"]:
+        faces = {t[0] for t, n in zip(m["tracks"], m["track_nets"])
+                 if n == net and ((TB.q(t[1]), TB.q(t[2])) == (TB.q(x), TB.q(y))
+                                  or (TB.q(t[3]), TB.q(t[4])) == (TB.q(x), TB.q(y)))}
+        if len(faces) > 1:
+            joins.add((x, y, net))
     base, keep, drop = rats(m["vias"]), list(m["vias"]), []
     for v in list(m["vias"]):
+        if tuple(v) in joins:
+            continue
         trial = [x for x in keep if x != v]
         if rats(trial) <= base:
             keep, _ = trial, drop.append(v)
@@ -760,11 +851,16 @@ def write_matrix(b: dict) -> None:
           "as the back.  Each one is real copper the routed board depends on: "
           "there is no plating on a milled board, so an unsoldered lead here "
           "is an open circuit, not a cosmetic miss.", "",
-          "> **Seat every LED proud.** A lead can only be soldered on the "
-          "front if the LED body stands off the board far enough to get an "
-          "iron tip and solder onto the ring. Seat the bodies ~1.5 mm proud "
-          "(a scrap of 1.5 mm stock under each body works), solder the BACK "
-          "first, then the front rings listed here.", "",
+          "> **Seat every LED FLUSH and solder it on the BACK only.** No LED "
+          "lead is a layer bridge on this board. Operator ruling, 2026-08-01: "
+          "*\"seating an LED 1.5mm proud for an under-flange front joint is "
+          "EXTREMELY annoying by hand — ten promoted LED anodes is "
+          "unacceptable. A bare wire via (open access, both faces) is "
+          "jumper-class and fine. Therefore: LED leads may no longer be layer "
+          "bridges.\"* The ten front joints this board used to ask for are "
+          "PRE-SEEDED CROSSINGS in the via ledger above — same layer change, "
+          "made with a threaded wire in open board instead of an iron tip "
+          "under an LED flange.", "",
           "| lead | net | what the front joint carries |",
           "|:-----|:----|:-----------------------------|"]
     for pid in sorted(prom):
@@ -789,17 +885,26 @@ def write_matrix(b: dict) -> None:
         fh.write("\n".join(L) + "\n")
 
 
-# The pin the negative control lies about.  BZ1-1 is a THT lead the bench can
-# only reach on the BACK — the buzzer's body sits on the front, over it — so it
-# is exactly the kind of hole a careless model would call "through".
-FANTASY = "BZ1-1"
-NEG_DSN = os.path.join(HERE, ".neg-route.dsn")
-NEG_SES = os.path.join(HERE, ".neg-route.ses")
-NEG_LHT = os.path.join(HERE, ".neg-route.lht")
-NEG_SEAL = os.path.join(HERE, ".neg-route.seal.json")
+# The pins the negative control lies about.
+#
+# BZ1-1 is a THT lead the bench can only reach on the BACK — the buzzer's body
+# sits on the front, over it — so it is exactly the kind of hole a careless
+# model would call "through".
+#
+# LED8-2 is the 2026-08-01 class boundary itself.  Until that ruling an LED
+# anode WAS promotable, and ten of them shipped as layer bridges; a control
+# that only ever lied about BZ1-1 would not notice the class quietly coming
+# back.  The boundary a project has just moved is the one worth a control.
+FANTASIES = ("BZ1-1", "LED8-2")
 
 
-def negative_control(b: dict, honest_rats: int) -> tuple:
+def neg_paths(pin: str) -> tuple:
+    tag = pin.replace("-", "_")
+    return tuple(os.path.join(HERE, f".neg-{tag}{ext}")
+                 for ext in (".dsn", ".ses", ".lht", ".seal.json"))
+
+
+def negative_control(b: dict, FANTASY: str) -> tuple:
     """R3's gate D: describe ONE unsolderable lead to the router as a through
     pin, let it use the bridge, then build the board the BENCH can actually
     make — which does not have it — and let pcb-rnd condemn the result.
@@ -808,6 +913,7 @@ def negative_control(b: dict, honest_rats: int) -> tuple:
     something: without it the board would ship claiming a connection that only
     exists in the DSN.
     """
+    NEG_DSN, NEG_SES, NEG_LHT, NEG_SEAL = neg_paths(FANTASY)
     keep = TB.FANTASY_PIN
     try:
         TB.FANTASY_PIN = FANTASY
@@ -822,12 +928,13 @@ def negative_control(b: dict, honest_rats: int) -> tuple:
     if not (seal.get("dsn_sha256") == digest(NEG_DSN) and os.path.exists(NEG_SES)):
         subprocess.run([JAVA, "-Djava.awt.headless=true", "-jar", JAR,
                         "-de", NEG_DSN, "-do", NEG_SES, "-mt", "1"],
-                       capture_output=True, text=True, timeout=3600)
+                       capture_output=True, text=True, timeout=300,
+                       env=router_env())
         with open(NEG_SEAL, "w", encoding="utf-8") as fh:
             json.dump({"dsn_sha256": digest(NEG_DSN)}, fh, indent=1)
     m2 = merge(b["parts"], NEG_SES)
-    # The board is emitted as PHYSICAL TRUTH: BZ1-1 keeps its back-only ring,
-    # because that is the hole the operator will actually hold.
+    # The board is emitted as PHYSICAL TRUTH: the lied-about lead keeps its
+    # back-only ring, because that is the hole the operator will actually hold.
     TB.build(route={"tracks": m2["tracks"], "track_nets": m2["track_nets"],
                     "vias": m2["vias"], "promoted": set(m2["promoted"])},
              out_lht=NEG_LHT)
@@ -894,17 +1001,20 @@ def gate(b: dict) -> int:
     chk("unplated program holds every remaining THT lead and bare bore",
         len(unplated), tht - len(m["promoted"]) + bores)
 
-    print("### D. NEGATIVE CONTROL — a fantasy bridge must NOT ship ###")
-    print(f"    the DSN is corrupted to call {FANTASY} an ordinary through "
-          f"pin; the bench can only reach that lead on the back.")
-    fant, nrats, ncomplete = negative_control(b, rats)
-    print(f"    merge names: {fant}")
-    print(f"    pcb-rnd on the corrupted board: {nrats} rat lines, "
-          f"complete={ncomplete}  (honest board: {rats}, {complete})")
-    chk("the merge names the fantasy bridge and refuses to promote it",
-        fant, [FANTASY])
-    chk("pcb-rnd independently condemns the board built on it",
-        (not ncomplete) and nrats > rats, True)
+    print("### D. NEGATIVE CONTROLS — a fantasy bridge must NOT ship ###")
+    named, condemned = [], []
+    for pin in FANTASIES:
+        print(f"    the DSN is corrupted to call {pin} an ordinary through "
+              f"pin; the bench cannot reach that lead on the front.")
+        fant, nrats, ncomplete = negative_control(b, pin)
+        print(f"      merge names: {fant} — pcb-rnd on that board: {nrats} "
+              f"rat lines, complete={ncomplete}  (honest: {rats}, {complete})")
+        named.append(fant)
+        condemned.append((not ncomplete) and nrats > rats)
+    chk("the merge names every fantasy bridge and refuses to promote it",
+        named, [[p] for p in FANTASIES])
+    chk("pcb-rnd independently condemns each board built on one",
+        condemned, [True] * len(FANTASIES))
 
     print("### E. VIA LEDGER ###")
     for row in via_ledger(m, parts):
