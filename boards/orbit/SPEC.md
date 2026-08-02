@@ -604,3 +604,47 @@ here with its consequence:
 13. **Flip gauges → Ø1.7 pad** (0.35 annulus declared at 0.3 — 0.05 of
     real margin; a gauge that fails its own check on a perfect flip
     gauges nothing).
+
+## As built (2026-08-02, commits ea809c2..34a0fbc — the record of deviations)
+
+The board that shipped differs from the layout notes above where the
+bench, the router, and the operator's rulings overrode the draft.
+MATRIX.md is the authoritative build record; this list is the SPEC's
+own honesty:
+
+- **Board 66.0 × 56.0** (drawn 56×48; grew twice under the density
+  doctrine). Mirror line x=33.0; pins (33,−8)/(33,64); blank 150×100
+  covers 66×72. Mounts at 4.75 insets; gauges at 8.5 insets.
+- **Ring** centre (24,30), pitch r=17 (drawn r=13); LED lead pitch
+  **3.08** (drawn 2.54 — ring 0.7 + clearance 0.4 makes ≥2.8 a hard
+  floor, found independently in both toolchains; legs splay ~0.27 mm
+  per side). Cathode INWARD; all 12 series resistors RADIAL (drawn
+  tangential — tangential 1206s wall off 8 of 12 crossing gaps).
+- **Ring→pair mapping**: full permutation of the draft table
+  (sanctioned by "the mapping is a LAYOUT degree of freedom");
+  MATRIX.md carries it and firmware/matrix.h transcribed it.
+- **PAD+/PAD− transposed** ("+" at (16,4)): the back-only VBAT
+  corridor needs the room. R13/C4 sit OUTSIDE the ring interior
+  (interior placements measurably starve the router). ISP grid at
+  (44,3); S1/S2 at (57.5, 18.4/41.6); numerals inside the ring.
+- **Vias: 23 wire vias + promoted PAD2-1 = the 24-hole plated drill
+  program == the bench stitch list.** The draft's budget 6 stands as
+  a planning number only; the ceiling was repealed (operator,
+  2026-08-01: a via ≈ a jumper wire). **Zero bench jumpers** — two
+  were declared at 64×54 and DELETED by the 66×56 growth.
+- **No THT lead under a body is a layer bridge** (operator,
+  2026-08-01): LEDs seat FLUSH, back-solder only; the dual-solder
+  list is PAD2-1 alone. The "seat LEDs proud" idea is dead.
+- **Silk**: 49/52 ref labels; TP3/TP5/TP6 dropped where the
+  functional SCK/RST/GND legend supersedes them (each drop reasoned
+  in MATRIX.md); crowding audit 438 seats, zero flags.
+- **Cutout tabs**: gaps = "2lr" (left/right edges) — the bottom-edge
+  rail is legal copper no bottom tab can coexist with; the grammar
+  grew placement styles + silent-sever refusals for this.
+- **Scrub arithmetic**: hole-centred pads are hole + 1.50 (Ø2.50 on
+  Ø1.0) — the Δ-row's "Ø2.4 leaves one legal lap" omitted the
+  generator's lap margins.
+- **Authoring**: the board is pcb-rnd-native (unplated holes are
+  REAL in its connectivity; hplated=1 is the stitch declaration).
+  The KiCad layout pipeline is retired (atticked in git history);
+  the KiCad schematic remains canonical.

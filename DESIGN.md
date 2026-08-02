@@ -2267,3 +2267,48 @@ from **17.1s to 3.2s**.
   corn — the 0.3–1.2 drill set stays out of the crib until measured);
   panelization (the 3-up Tcl trick is documented in the zigbee README);
   MakeraCAM interop as the documented quick-path alternative.
+
+## 2026-08-02 (evening): orbit ships native — the migration arc, closed
+
+Board B "orbit" is DONE: 66×56, every net closed in copper, 180/180
+program checks, "PCB VERDICT (double-sided): PASS — both setups
+cleared", firmware transcribed and green. This entry closes the arc
+that began with a bench observation and ended with a new board-
+authoring substrate.
+
+**The arc.** The KiCad pipeline routed orbit to 14/15 — but only by
+modeling plated barrels our milled holes do not have; the operator
+caught the assumption and ruled: no more hacks. The investigation
+(R1–R3, session lab, rerunnable) proved pcb-rnd's `hplated` flag is
+real connectivity law — a ONE-CHARACTER flip on byte-identical copper
+turns a net complete→broken on two independent oracles — and the
+migration followed: one python data model (`boards/orbit/
+tools-board.py`), two honest serializations (`orbit.lht` physical
+truth with dead-island front rings; `orbit-route.dsn` routable truth
+where reachability IS which layers carry shapes), FreeRouting on the
+self-emitted DSN, sealed-session determinism, pcb-rnd's galvanic
+oracle as the closure judge. The plated Excellon program IS the bench
+stitch list (24 holes: 23 wire vias + PAD2-1, the front pour's only
+life). The KiCad-era layout is atticked in history and retired from
+the tree; the schematic (`orbit.kicad_sch` + `tools-schematic.py`)
+remains canonical — plating is a board concept.
+
+**Operator rulings that reshaped the board, all recorded in
+SPEC/MATRIX:** vias have no ceiling (a via ≈ a jumper); density is a
+cost not a virtue (the board grew 56×48 → 64×54 → 66×56, each growth
+measurably improving routability, silk, and finally DELETING both
+declared bench jumpers); no THT lead under a body may be a layer
+bridge (proud-LED soldering is the worst joint on the board — LEDs
+seat flush, back-solder only); silk is the congestion canary (the
+crowding audit: 438 seats, zero flags).
+
+**Laws this one board paid for** (each with its incident above or in
+the file that owns it): plating-as-declaration; dead front rings
+owned by no terminal; the Specctra (plane) trap; protected copper
+crossing routing space is convergence poison (points/vias are not);
+pre-seeded crossings as inherited router resources; POUR_HOLE_MARGIN
+and pour-keep-outs-inside-the-pour; the concentricity, spoke, and
+sliver-dwell proxy revisions; ink-size silk keep-outs; nested parens
+never reach a G-code comment; styled tab placement with the
+silent-sever refusals; the fantasy-control family (BZ1-1, LED8-2)
+proving the class boundaries bite on every build.
