@@ -66,6 +66,7 @@ import tempfile
 from pathlib import Path
 
 import numpy as np
+from scipy import ndimage
 
 from clauderacam import emit, twosided
 from clauderacam.engine import OpResult, path_length
@@ -1523,6 +1524,89 @@ if live:
     check(f"ALL {len(lreps)} live reports PASS — the flip generates, "
           f"re-emits and verifies end to end",
           all(lreps[n].ok for n in lreps), str(bad))
+
+# ================================ THE 2026-08-02 SPOKE INCIDENT, ON THE REAL
+# ARTWORK. Board B's own gerbers, READ-ONLY: the GND via the retired statistic
+# convicted at 0.0134 against a 0.4 bar on artwork whose relief is perfectly
+# healthy. The synthetic controls in pcb_checks_suite prove the SEMANTICS; this
+# one pins the incident itself, so the regression cannot come back quietly.
+ORBIT = REPO / "boards" / "orbit" / "orbit.toml"
+if ORBIT.is_file():
+    print("\nthe 2026-08-02 spoke incident, on Board B's real artwork:")
+    obj = pcbjob.load(ORBIT)
+    octx = flip.context(obj)
+    V1B = (16.342, 8.117)            # the GND via the old proxy convicted
+
+    def pad_label(maps, cx, cy, hd):
+        """The copper component of a hole-centred pad — the flood the check
+        itself does, replayed here so this control reads the same pad."""
+        lab, _ = ndimage.label(maps.layers["cu"])
+        h, w = maps.win.shape
+        r_ap = float(maps.dist("in_mask")[
+            int(round(maps.win.world_to_px(np.array([cx]),
+                                           np.array([cy]))[0][0] - 0.5)),
+            int(round(maps.win.world_to_px(np.array([cx]),
+                                           np.array([cy]))[1][0] - 0.5))])
+        rmid = (hd / 2 + r_ap) / 2
+        th = np.linspace(0, 6.28, 16)
+        i2, j2 = maps.win.world_to_px(cx + rmid * np.cos(th),
+                                      cy + rmid * np.sin(th))
+        ls = lab[np.clip((i2 - 0.5).round().astype(int), 0, h - 1),
+                 np.clip((j2 - 0.5).round().astype(int), 0, w - 1)]
+        ls = ls[ls > 0]
+        return lab, int(np.bincount(ls).argmax()), r_ap
+
+    def retired_ring_width(cu, win, cx, cy, r_ap):
+        """The statistic RETIRED on 2026-08-02: the thinnest copper run on
+        the ONE min-copper ring of the moat. It lives here and nowhere else,
+        so that what it does to this pad stays on the record."""
+        best = (1.1, r_ap + 0.06)
+        for r in np.arange(r_ap + 0.06, r_ap + 0.9, 0.02):
+            f = float(checks._ring_profile(cu, win, cx, cy, r).mean())
+            if f < best[0]:
+                best = (f, r)
+        rm = best[1]
+        prof = checks._ring_profile(cu, win, cx, cy, rm) > 0.5
+        if prof.all():
+            return 2 * np.pi * rm, rm, 1, 720
+        k = int(np.argmin(prof))
+        pp = np.concatenate(([False], np.roll(prof, -k),
+                             [False])).astype(int)
+        st = np.flatnonzero(np.diff(pp) == 1)
+        en = np.flatnonzero(np.diff(pp) == -1)
+        n = en - st
+        return (float(n.min()) * (2 * np.pi * rm / prof.size), rm,
+                len(n), int(n.min()))
+
+    bmaps = octx.maps("back")
+    olab, opl, orap = pad_label(bmaps, *V1B, 1.0)
+    edge, spokes = checks._moat_spokes(olab, opl, bmaps.win, *V1B, orap)
+    old_w, old_r, old_runs, old_n = retired_ring_width(
+        bmaps.layers["cu"], bmaps.win, *V1B, orap)
+    check("the RETIRED statistic still convicts V1 on ONE angular sample",
+          old_w < 0.05 and old_n == 1 and old_runs == 3,
+          f"{old_w:.4f} on ring r{old_r:.3f}: {old_runs} runs, the thinnest "
+          f"{old_n} of 720 samples — bar {checks.SPOKE_MIN}")
+    check("...and the SAME copper carries two spokes across the whole moat",
+          len(spokes) == 2 and min(spokes) >= checks.SPOKE_MIN - 0.03,
+          f"moat r{orap + checks.SPOKE_RIM_CLEAR:.3f}..{edge:.3f}, spanning "
+          f"spokes {[round(s, 4) for s in spokes]}")
+    for side in ("front", "back"):
+        sm = octx.maps(side)
+        ot = by_name(checks.thermal_checks(pcbjob.side_view(obj, side), sm))
+        check(f"Board B's {side} copper PASSES the spoke law",
+              ot["thermal spoke count"].ok and ot["thermal spoke width"].ok
+              and ot["thermal solid connect"].ok,
+              f"count {ot['thermal spoke count'].value:.0f} "
+              f"(>= {checks.SPOKE_COUNT_MIN}), width "
+              f"{ot['thermal spoke width'].value:.4f} "
+              f"(>= {checks.SPOKE_MIN}); "
+              f"{ot['thermal spoke width'].detail.split(';')[-1].strip()}")
+        sm.release()
+    bmaps.release()
+else:
+    print("\nSKIP: boards/orbit is not on this box — the real-artwork spoke "
+          "incident is not checkable here")
 
 print(f"\nPCB TWOSIDED {'FAIL: ' + ', '.join(fails) if fails else 'PASS'}")
 sys.exit(1 if fails else 0)

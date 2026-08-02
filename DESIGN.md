@@ -1834,7 +1834,10 @@ physically harmless and modeled with doglegs where nets differ.
 with a mask aperture whose flooded copper component IS the pour (≥25% of
 ink AND ≥50mm² — the twosided fixture taught that a bare pad on a tiny
 board can clear a fraction test) must cross its moat ring with ≥2 spokes
-≥0.40 delivered, never a solid annulus; `pad scrubbability` — every mask
+≥0.40 delivered, never a solid annulus. (The bars are unchanged; the
+STATISTIC under the spoke pair was replaced 2026-08-02 — it profiled one
+ring, where a spoke truncated inside the moat crosses as a hair. See "the
+spoke check measured a ring, not a spoke".) `pad scrubbability` — every mask
 aperture ≥0.70 narrow, closing the silent-PASS where a small pad gets no
 scrub toolpath and ships under mask (the OLD golden board failed this
 check on U2 the day it landed); `silk text height / stroke ratio / glyph
@@ -2114,6 +2117,102 @@ it; `diagonal`, `6` and `none` each refused by name. `pcb_twosided_suite`,
 `reference_suite`, `negative_suite` and `twosided_suite` all green; a plain
 `gaps = 4` renders and reads byte-identically, so `tests/golden_pcb` is
 untouched.
+
+## 2026-08-02 (later still): the spoke check measured a ring, not a spoke
+
+Board B's growth roll cleared the cam gate **179 of 180**. The one conviction:
+at the GND via **V1 (16.34, 8.12)** on the back copper, `thermal spoke width`
+read **0.0134 against a 0.4 bar** — a joint supposedly fed by a filament a
+seventh the width of a human hair. The via is fine. It has two full spokes.
+
+**What broke.** The statistic profiled ONE circle — the min-copper ring of the
+moat — and took the thinnest angular run on it. At that pad the ring lands at
+**r = 1.538**, and there **exactly one of 720 angular samples** crosses copper:
+the **tapering tip of a third spoke, truncated by the VCC rail's clearance**,
+dying between two of the sweep's sampling radii. Nudge the ring out two
+hundredths to r = 1.558 and the same via shows **two clean spokes, 0.649 and
+0.514**, and nothing else. There was no foreign island and no starved joint —
+a spoke that terminates INSIDE the moat is guaranteed to present a hair-width
+crossing at whichever ring happens to clip its last pixels, and the moat's
+min-copper radius is drawn TOWARD that ring, because a dying spur is exactly
+what makes a ring the emptiest one.
+
+**This is the same class as "the concentricity proxy was a track detector"**
+(above, the same day): a single-geometry sample read as if it measured a
+component. There the fix was to stop reading where tracks live; here it is to
+stop reading a ring at all.
+
+**The law: a spoke is a component, and it CROSSES.** A thermal spoke is a
+connected copper component that spans the WHOLE moat annulus, from the pad's
+rim clearance to the pour's inner edge. A component that does not span is not
+a spoke and **contributes nothing — neither a passing width nor a failure**.
+The truncated tip is now silent instead of decisive.
+
+**The far side of the moat is MEASURED, not declared.** A relief keepout is a
+disc, so the pour's inner edge sits at one radius; walking outward along each
+of 720 bearings, the first copper of the pad's own component is either that
+edge or a neighbour's clearance the moat leaked into. A leak can only move the
+reading OUTWARD and a speck inside the keepout only inward, so the **MEDIAN**
+over the bearings that start in void is the honest read — both tails are
+contamination and neither is a majority. On Board B it reads **r_ap + 0.44 on
+all eight judged pads of both sides** (1.678 for the Ø1 vias, 2.231 for the
+Ø1.5), against a 5th-to-95th-percentile scatter of ~0.03. The band has to stop
+there and not at the old 0.9 search reach: measured with the reach as the
+outer edge, the front pads' four spokes merge through the pour into ONE
+component and the count collapses to 1.
+
+**The width is the constriction, found without assuming where it is.** Each
+spanning component's width is its **bottleneck** — the largest w for which the
+pixels at least w wide still join the rim to the pour — over a width transform
+`2·(EDT − eps)` of the REAL copper. Taking the transform before the annulus is
+cut out is load-bearing: the band's boundaries are radii, not copper edges, and
+a radius that clips a scalloped pour interface will impersonate a constriction
+(it read 0.31 where the copper is 0.58). Discrete sampling of the EDT under-
+reads a true width by at most one pixel — conservative, and inside the existing
+3px allowance. **The units did not change**: this is millimetres of copper
+width, which is what `SPOKE_MIN = 0.40` always meant (dfm-notes §1's milled
+starved-thermal floor), so **the bar stays 0.40 and keeps its meaning**. If
+anything the instrument got stricter — a ring CHORD over-reads a spoke's width,
+and this does not.
+
+**The verdict, stated once:** a pad must carry at least `SPOKE_COUNT_MIN`
+spanning spokes of at least `SPOKE_MIN`. `thermal spoke width` therefore
+reports each pad's **count-th widest** spoke, so clearing the bar means "this
+pad has two spokes at least this wide". A crossing narrower than the bar is
+neither a conviction nor a credit — **starvation** is the hazard this check
+exists for, and a hair of extra copper starves nothing — but they are counted
+into the note (2 on Board B's front, 1 on its back), because a hairline
+crossing is something the mill should be told about even when the joint is well
+fed. One reachability finding, worth recording: a pad whose ONLY copper is a
+truncated spur is not pour-connected at all, so the flood finds a small island
+and the pad leaves this check's jurisdiction as a routed-net pad. Zero spanning
+spokes is unreachable for a judged pad; the 0.0 reading is defensive, and the
+reachable form of that hazard is a spur pretending to be the second spoke.
+
+**Board B after the revision.** V1 reads **two spanning spokes, 0.61 and 0.41**,
+across a moat of r1.298..1.678 — it PASSES. Both faces pass whole: front count
+4 / width **0.39**, back count 2 / width **0.41**. That 0.39 is a drawn 0.40
+spoke read one pixel low, which is the 3px allowance doing precisely the job it
+is documented for, and it is worth saying plainly that this board sits ON its
+bar rather than above it.
+
+**Five controls, and the retired statistic kept where it can be seen.** Four
+synthetic, on corrupted copies of the blessed coupon raster, each re-drawing
+one pour pad's spokes so the case is exactly the geometry it names: a spur that
+dies in the moat is ignored (2 counted, not 3); **two 0.2 spokes spanning the
+whole moat still FAIL on width alone, with the count bar still passing**; a
+spur may not stand in for the second spoke (count 1, width 0.0, both bars fire
+— "one spoke is a fuse"); and the blessed board itself passes on 5 pour pads.
+The fifth runs on **Board B's real gerbers, read-only**: the RETIRED statistic
+lives in the suite and is asserted to still convict V1 at **0.0134 on ring
+r1.538, its thinnest run 1 of 720 samples**, while the same copper is asserted
+to carry its two spokes. The regression cannot come back quietly.
+
+Both lane suites exit 0; every golden byte-identical (`golden_mango` 5/5 exact,
+the coupon programs and headers untouched — this is a verifier change and emits
+nothing). One incidental: the check profiled the full-board label raster once
+per bore into a variable it never read; removing that dead line took a side
+from **17.1s to 3.2s**.
 
 ## Roadmap
 

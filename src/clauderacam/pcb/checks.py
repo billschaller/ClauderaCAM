@@ -1425,6 +1425,17 @@ SPOKE_MIN = 0.40       # dfm-notes §1: the milled starved-thermal floor —
                        # drawn 0.6 spokes deliver ~0.52 after the 0.08 kerf
                        # overcut; below 0.40 the relief is decorative
 SPOKE_COUNT_MIN = 2    # PCBWay/BestPCBs practice: one spoke is a fuse
+SPOKE_RIM_CLEAR = 0.06 # where the moat annulus BEGINS: one raster clearance
+                       # outside the pad's mask aperture, so the annulus
+                       # starts in the relief and not on the pad's own rim
+MOAT_REACH = 0.9       # how far out the moat is looked for at all. The moat's
+                       # own outer edge is MEASURED per pad (_moat_edge); this
+                       # only bounds the search
+EDT_MARGIN = 1.0       # the local width transform's crop margin. A spoke
+                       # width is read from copper within the moat, so a crop
+                       # this far outside it holds every distance the check
+                       # reads; anything wider than the margin is pour, and
+                       # under-reading pour width cannot move a minimum
 SOLID_FRACTION = 0.85  # a moat ring mostly copper = solid connect — the
                        # heat-sunk hand joint the review complained about
 SCRUB_PAD_MIN = 0.70   # dfm-notes §9: 2·(scrub_r + window) + 2·deflate;
@@ -1441,13 +1452,123 @@ SILK_GAP_MIN = 0.15    # JLCPCB's published inter-stroke floor, measured as
                        # is an Article II incident and this bar rises
 
 
+_EIGHT = ndimage.generate_binary_structure(2, 2)   # copper touching at a
+#                        corner is one piece of metal; a rasterised diagonal
+#                        edge is an artifact of the grid, not a gap
+
+
 def _ring_profile(cu: np.ndarray, win, cx: float, cy: float,
                   r: float, n: int = 720) -> np.ndarray:
     """Copper occupancy around a circle, bilinear-sampled (1 = ink)."""
     th = np.linspace(0.0, 2 * np.pi, n, endpoint=False)
     i, j = win.world_to_px(cx + r * np.cos(th), cy + r * np.sin(th))
-    return ndimage.map_coordinates(cu.astype(np.float32),
+    return ndimage.map_coordinates(np.asarray(cu, dtype=np.float32),
                                    [i - 0.5, j - 0.5], order=1)
+
+
+def _moat_edge(lab: np.ndarray, pad_lab: int, win, cx: float, cy: float,
+               r_in: float, r_max: float, n: int = 720) -> float:
+    """The radius of the POUR's inner edge around one pad — the far side of
+    the thermal moat — measured off the artwork rather than declared.
+
+    A relief keepout is a DISC, so the pour's inner edge sits at one radius.
+    Walking outward from the rim circle along each of `n` bearings, the first
+    copper of the pad's own component is either that edge or a neighbouring
+    net's clearance that the moat leaked into. A leak can only move the
+    reading OUTWARD (there is no way for it to pull copper inward), and a
+    speck inside the keepout can only move it inward, so the MEDIAN over the
+    bearings that start in void is the honest read — both tails are
+    contamination and neither is more than a minority. Bearings that start on
+    copper are spokes and are excluded: they never see the moat.
+
+    Measured on orbit's artwork, this reads r_ap + 0.44 on all eight judged
+    pads of both sides (1.678 for its Ø1 vias, 2.231 for the Ø1.5), against a
+    5th-to-95th-percentile scatter of ~0.03."""
+    px = 1.0 / win.ppmm
+    rs = np.arange(r_in, r_max + 1e-9, px)
+    th = np.linspace(0.0, 2 * np.pi, n, endpoint=False)
+    i, j = win.world_to_px(cx + rs[:, None] * np.cos(th),
+                           cy + rs[:, None] * np.sin(th))
+    ring = lab[np.clip((i - 0.5).round().astype(int), 0, lab.shape[0] - 1),
+               np.clip((j - 0.5).round().astype(int), 0,
+                       lab.shape[1] - 1)] == pad_lab
+    seen = ring.any(axis=0) & ~ring[0]      # a void bearing that finds copper
+    if not seen.any():
+        return r_max
+    return float(np.median(rs[np.argmax(ring, axis=0)[seen]]))
+
+
+def _bottleneck(width: np.ndarray, comp: np.ndarray, src: np.ndarray,
+                dst: np.ndarray) -> float:
+    """The widest channel through `comp` from `src` to `dst`: the largest w
+    for which the pixels of `comp` at least w wide still join the two. For a
+    bar of constant width this IS its width, and for a waisted spoke it is
+    the waist — the real constriction, found without assuming where it is."""
+    vals = np.unique(width[comp])
+    vals = vals[vals > 0.0]
+    lo, hi, best = 0, vals.size - 1, 0.0
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        sel = comp & (width >= vals[mid])
+        lb, n = ndimage.label(sel, structure=_EIGHT)
+        ka = np.unique(lb[sel & src])
+        kb = np.unique(lb[sel & dst])
+        if n and np.intersect1d(ka[ka > 0], kb[kb > 0]).size:
+            best, lo = float(vals[mid]), mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def _moat_spokes(lab: np.ndarray, pad_lab: int, win, cx: float, cy: float,
+                 r_ap: float) -> tuple[float, list[float]]:
+    """The thermal spokes of one pad: -> (moat edge, spoke widths, widest
+    first).
+
+    A SPOKE is a connected copper component that CROSSES THE WHOLE MOAT
+    ANNULUS, from the pad's rim clearance to the pour's inner edge. A
+    component that does not span the annulus is not a spoke and contributes
+    nothing — neither a passing width nor a failure. That is the 2026-08-02
+    ruling (see DESIGN.md, "the spoke check measured a ring, not a spoke"):
+    the retired statistic read ONE ring, where the tapering tip of a spoke
+    truncated inside the moat crosses as a hair.
+
+    Each spoke's width is the narrowest point of its crossing, measured as
+    the widest channel it offers (`_bottleneck`) over a width transform of
+    the real copper — 2·(EDT − eps), the lane's half-pixel convention, so a
+    drawn 0.4 spoke reads 0.39–0.41 and never high. The annulus boundaries
+    are radii, not copper edges, so the transform is taken on the copper
+    BEFORE the annulus is cut out: a band edge can never impersonate a
+    constriction."""
+    px = 1.0 / win.ppmm
+    r_in = r_ap + SPOKE_RIM_CLEAR
+    edge = _moat_edge(lab, pad_lab, win, cx, cy, r_in, r_ap + MOAT_REACH)
+    half = edge + EDT_MARGIN
+    pad = int(np.ceil(half * win.ppmm)) + 2
+    ic, jc = win.world_to_px(np.array([cx]), np.array([cy]))
+    ci, cj = int(round(ic[0] - 0.5)), int(round(jc[0] - 0.5))
+    h, w = lab.shape
+    i0, i1 = max(0, ci - pad), min(h, ci + pad + 1)
+    j0, j1 = max(0, cj - pad), min(w, cj + pad + 1)
+    cu = lab[i0:i1, j0:j1] == pad_lab
+    gi, gj = np.mgrid[i0:i1, j0:j1]
+    bx, by = win.px_to_world(gi, gj)
+    rr = np.hypot(bx - cx, by - cy)
+    width = 2.0 * (ndimage.distance_transform_edt(cu) * px - 0.5 * px)
+    band = cu & (rr >= r_in) & (rr <= edge)
+    cl, nc = ndimage.label(band, structure=_EIGHT)
+    if nc == 0:
+        return edge, []
+    idx = np.arange(1, nc + 1)
+    rmin = ndimage.minimum(rr, cl, index=idx)
+    rmax = ndimage.maximum(rr, cl, index=idx)
+    src, dst = band & (rr <= r_in + px), band & (rr >= edge - px)
+    boxes = ndimage.find_objects(cl)
+    out = []
+    for k in idx[(rmin <= r_in + px) & (rmax >= edge - px)]:
+        s = boxes[k - 1]
+        out.append(_bottleneck(width[s], cl[s] == k, src[s], dst[s]))
+    return edge, sorted(out, reverse=True)
 
 
 def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
@@ -1457,19 +1578,29 @@ def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
     Excellon bore whose center carries a mask aperture, the pad's copper
     component is flooded; if that component is the pour, the pad's moat
     ring (the min-copper circle between the pad edge and pad edge + 0.9)
-    is profiled: it must be mostly void (not a solid connect), crossed by
-    >= 2 spokes, and its thinnest crossing must deliver >= 0.40. Pads on
-    routed nets (small components) are exempt — their heat path is their
-    tracks, which the review accepts."""
+    must be mostly void — not a solid connect — and the pad must carry at
+    least SPOKE_COUNT_MIN SPOKES OF AT LEAST SPOKE_MIN, a spoke being a
+    copper component that crosses the whole moat annulus (`_moat_spokes`).
+    Pads on routed nets (small components) are exempt — their heat path is
+    their tracks, which the review accepts.
+
+    The verdict is that count-and-width pair, so `thermal spoke width`
+    reports each pad's SPOKE_COUNT_MIN-th widest spoke: bar-passing means
+    "this pad has two spokes at least this wide". A crossing narrower than
+    the bar is neither a conviction nor a credit — starvation is what this
+    check is for, and a hair of extra copper starves nothing — but they are
+    counted into the note, because a hairline crossing is something the mill
+    should be told about even when the joint is well fed."""
     cu = maps.layers["cu"]
     lab, _ = ndimage.label(cu)
     sizes = np.bincount(lab.ravel())
     total = float(cu.sum())
+    cuf = cu.astype(np.float32)         # sampled ~40x per judged pad below
     px = 1.0 / maps.win.ppmm
     in_mask = maps.dist("in_mask")
     worst_frac, worst_cnt, worst_w = 0.0, 99, 9e9
     who_f = who_c = who_w = ""
-    judged = skipped = 0
+    judged = skipped = hairs = 0
     for hx, hy, hd in maps.holes:
         i, j = maps.win.world_to_px(np.array([hx]), np.array([hy]))
         ii, jj = int(round(i[0] - 0.5)), int(round(j[0] - 0.5))
@@ -1479,7 +1610,6 @@ def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
             continue                        # bare bore: M3, gauge class
         r_ap = float(in_mask[ii, jj])       # aperture radius at the center
         rmid = (hd / 2 + r_ap) / 2
-        ring = _ring_profile((lab > 0), maps.win, hx, hy, rmid)
         i2, j2 = maps.win.world_to_px(hx + rmid * np.cos(np.linspace(0, 6.28, 16)),
                                       hy + rmid * np.sin(np.linspace(0, 6.28, 16)))
         labs = lab[np.clip((i2 - 0.5).round().astype(int), 0, h - 1),
@@ -1494,32 +1624,29 @@ def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
             skipped += 1
             continue        # routed-net pad (tracks carry it) or no pour
         judged += 1
-        best = (1.1, r_ap + 0.06)
-        for r in np.arange(r_ap + 0.06, r_ap + 0.9, 0.02):
-            frac = float(_ring_profile(cu, maps.win, hx, hy, r).mean())
+        best = (1.1, r_ap + SPOKE_RIM_CLEAR)
+        for r in np.arange(r_ap + SPOKE_RIM_CLEAR, r_ap + MOAT_REACH, 0.02):
+            frac = float(_ring_profile(cuf, maps.win, hx, hy, r).mean())
             if frac < best[0]:
                 best = (frac, r)
         frac, rm = best
-        prof = _ring_profile(cu, maps.win, hx, hy, rm) > 0.5
-        if prof.all():
-            runs, minw = 1, 2 * np.pi * rm
-        else:
-            k = int(np.argmin(prof))        # rotate to start in a void
-            p = np.roll(prof, -k)
-            pp = np.concatenate(([False], p, [False])).astype(int)
-            starts = np.flatnonzero(np.diff(pp) == 1)
-            ends = np.flatnonzero(np.diff(pp) == -1)
-            widths = (ends - starts) * (2 * np.pi * rm / prof.size)
-            runs = len(widths)
-            minw = float(widths.min()) if runs else 0.0
-        tag = f"bore ({hx:.2f},{hy:.2f}) d{hd:g} at moat r{rm:.2f}"
+        edge, spokes = _moat_spokes(lab, pad_lab, maps.win, hx, hy, r_ap)
+        runs = len(spokes)
+        # the count-th widest spoke: >= the bar means the pad has that many
+        # spokes at least that wide. Too few spokes reads 0.0 — starved.
+        minw = spokes[SPOKE_COUNT_MIN - 1] if runs >= SPOKE_COUNT_MIN else 0.0
+        hairs += sum(1 for s in spokes if s < SPOKE_MIN - 3 * px)
+        tag = (f"bore ({hx:.2f},{hy:.2f}) d{hd:g} across moat "
+               f"r{r_ap + SPOKE_RIM_CLEAR:.2f}..{edge:.2f}")
         if frac > worst_frac:
-            worst_frac, who_f = frac, tag
+            worst_frac, who_f = frac, f"bore ({hx:.2f},{hy:.2f}) d{hd:g} " \
+                                      f"at moat r{rm:.2f}"
         if runs < worst_cnt:
             worst_cnt, who_c = runs, tag
-        if runs and minw < worst_w:
+        if minw < worst_w:
             worst_w, who_w = minw, tag
-    note = f"{judged} pour pads judged, {skipped} exempt (bare or routed)"
+    note = (f"{judged} pour pads judged, {skipped} exempt (bare or routed)"
+            + (f", {hairs} sub-bar crossings noted" if hairs else ""))
     if judged == 0:
         return [Check("thermal spokes", 0.0, "n/a", True,
                       f"no pour-connected hole pads — {note}")]
@@ -1529,10 +1656,11 @@ def thermal_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
               worst_frac <= SOLID_FRACTION, f"{who_f}; {note}"),
         Check("thermal spoke count", float(worst_cnt),
               f">= {SPOKE_COUNT_MIN}", worst_cnt >= SPOKE_COUNT_MIN,
-              f"{who_c}; {note}"),
+              f"{who_c}; spanning the moat; {note}"),
         Check("thermal spoke width", worst_w,
               f">= {SPOKE_MIN:g}", worst_w >= SPOKE_MIN - 3 * px,
-              f"{who_w}; delivered, raster tol 3px; {note}"),
+              f"{who_w}; {SPOKE_COUNT_MIN}nd widest spanning spoke, "
+              f"delivered, raster tol 3px; {note}"),
     ]
 
 

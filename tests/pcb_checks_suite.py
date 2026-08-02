@@ -939,6 +939,93 @@ if GOLDEN.is_dir() and (GOLDEN / "coupon.toml").is_file():
           f"{t['thermal solid connect'].value:.2f} of the ring is copper")
     m2.release()
 
+    # 1b. THE SPOKE LAW (2026-08-02, "the spoke check measured a ring, not a
+    # spoke"). A spoke is a copper component that CROSSES THE WHOLE MOAT; a
+    # spur that dies inside it is not a spoke and may neither pass nor fail
+    # the pad. One pour pad is re-drawn three ways to pin all three halves of
+    # that: the spur is ignored, a genuinely thin crossing still convicts,
+    # and the spur may not stand in for the second spoke.
+    #
+    # (143.00,-105.44) is a coupon pour pad: pad copper out to 1.045, moat
+    # void to 1.46, pour beyond. Its four drawn 0.578 spokes are wiped and
+    # re-drawn per case, so each case is exactly the geometry it names.
+    TX, TY = 143.00, -105.44
+
+    def _bar(arr, win, cx, cy, deg, w0, w1, r0, r1, value=True):
+        """Set a straight radial spoke at bearing `deg`, `w0` wide at r0 and
+        tapering to `w1` at r1 (a truncated spur when w1 is 0)."""
+        ii, jj = np.mgrid[0:arr.shape[0], 0:arr.shape[1]]
+        bx, by = win.px_to_world(ii + 0.5, jj + 0.5)
+        dx, dy = bx - cx, by - cy
+        c, s = math.cos(math.radians(deg)), math.sin(math.radians(deg))
+        along, across = dx * c + dy * s, np.abs(dy * c - dx * s)
+        t = np.clip((along - r0) / (r1 - r0), 0.0, 1.0)
+        arr[(across <= 0.5 * (w0 + (w1 - w0) * t))
+            & (along >= r0) & (along <= r1)] = value
+
+    def spoke_pad(*spokes):
+        """thermal_checks on a copy of the blessed raster whose pad at
+        (TX,TY) carries exactly `spokes` = (bearing, w0, w1, outer radius).
+        Every spoke starts at r 1.00 (inside the pad) so it is really
+        attached; an outer radius past 1.46 reaches the pour."""
+        a = dmaps.layers["cu"].copy()
+        _paint(a, dmaps.win, TX, TY, 1.06, 1.455, value=False)
+        for deg, w0, w1, r1 in spokes:
+            _bar(a, dmaps.win, TX, TY, deg, w0, w1, 1.00, r1)
+        mp = dataclasses.replace(dmaps, layers={**dmaps.layers, "cu": a},
+                                 _cache={})
+        got = by_name(checks.thermal_checks(dj, mp))
+        mp.release()
+        return got
+
+    # (i) THE INCIDENT ITSELF, in miniature: two honest 0.6 spokes and a
+    # third that tapers to nothing INSIDE the moat. The retired statistic
+    # read one ring and convicted this pad on the spur's tip; the spur is
+    # not a spoke, so the pad is well fed and must PASS on two.
+    sp = spoke_pad((0, 0.6, 0.6, 1.50), (180, 0.6, 0.6, 1.50),
+                   (90, 0.5, 0.0, 1.30))
+    check("a spur that DIES in the moat is not a spoke (2 counted, not 3)",
+          sp["thermal spoke count"].value == 2
+          and sp["thermal spoke count"].ok and sp["thermal spoke width"].ok,
+          f"count {sp['thermal spoke count'].value:.0f}, width "
+          f"{sp['thermal spoke width'].value:.4f} "
+          f"— {sp['thermal spoke width'].limit}")
+
+    # (ii) a genuinely thin crossing is still a conviction: two spokes 0.2
+    # wide over the WHOLE moat. The count is satisfied and only the width
+    # fails, which is how we know the two bars are independent.
+    sp = spoke_pad((0, 0.2, 0.2, 1.50), (180, 0.2, 0.2, 1.50))
+    catches("two 0.2 spokes spanning the whole moat (starved thermal)",
+            list(sp.values()), "thermal spoke width",
+            must_pass=("thermal spoke count", "thermal solid connect"))
+
+    # (iii) the spur may not stand in for the second spoke. One real spoke
+    # plus a truncated spur is a FUSE (SPOKE_COUNT_MIN: "one spoke is a
+    # fuse"), and both bars must say so — the width reads 0.0 because the
+    # pad has no second spoke of any width.
+    # (A pad whose ONLY copper is a truncated spur is not pour-connected at
+    # all: the flood then finds a small island, and the pad leaves this
+    # check's jurisdiction as a routed-net pad. This is the reachable form
+    # of that hazard, and the one that mattered on 2026-08-02.)
+    sp = spoke_pad((0, 0.6, 0.6, 1.50), (90, 0.5, 0.0, 1.30))
+    check("a spur may not be the second spoke — one spoke is a fuse",
+          sp["thermal spoke count"].value == 1
+          and not sp["thermal spoke count"].ok
+          and sp["thermal spoke width"].value == 0.0
+          and not sp["thermal spoke width"].ok,
+          f"count {sp['thermal spoke count'].value:.0f}, width "
+          f"{sp['thermal spoke width'].value:.4f}")
+
+    # ...and the blessed board itself is well fed: 5 pour pads, 3-4 spokes
+    # each, none under the bar.
+    t0 = by_name(checks.thermal_checks(dj, dmaps))
+    check("thermal spokes PASS the blessed board",
+          t0["thermal spoke count"].ok and t0["thermal spoke width"].ok
+          and t0["thermal solid connect"].ok,
+          f"count {t0['thermal spoke count'].value:.0f}, width "
+          f"{t0['thermal spoke width'].value:.4f}; "
+          f"{t0['thermal spoke width'].detail.split(';')[-1].strip()}")
+
     # 2. scrubbability: a 0.5-wide aperture the spring tool cannot lap.
     # (112.0,-104.5) is bare mask on the FIXED board — the old spot
     # (110.0,-130.0) merged with SW1.3's aperture once the mask-blind
