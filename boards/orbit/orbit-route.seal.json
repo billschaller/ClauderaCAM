@@ -2,7 +2,7 @@
  "connections": 68,
  "dsn_sha256": "9647d2dae13af8d99db559378ac835071a79996e0718ab34844c8a6d6388f5d2",
  "freerouting": "2.2.4 -mt 1 -de orbit-route.dsn -do orbit-route.ses",
- "pruned_for": "2bf9b1a7ee7908f75577b26cb94d87cf789bf0336fdaecab263c12345808972a",
+ "pruned_for": "d6a446dd9f70519fb31723bff822143e4838357f0d82652e2e99764c68d61460",
  "redundant_vias": [
   [
    50.051,

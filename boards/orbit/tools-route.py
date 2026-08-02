@@ -45,6 +45,7 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
+import pathfind                                        # noqa: E402
 import ses_parse                                       # noqa: E402
 
 
@@ -157,6 +158,20 @@ BOT = frozenset(("bottom",))
 BOTH = frozenset(("top", "bottom"))
 RAIL_NETS = {"VCC", "VBAT", "VSW"}
 MAX_CLOSURES = 12
+
+# Nets whose copper WELDS into a pour (emit_lihata: clearpoly False for GND)
+# and are therefore already joined by metal net_copper cannot see.
+#
+# This set is what stops the long-haul tier from inventing copper, and it cost
+# RESET a corridor to learn.  net_copper models pads, tracks and vias — never
+# the fill — so U1-4 has ALWAYS looked like a separate GND island to
+# closing_tracks.  Tiers 1-2 could not reach it and quietly gave up, which was
+# right: gate G measures that terminal reaching the network through the fill.
+# The long-haul tier CAN reach it, and did — five segments across the ring
+# interior, one of them along y 33.0, one millimetre over U1-1's land.  It
+# closed nothing that was open and walled in the pin this whole exercise is
+# about.  A conductor the board already has is not a rat line.
+POUR_WELDED_NETS = {"GND"}
 
 
 def net_copper(net: str, parts: list, tracks: list, vias: list,
@@ -295,7 +310,7 @@ def closing_tracks(parts: list, tracks: list, vias: list,
     bodies = [(p.x, p.y, 1.5 if p.kind == "rect" else 2.0)
               for part in parts for p in part.pins]
 
-    def via_ok(x, y, net):
+    def via_ok(x, y, net, clear=TB.CLEAR):
         """SPEC "Via geometry": 0.4 to any other copper on BOTH faces, 1.5 clear
         of an SMD body, 2.0 of a THT body, 3.0 from the board edge — every one
         of them a rule about whether a human can thread and solder a wire
@@ -308,9 +323,64 @@ def closing_tracks(parts: list, tracks: list, vias: list,
         for n2, _l2, p2, r2 in others:
             if n2 in (None, net):
                 continue
-            if TB.shape_gap(([(x, y)], TB.RING_VIA / 2), (p2, r2)) < TB.CLEAR:
+            if TB.shape_gap(([(x, y)], TB.RING_VIA / 2), (p2, r2)) < clear:
                 return False
         return True
+
+    def long_haul(net, w, objs, comps):
+        """TIER 3 — a JOURNEY, when the local vocabulary has nothing to say.
+
+        The three shapes above (straight, one bend, one escape leg, optionally
+        across a via pair with a STRAIGHT crossing) all describe a gap in an
+        open pocket.  RESET's last rat is not a gap: U1-1 sits in the ring
+        interior and the rest of the net is 25 mm away in the south-east, past
+        twelve LED lead pairs and a board FreeRouting has already filled.  No
+        two-segment shape can state that, so for years of this file's history
+        the residue was blamed on the pin — "U1-1's only lane is 130-145 deg,
+        +0.645 mm".
+
+        probe_lane.py re-measured that lane on the GROWN board: U1-1 holds a
+        2.375 mm corridor and an 8.00 mm legal 0.6 stub at bearing 75-85.  The
+        pin was never trapped.  What was missing was a way to SAY a journey, so
+        pathfind.py searches for one and this hands it the same oracles every
+        other closure answers to.  It runs LAST, only where tiers 1 and 2 have
+        already failed, so no closure that worked before can change.
+        """
+        head = set(comps[0])
+        goals = [objs[k] for k in range(len(objs)) if k not in head]
+        if not goals:
+            return None
+        _g, i, gj = min(((TB.shape_gap((objs[i][1], objs[i][2]),
+                                       (g[1], g[2])), i, k)
+                         for i in head for k, g in enumerate(goals)),
+                        key=lambda t: (t[0], t[1], t[2]))
+        pa = anchor(objs[i], anchor(goals[gj], objs[i][1][0]))
+        face = sorted(objs[i][0])[0]
+
+        # A journey BUYS margin, and tiers 1-2 keep the law unchanged.  Tens of
+        # millimetres threaded through the gaps a finished board has left graze
+        # something almost everywhere they go, and the first one built at
+        # exactly the law drew a pcb-rnd "shorted nets" on a 0.403 mm gap our
+        # own scan called legal.  So the search asks for the ROUTED-copper
+        # margin first and settles for the STATIC-copper margin, never less:
+        # COPPER_CLEAR is the floor this file already proves an emitted line
+        # needs before pcb-rnd's pour clipping stops reading it as a short
+        # (21 net-short violations before that margin existed).  The LAW is
+        # still 0.400; what changes is that the copper clears it instead of
+        # tying it.
+        for clear in (TB.ROUTE_CLEAR, TB.COPPER_CLEAR):
+            def seg_ok(a, b, f, _c=clear):
+                return clears([a, b], nearby(a, b, f, net), w) >= _c
+
+            def via_ok3(x, y, n, _c=clear):
+                return via_ok(x, y, n, _c)
+
+            got = pathfind.route_between(TB, others, net, pa, goals, w,
+                                         via_ok3, seg_ok, start_face=face,
+                                         clear=clear)
+            if got is not None:
+                return got
+        return None
 
     off = [round(-5.0 + 0.5 * k, 3) for k in range(21)]
     vgrid = [round(-6.0 + 0.5 * k, 3) for k in range(25)]
@@ -400,16 +470,22 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                         drawn = (face, [pa, a], (over, a, b2, pb))
                         break
             if drawn is None:
-                break                       # nothing legal: let the gate speak
-            face, pts, hop = drawn
-            runs = [(face, pts)]
-            if hop:
-                over, a, b2, pb = hop
-                runs += [(over, [a, b2]), (face, [b2, pb])]
-                for v in (a, b2):
-                    new_vias.append((TB.q(v[0]), TB.q(H - v[1]), net))
-                    for lay in ("top", "bottom"):
-                        others.append((net, lay, [v], TB.RING_VIA / 2))
+                journey = (None if net in POUR_WELDED_NETS
+                           else long_haul(net, w, objs, comps))
+                if journey is None:
+                    break                   # nothing legal: let the gate speak
+                runs, hop_vias = journey
+            else:
+                face, pts, hop = drawn
+                runs, hop_vias = [(face, pts)], []
+                if hop:
+                    over, a, b2, pb = hop
+                    runs += [(over, [a, b2]), (face, [b2, pb])]
+                    hop_vias = [a, b2]
+            for v in hop_vias:
+                new_vias.append((TB.q(v[0]), TB.q(H - v[1]), net))
+                for lay in ("top", "bottom"):
+                    others.append((net, lay, [v], TB.RING_VIA / 2))
             for lay, run in runs:
                 for a, b in zip(run, run[1:]):
                     if a == b:
@@ -502,11 +578,21 @@ def build_routed(force_route: bool = False) -> dict:
     b = TB.build(out_lht=UNROUTED_LHT)                 # generator + DSN
     seal, ran = route(force_route)
     m = merge(b["parts"], SES)
-    # Drop the stitches the copper does not need.  Cached against the session
-    # digest so the normal build is one pass and still byte-deterministic.
-    if seal.get("pruned_for") != seal.get("ses_sha256"):
+    # Drop the stitches the copper does not need.  Cached so the normal build
+    # is one pass and still byte-deterministic.
+    #
+    # The key is the MERGED COPPER, not the session digest, and that correction
+    # cost a live GND net to find: a via is redundant only relative to the
+    # copper around it, and the closing tracks are part of that copper.  Keyed
+    # on the session alone, a cache computed when closing_tracks was weaker
+    # went on deleting a via that the NEW closures had come to depend on, and
+    # pcb-rnd reported GND in two pieces on a board whose seal looked current.
+    mkey = hashlib.sha256(json.dumps(
+        {"tracks": m["tracks"], "vias": m["vias"], "promoted": m["promoted"]},
+        sort_keys=True).encode()).hexdigest()
+    if seal.get("pruned_for") != mkey:
         seal["redundant_vias"] = [list(v) for v in prune_vias(b, m)]
-        seal["pruned_for"] = seal["ses_sha256"]
+        seal["pruned_for"] = mkey
         with open(SEAL, "w", encoding="utf-8") as fh:
             json.dump(seal, fh, indent=1, sort_keys=True)
             fh.write("\n")

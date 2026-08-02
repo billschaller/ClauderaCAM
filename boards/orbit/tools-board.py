@@ -1747,17 +1747,31 @@ def copper_objects(parts: list[Part], route: dict | None = None) -> list[tuple]:
     anon = 0
     for part in parts:
         for p in part.pins:
+            # A NO-CONNECT terminal is copper too, and it gets a private
+            # pseudo-net so the scan can see it — exactly what the flip gauges
+            # already get.  MEASURED 2026-08-01, and it was a hole in this
+            # oracle rather than a curiosity: SW1-3 (the slide switch's unused
+            # throw) is the board's only netless terminal, and while `None` it
+            # was skipped by every different-net test here, by closing_tracks'
+            # `nearby`/`via_ok`, and so by the path search built on them.  The
+            # first closure that ever ran through the bottom strip laid RESET
+            # past SW1-3's dead front ring, this scan reported the board clean,
+            # and pcb-rnd — which resolves copper, not netnames — convicted it:
+            # "shorted nets: net too close to other net".  Copper the operator
+            # will hold in his hand does not stop being copper because the
+            # schematic has nothing to say about it.
+            net = p.net if p.net is not None else f"__nc_{p.pid}"
             if p.kind == "rect":
-                out.append((p.net, "bottom", p.corners(), 0.0))
+                out.append((net, "bottom", p.corners(), 0.0))
             elif p.kind == "circ":
-                out.append((p.net, "bottom", [(p.x, p.y)], p.shape[1] / 2))
+                out.append((net, "bottom", [(p.x, p.y)], p.shape[1] / 2))
             else:
                 r = p.shape[2] / 2
-                out.append((p.net, "bottom", [(p.x, p.y)], r))
+                out.append((net, "bottom", [(p.x, p.y)], r))
                 # the dead FRONT ring is checked at its pin's net: it is the
                 # net that copper becomes the moment a human solders the lead,
                 # which is exactly what R4b may promote it to do
-                out.append((p.net, "top", [(p.x, p.y)], r))
+                out.append((net, "top", [(p.x, p.y)], r))
     for gx, gy in GAUGES.values():
         for layer in ("top", "bottom"):
             anon += 1

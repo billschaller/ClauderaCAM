@@ -23,7 +23,7 @@ Ring positions run CLOCKWISE from 12 o'clock.  The position->LED permutation is 
 
 ## Wire vias — hand-stitched, one threaded wire each
 
-Ø1.0 hole, Ø2.44 ring, `WIRE_VIA_STITCHED`, hplated=1.  SPEC planning budget 6, no hard ceiling (operator ruling 2026-08-01: a via ~ a jumper wire); this board spends **12**.
+Ø1.0 hole, Ø2.44 ring, `WIRE_VIA_STITCHED`, hplated=1.  SPEC planning budget 6, no hard ceiling (operator ruling 2026-08-01: a via ~ a jumper wire); this board spends **14**.
 
 - `V1  (40.062, 47.500)  GND     carries GND between the faces; nearest GND terminal C4-2 at 6.32 mm`
 - `V2  (49.147, 45.518)  L0      carries L0 between the faces; nearest L0 terminal TP4-1 at 3.93 mm`
@@ -33,10 +33,12 @@ Ring positions run CLOCKWISE from 12 o'clock.  The position->LED permutation is 
 - `V6  (57.750, 13.750)  L2      carries L2 between the faces; nearest L2 terminal S2-1 at 3.35 mm`
 - `V7  (22.838, 29.787)  L3      carries L3 between the faces; nearest L3 terminal U1-2 at 6.86 mm`
 - `V8  (59.622, 40.193)  L3      carries L3 between the faces; nearest L3 terminal S1-1 at 3.15 mm`
-- `V9  (17.933, 23.029)  SND     carries SND between the faces; nearest SND terminal U1-3 at 2.95 mm`
-- `V10 (42.261, 19.752)  SND     carries SND between the faces; nearest SND terminal R14-1 at 5.66 mm`
-- `V11 (19.140, 41.415)  VCC     carries VCC between the faces; nearest VCC terminal Q1-2 at 2.13 mm`
-- `V12 (46.675, 43.356)  VCC     carries VCC between the faces; nearest VCC terminal TP2-1 at 2.57 mm`
+- `V9  (13.500, 12.250)  RESET   carries RESET between the faces; nearest RESET terminal U1-1 at 12.03 mm`
+- `V10 (37.250, 49.250)  RESET   carries RESET between the faces; nearest RESET terminal R13-2 at 5.76 mm`
+- `V11 (17.933, 23.029)  SND     carries SND between the faces; nearest SND terminal U1-3 at 2.95 mm`
+- `V12 (42.261, 19.752)  SND     carries SND between the faces; nearest SND terminal R14-1 at 5.66 mm`
+- `V13 (19.140, 41.415)  VCC     carries VCC between the faces; nearest VCC terminal Q1-2 at 2.13 mm`
+- `V14 (46.675, 43.356)  VCC     carries VCC between the faces; nearest VCC terminal TP2-1 at 2.57 mm`
 
 1 further via(s) the router left behind were removed after pcb-rnd confirmed they carry no connection.
 
