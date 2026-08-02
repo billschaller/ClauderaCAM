@@ -1058,7 +1058,7 @@ hdr_lr = reemit.program_header(
     lr_back, "holes", [op("cutout", lr_back.phases["cutout"]["tool"],
                           ["G00 Z2.0000"], 100)])
 check("the operator note carries the tab COUNT and WHERE to reach for them",
-      any("snap the 4 tabs (two each on the left/right edges) of 1.5mm" in ln
+      any("snap the 4 tabs - two each on the left/right edges - of 1.5mm" in ln
           for ln in hdr_lr)
       and all(len(ln) <= 128 for ln in hdr_lr),
       [ln for ln in hdr_lr if "snap" in ln])

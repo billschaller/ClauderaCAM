@@ -250,9 +250,15 @@ def program_header(job: PcbJob, name: str,
         # COUNT the placement leaves, plus WHERE to reach for them when the job
         # steered them off the default four sides (empty for a plain count, so
         # the shipped single-sided text stays byte-identical)
+        # " - {where} -" not "({where})": these notes live INSIDE a G-code
+        # comment, and a nested paren is unparseable — simulate.parse_line
+        # refuses the whole program (caught by the gate on orbit's first
+        # styled-tab emission, 2026-08-02)
         where = pcbjob.tab_where(c["gaps"])
+        assert "(" not in where and ")" not in where, \
+            f"tab_where text may not contain parens: {where!r}"
         fmt.update(gaps=pcbjob.tab_count(c["gaps"]),
-                   where=f" ({where})" if where else "",
+                   where=f" - {where} -" if where else "",
                    gapsize=f"{c['gapsize']:g}")
     if job.pins:
         fmt.update(pins=len(job.pins["positions"]),
