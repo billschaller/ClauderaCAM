@@ -1025,6 +1025,59 @@ check("every header line survives the 128-char dialect law",
       all(len(ln) <= 128 for ln in hdr_a + hdr_b),
       f"longest {max(len(ln) for ln in hdr_a + hdr_b)}")
 
+# ===================================================== steered cutout tabs
+# Tab PLACEMENT is a manufacturing free variable and the tab-zone law judges
+# wherever the tabs land, so the grammar carries FlatCAM's placement styles
+# (pcbjob.TAB_PLACEMENTS). Board B's bottom edge has a legal copper spine 0.5
+# from the edge that no bottom tab can clear; its left and right edges are
+# bare, which is what "2lr" is for. One value is followed the whole way:
+# document -> Tcl word -> the words the operator reads at the bench.
+print("\ncutout tab placement (FlatCAM's -gaps styles):")
+LRJOB = pcbjob.load(variant("v-2lr.toml", ("gaps = 4", 'gaps = "2lr"')))
+lr_back = pcbjob.side_view(LRJOB, "back")
+check("a placement style loads, and every accepted value counts its tabs",
+      lr_back.phases["cutout"]["gaps"] == "2lr"
+      and [pcbjob.tab_count(g) for g in ("lr", "tb", "2lr", "2tb", "4", "8")]
+      == [2, 2, 4, 4, 4, 8]
+      and pcbjob.tab_count(4) == 4 and pcbjob.tab_count(8) == 8
+      and pcbjob.tab_count("2LR") == 4,          # case is the config's choice
+      f"{lr_back.phases['cutout']['gaps']!r} -> "
+      f"{pcbjob.tab_count(lr_back.phases['cutout']['gaps'])} tabs")
+tcl_lr = engine.render_tcl(lr_back, win, TD / "work" / "back")
+gap_line = [ln for ln in tcl_lr.splitlines() if ln.startswith("geocutout")][0]
+# geo_init's branches compare against 'LR'/'TB'/'2LR'/'2TB' while the guard
+# above them lowercases: a lowercase style CLEARS validation, matches nothing,
+# and cuts the outline with zero tabs. The word must arrive uppercased.
+check("the style reaches geocutout in the case geo_init actually compares",
+      "-gaps 2LR" in gap_line, gap_line)
+check("...and a plain count still renders exactly as it always did",
+      "-gaps 4" in [ln for ln in tcl_b.splitlines()
+                    if ln.startswith("geocutout")][0],
+      [ln for ln in tcl_b.splitlines() if ln.startswith("geocutout")][0])
+hdr_lr = reemit.program_header(
+    lr_back, "holes", [op("cutout", lr_back.phases["cutout"]["tool"],
+                          ["G00 Z2.0000"], 100)])
+check("the operator note carries the tab COUNT and WHERE to reach for them",
+      any("snap the 4 tabs (two each on the left/right edges) of 1.5mm" in ln
+          for ln in hdr_lr)
+      and all(len(ln) <= 128 for ln in hdr_lr),
+      [ln for ln in hdr_lr if "snap" in ln])
+check("a plain count's note is unchanged — no placement words invented",
+      any("snap the 4 tabs of 1.5mm" in ln for ln in reemit.program_header(
+          back, "holes", [op("cutout", back.phases["cutout"]["tool"],
+                             ["G00 Z2.0000"], 100)])))
+caught("a placement geocutout cannot cut refuses, by name",
+       lambda: pcbjob.load(variant("v-gapjunk.toml",
+                                   ("gaps = 4", 'gaps = "diagonal"'))),
+       "'diagonal' is not a tab placement")
+caught("...and so does a bare count geocutout has no branch for",
+       lambda: pcbjob.load(variant("v-gap6.toml", ("gaps = 4", "gaps = 6"))),
+       "freed board grabs the cutter")
+caught("'none' — FlatCAM's own no-tab option — refuses too",
+       lambda: pcbjob.load(variant("v-gapnone.toml",
+                                   ("gaps = 4", 'gaps = "none"'))),
+       "freed board grabs the cutter")
+
 # ================================================== single-sided is untouched
 print("\nthe single-sided lane is untouched (nothing may re-bless "
       "golden_pcb):")

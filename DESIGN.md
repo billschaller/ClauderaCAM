@@ -2067,6 +2067,54 @@ visible in the output rather than only in this file.
 untouched and the coupon's three program headers still regenerate
 byte-identically.
 
+## 2026-08-02 (later): cutout tabs get a PLACEMENT, and two new refusals
+
+The tab-zone law (`flip.tab_zone_checks`: no copper within `TAB_KEEPOUT` of
+any tab, on BOTH faces, because a tab snapped by hand tears bridged copper
+off the laminate) judges wherever the tabs actually land. Board B "orbit"
+routes a legal copper spine along the bottom edge, 0.5 from it: no bottom
+tab can ever clear the keep-out there, and its left and right edges are
+bare. Tab PLACEMENT is a manufacturing free variable, so the correct
+response is to steer the tabs, not to relax the law — Article II allows a
+threshold to move only on new physical evidence, and there is none here.
+
+`phases.cutout.gaps` therefore accepts FlatCAM's placement styles as well
+as a count. `pcbjob.TAB_PLACEMENTS` is the table (`lr`/`tb` = 2 tabs,
+`2lr`/`2tb` = 4, `4` = 4 one per side, `8` = 8), and it is the single
+source for all three readers: `engine.render_tcl` writes the `-gaps` word,
+`reemit.program_header` and the viewer card write the COUNT plus where to
+reach ("snap the 4 tabs (two each on the left/right edges) of 1.5mm"), and
+`checks.cutout_checks` compares the census to the count that placement
+leaves. The census itself needed no change — it has always counted material
+left in the toolpath, never sides of a rectangle.
+
+Two refusals are NEW, both from reading the pinned fork's
+`tclCommands/TclCommandGeoCutout.py` rather than trusting its documented
+set:
+
+- **A bare count other than 4 or 8 refuses.** `geo_init`'s branches are
+  `gaps_u == 8`, `== 4` and the four names. A `gaps = 6` clears FlatCAM's
+  own guard, matches no branch, subtracts no gap rectangle, and cuts the
+  outline clean through — a freed board, silently. The grammar's old
+  `gaps >= 2` admitted 2, 3, 5, 6 …, every one of them that cut.
+- **`none` refuses**, though FlatCAM accepts it: it means zero tabs, which
+  is the freed board this grammar has always refused.
+
+And one **case trap** is now closed at the source: the fork guards with
+`str(gaps).lower() in [...]` but compares against `'LR'`/`'TB'`/`'2LR'`/
+`'2TB'`. A lowercase `-gaps lr` passes validation and produces no tabs at
+all. `pcbjob.geocutout_gaps` uppercases the token in the one place the
+script is rendered, so the emitted line can only mean what the job declared.
+
+Controls: `2lr` followed document → Tcl (`-gaps 2LR`) → operator note; a
+steered 4-tab toolpath passing the census and a steered 3-tab one caught by
+it; `diagonal`, `6` and `none` each refused by name. `pcb_twosided_suite`,
+`pcb_checks_suite`, `pcb_engine_suite`, `pcb_viewer_suite`,
+`pcb_groundtruth_suite`, `pcb_tools_suite`, `golden_mango`,
+`reference_suite`, `negative_suite` and `twosided_suite` all green; a plain
+`gaps = 4` renders and reads byte-identically, so `tests/golden_pcb` is
+untouched.
+
 ## Roadmap
 
 - **v1 model placement**: `[model] transform` (scale/rotate/translate the

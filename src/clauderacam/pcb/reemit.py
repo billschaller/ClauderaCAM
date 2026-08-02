@@ -161,7 +161,7 @@ _PROGRAM_STEPS = {
               "program D holes - no operator step between"),
     "holes": ("same setup; every hole helically bored, then the outline "
               "cut with tabs",
-              "snap the {gaps} tabs of {gapsize}mm, file the stubs; "
+              "snap the {gaps} tabs{where} of {gapsize}mm, file the stubs; "
               "stencil/paste/reflow happens off-machine"),
 }
 
@@ -207,7 +207,7 @@ _SIDE_STEPS = {
         "program D holes - the cutout, no operator step between"),
     ("back", "holes"): (
         "same setup; the outline cut with tabs - side 2 only, and last",
-        ("snap the {gaps} tabs of {gapsize}mm, file the stubs, deburr",
+        ("snap the {gaps} tabs{where} of {gapsize}mm, file the stubs, deburr",
          "off-machine: stencil + paste + hotplate reflow the BACK, THEN the "
          "wire vias, THEN the THT parts from the front")),
 }
@@ -246,7 +246,14 @@ def program_header(job: PcbJob, name: str,
     fmt = {}
     if job.has_phase("cutout"):
         c = job.phases["cutout"]
-        fmt.update(gaps=int(c["gaps"]), gapsize=f"{c['gapsize']:g}")
+        # the operator snaps tabs, not a placement token: the note carries the
+        # COUNT the placement leaves, plus WHERE to reach for them when the job
+        # steered them off the default four sides (empty for a plain count, so
+        # the shipped single-sided text stays byte-identical)
+        where = pcbjob.tab_where(c["gaps"])
+        fmt.update(gaps=pcbjob.tab_count(c["gaps"]),
+                   where=f" ({where})" if where else "",
+                   gapsize=f"{c['gapsize']:g}")
     if job.pins:
         fmt.update(pins=len(job.pins["positions"]),
                    axis=job.flip_axis.upper())

@@ -207,8 +207,12 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     if "cutout" in gen:
         cut_t = job.phase_tool("cutout")
         p = ph["cutout"]
+        # -gaps goes through pcbjob.geocutout_gaps, never str(): a placement
+        # style must reach geo_init in the case it compares against, or the
+        # cutout comes out with zero tabs and no complaint (see the helper)
         L += [f"geocutout edge -dia {cut_t.diameter:.6g} -margin 0 "
-              f"-gapsize {p['gapsize']:.6g} -gaps {p['gaps']} "
+              f"-gapsize {p['gapsize']:.6g} "
+              f"-gaps {pcbjob.geocutout_gaps(p['gaps'])} "
               f"-outname cut_geo",
               cnc("cut_geo", cut_t, p["depth"], p["feed"], p["plunge"],
                   "cut_cnc", dpp=p["dpp"]),

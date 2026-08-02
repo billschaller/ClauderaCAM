@@ -132,6 +132,7 @@ from .pcbjob import (GAUGE_MATCH_TOL, PIN_PHASES,  # noqa: F401 (re-exported:
 #                                             grammar, checks.PROGRAM_PHASES
 #                                             stays a valid name for readers)
 from .pcbjob import iso_pass_plan as pcbjob_iso_plan
+from .pcbjob import tab_count as pcbjob_tab_count
 from .reemit import _stroke_chains
 
 # ---------------------------------------------------------------- thresholds
@@ -758,7 +759,11 @@ def cutout_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     px_, py_, material = walk
     tabs = material[material >= TAB_MATERIAL_MIN]
     thin = material[(material > 0) & (material < TAB_MATERIAL_MIN)]
-    want = int(job.phases["cutout"]["gaps"])
+    # the census counts what the toolpath actually left, and compares it to the
+    # count the DECLARED placement leaves — it never assumes one tab per side,
+    # so a job that steers its tabs ("2lr" = four, both on the left and right
+    # edges) is judged by the same walk as the default four
+    want = pcbjob_tab_count(job.phases["cutout"]["gaps"])
     ok = (len(tabs) == want and len(tabs) >= TAB_MIN_COUNT
           and len(thin) == 0)
     out.append(Check("cutout tab census", float(len(tabs)),

@@ -78,7 +78,7 @@ import numpy as np
 
 from .. import simulate, stages as stagesmod
 from ..verify import Report
-from . import boardmaps, checks
+from . import boardmaps, checks, pcbjob
 # The sheet stock model MOVED to checks.py (2026-07-30): a bare verify_pcb()
 # used to prove less than a viewer session, and the gate must be the
 # strictest reader. The names are re-imported here because this module and
@@ -432,6 +432,10 @@ def run_sheet(job: PcbJob, progs: dict[str, Path],
     silk = job.phases["silk"]
     scrub = job.phases["scrub"]
     cut = job.phases["cutout"]
+    # the card says how many tabs and, when the job steered them off the
+    # default four sides, where to reach for them (pcbjob.TAB_PLACEMENTS)
+    _where = pcbjob.tab_where(cut["gaps"])
+    cut_where = f" ({_where})" if _where else ""
 
     def note(ph: str) -> str:
         return str(job.phases.get(ph, {}).get("note") or "")
@@ -508,10 +512,11 @@ def run_sheet(job: PcbJob, progs: dict[str, Path],
              f"every hole helically bored to "
              f"Z{job.phases['drills']['depth']:g} (through the "
              f"{job.thickness:g} blank into the spoilboard), then the "
-             f"outline with {int(cut['gaps'])} tabs of "
-             f"{cut['gapsize']:g}mm"),
+             f"outline with {pcbjob.tab_count(cut['gaps'])} tabs{cut_where} "
+             f"of {cut['gapsize']:g}mm"),
         {"kind": "operator", "title": "release the board, snap the tabs",
-         "detail": f"{int(cut['gaps'])} tabs of {cut['gapsize']:g}mm hold "
+         "detail": f"{pcbjob.tab_count(cut['gaps'])} tabs{cut_where} of "
+                   f"{cut['gapsize']:g}mm hold "
                    f"it; snap and file the stubs. The cut rides a tool "
                    f"radius OUTSIDE the outline ink, so the board comes "
                    f"out one Edge.Cuts line width oversize per side "

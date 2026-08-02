@@ -132,6 +132,96 @@ DRILL_SUFFIX = ".drl"
 # a [[rules.gauge]] position must land on a real hole this close (mm)
 GAUGE_MATCH_TOL = 0.05
 
+# ------------------------------------------------------ cutout tab PLACEMENT
+# FlatCAM's geocutout reads `-gaps` as either a COUNT or a PLACEMENT STYLE. The
+# pinned fork (tclCommands/TclCommandGeoCutout.py) guards with
+#   str(gaps).lower() in ['none','lr','tb','2lr','2tb','4','8']
+# and then subtracts one gap rectangle per named band in geo_init.
+#
+# WHY the grammar carries the styles, and not just int(): the tab-zone law
+# (flip.tab_zone_checks — no copper within TAB_KEEPOUT of any tab, on BOTH
+# faces, because a snapped tab that bridges copper tears it off the laminate)
+# judges wherever the tabs ACTUALLY land. Tab placement is a manufacturing free
+# variable, not a constant of the process. Board B "orbit" has a legal
+# bottom-edge copper spine 0.5 from the edge: a bottom tab can never clear the
+# keep-out there, while its left and right edges are bare. Steering the tabs to
+# the clear edges is the correct physical response — the law is untouched and
+# simply judges the placement the job declares. Coercing int() locked every
+# board to all-four-sides, which left only one other way out of that board:
+# relaxing TAB_KEEPOUT, which Article II forbids.
+#
+# token -> (tabs it cuts, where they land). The COUNT is what the tab census
+# expects to find in the toolpath and what the operator note tells the human to
+# snap; the WORDS are what that note says about where to reach. An empty
+# placement means the plain count, whose note text predates this table and
+# stays byte-identical (the coupon goldens ship `gaps = 4`).
+TAB_PLACEMENTS = {
+    "lr": (2, "left/right edges"),
+    "tb": (2, "top/bottom edges"),
+    "2lr": (4, "two each on the left/right edges"),
+    "2tb": (4, "two each on the top/bottom edges"),
+    "4": (4, ""),
+    "8": (8, ""),
+}
+
+# 'none' is deliberately NOT in the table above. FlatCAM accepts it; it means
+# no gap rectangles, i.e. the outline cut clean through — the freed board this
+# grammar has always refused.
+#
+# Nor is any other integer. geo_init's branches are `gaps_u == 8`, `== 4`, and
+# the four names: a bare 2, 3, 5, 6 ... passes FlatCAM's own guard for none of
+# them, subtracts nothing, and severs the outline in SILENCE. Only 4 and 8 are
+# counts the engine can actually cut, so only 4 and 8 are counts this grammar
+# accepts.
+TAB_TOKENS = tuple(TAB_PLACEMENTS)
+
+
+def _tab_spec(gaps) -> tuple[str, int, str]:
+    """(canonical token, tab count, placement words) for a configured `gaps`.
+
+    Accepts an int (4 or 8) or one of TAB_PLACEMENTS' strings, case-
+    insensitively — everything else refuses, because everything else is a
+    cutout with no tabs in it (see the table above).
+    """
+    if isinstance(gaps, bool) or not isinstance(gaps, (int, str)):
+        key = None
+    else:
+        key = str(gaps).strip().lower()
+    if key not in TAB_PLACEMENTS:
+        raise ValueError(
+            f"phases.cutout gaps {gaps!r} is not a tab placement geocutout "
+            f"can cut — use a count (4 or 8) or a placement "
+            f"('lr', 'tb', '2lr', '2tb'); any other value subtracts no gap "
+            f"rectangle at all and the outline is cut clean through — a "
+            f"freed board grabs the cutter")
+    n, where = TAB_PLACEMENTS[key]
+    return key, n, where
+
+
+def tab_count(gaps) -> int:
+    """How many tabs `gaps` leaves: what the census counts and the human
+    snaps."""
+    return _tab_spec(gaps)[1]
+
+
+def tab_where(gaps) -> str:
+    """Where those tabs land, in operator words — "" for a plain count."""
+    return _tab_spec(gaps)[2]
+
+
+def geocutout_gaps(gaps) -> str:
+    """The `-gaps` word for FlatCAM's geocutout — UPPERCASE for the styles.
+
+    Case is load-bearing and the pinned fork does not say so: its guard tests
+    `str(gaps).lower()` against the accepted set, but geo_init then compares
+    the raw value against 'LR' / 'TB' / '2LR' / '2TB'. A lowercase `-gaps lr`
+    therefore CLEARS validation, matches no branch, subtracts no rectangle, and
+    writes a cutout with zero tabs — silently, which is the worst kind. The
+    token is normalized here, in the one place that renders the script, so the
+    emitted line can only mean what the job declared.
+    """
+    return _tab_spec(gaps)[0].upper()
+
 
 @dataclass
 class PcbJob:
@@ -480,7 +570,9 @@ def _validate_phases(j: PcbJob) -> None:
             "repels solder (mask guide §5)")
     if j.has_phase("cutout"):
         cut = j.phases["cutout"]
-        if cut["gaps"] < 2 or cut["gapsize"] < 1.0:
+        # _tab_spec is the refusal: it accepts only the placements geocutout
+        # can actually cut, and every one of them leaves >= 2 tabs
+        if tab_count(cut["gaps"]) < 2 or cut["gapsize"] < 1.0:
             raise ValueError(
                 "phases.cutout needs >= 2 tabs of >= 1.0 — a freed board "
                 "grabs the cutter")

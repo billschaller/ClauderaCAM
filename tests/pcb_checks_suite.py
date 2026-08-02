@@ -425,8 +425,14 @@ def build_drills(displace=0.0, extra=None):
     return op("drills", p["tool"], lines, p["feed"])
 
 
-def cutout_chains(tabs=4):
-    """The offset loop, split into cut arcs by the tab windows."""
+def cutout_chains(tabs=4, centers=None):
+    """The offset loop, split into cut arcs by the tab windows.
+
+    `centers` overrides WHERE the windows sit. The default is one per side,
+    which is what `gaps = 4` cuts; a placement style puts them elsewhere
+    entirely (pcbjob.TAB_PLACEMENTS), and the census must read those just the
+    same — it counts material left in the toolpath, not sides of a rectangle.
+    """
     tool = job.phase_tool("cutout")
     off = tool.radius + 0.05        # tool radius + half the Edge.Cuts width
     loop = [(0.0, -off), (BW, -off)]
@@ -442,8 +448,8 @@ def cutout_chains(tabs=4):
     seg = np.hypot(*(np.roll(P, -1, axis=0) - P).T)
     s = np.concatenate([[0.0], np.cumsum(seg)[:-1]])
     total = float(seg.sum())
-    centers = [(BW / 2, -off), (BW + off, BH / 2), (BW / 2, BH + off),
-               (-off, BH / 2)][:tabs]
+    centers = centers or [(BW / 2, -off), (BW + off, BH / 2),
+                          (BW / 2, BH + off), (-off, BH / 2)][:tabs]
     keep = np.ones(len(P), bool)
     half = (1.0 + tool.diameter) / 2      # 1.0mm material tab
     for cx, cy in centers:
@@ -467,12 +473,12 @@ def cutout_chains(tabs=4):
     return chains
 
 
-def build_cutout(tabs=4):
+def build_cutout(tabs=4, centers=None):
     p = job.phases["cutout"]
     zs = [-0.3, -0.6, -0.9, -1.2, -1.5, -1.7]
     lines = []
     for z in zs:
-        for ch in cutout_chains(tabs):
+        for ch in cutout_chains(tabs, centers):
             lines += cut_chain(ch, z, p["feed"], p["plunge"])
     return op("cutout", p["tool"], lines, p["feed"])
 
@@ -741,6 +747,34 @@ holes_notab = write("holes_notab", [build_drills(), build_cutout(tabs=3)])
 mm, _ = checks.program_moves(job, holes_notab)
 catches("a cutout with one tab missing",
         checks.cutout_checks(job, maps,
+                             checks.phase_samples(mm, maps, "cutout")),
+        "cutout tab census", must_pass=("cutout ride band", "cutout side"))
+maps.release()
+
+# The census walks the TOOLPATH, so it must read STEERED tabs — placement is a
+# manufacturing free variable (a board whose bottom edge carries copper no tab
+# may bridge sends its tabs to "2lr": four of them, two on the left edge and
+# two on the right, none top or bottom). Nothing here may assume one per side.
+_coff = job.phase_tool("cutout").radius + 0.05
+LR_CENTERS = [(-_coff, BH / 4), (-_coff, 3 * BH / 4),
+              (BW + _coff, BH / 4), (BW + _coff, 3 * BH / 4)]
+(TD / "job-2lr.toml").write_text(JOB.replace("gaps = 4", 'gaps = "2lr"'))
+lr_job = pcbjob.load(TD / "job-2lr.toml")
+holes_lr = write("holes_lr", [build_drills(),
+                              build_cutout(centers=LR_CENTERS)])
+mm, _ = checks.program_moves(lr_job, holes_lr)
+lr_chks = by_name(checks.cutout_checks(lr_job, maps,
+                                       checks.phase_samples(mm, maps,
+                                                            "cutout")))
+check("the tab census reads a STEERED placement (2lr: 4 tabs, left+right)",
+      lr_chks["cutout tab census"].ok and lr_chks["cutout ride band"].ok
+      and lr_chks["cutout side"].ok,
+      lr_chks["cutout tab census"].detail)
+holes_lr3 = write("holes_lr3", [build_drills(),
+                                build_cutout(centers=LR_CENTERS[:3])])
+mm, _ = checks.program_moves(lr_job, holes_lr3)
+catches("a steered cutout one tab short of its declared placement",
+        checks.cutout_checks(lr_job, maps,
                              checks.phase_samples(mm, maps, "cutout")),
         "cutout tab census", must_pass=("cutout ride band", "cutout side"))
 maps.release()
