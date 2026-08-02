@@ -1,0 +1,27 @@
+{
+ "dsn_sha256": "0124cbe30738c53957e7dfddac16eb0389d1e3081901552d084f03f2a8fc7444",
+ "unrouted": [
+  "U1-8 -> C2-1",
+  "via -> U1-8",
+  "R11-2 -> R9-2",
+  "U1-5 -> R6-2",
+  "U1-6 -> R8-2",
+  "C4-1 -> U1-1"
+ ],
+ "jar": "freerouting-2.2.4.jar",
+ "cmd": [
+  "/home/dad/.clauderacam/tools/freerouting/freerouting-2.2.4.jar",
+  "-de",
+  "/home/dad/scratch/carvera/clauderacam/boards/orbit/orbit.dsn",
+  "-do",
+  "/home/dad/scratch/carvera/clauderacam/boards/orbit/orbit.ses",
+  "-mp",
+  "100",
+  "-mt",
+  "1",
+  "-us",
+  "global",
+  "-is",
+  "random"
+ ]
+}
