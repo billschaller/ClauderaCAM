@@ -81,14 +81,43 @@ JAR = os.path.expanduser(
 # BETWEEN passes, so it never fires inside the wedge), disabling the route
 # optimizer, and -oit.  Only stopping at the last good pass returns a session.
 #
-# ...and then the wedge went away, so the bound is OFF (0 = no limit).  Pushing
-# the ring resistors out to the ceiling the cathode ring allows (RES_OUTER,
-# 2026-08-02) widened the interior annulus by 0.23-0.43 mm, and on that board
-# FreeRouting runs to its OWN stopping rule in 19 passes and 5 unrouted — it
-# never wedges at all.  The bound is kept as a named constant, not deleted,
-# because the wedge is a property of the geometry and the next change to this
-# board can bring it back: set it to the last pass that COMPLETES (probe with
-# one unbounded run and count them) and the router returns a session again.
+# ...and then the wedge went away, so the bound went OFF (0 = no limit).
+# Pushing the ring resistors out to the ceiling the cathode ring allows
+# (RES_OUTER, 2026-08-02) widened the interior annulus by 0.23-0.43 mm, and on
+# that board FreeRouting ran to its OWN stopping rule in 19 passes and 5
+# unrouted — it never wedged at all.  The bound was kept as a named constant
+# rather than deleted, "because the wedge is a property of the geometry and the
+# next change to this board can bring it back".
+#
+# IT CAME BACK, one working day later, exactly as predicted — and the bound is
+# STILL OFF, because the fix was to move the GEOMETRY, not to truncate the
+# router.  Recording that, because truncation was tried first and it is a trap.
+#
+# The SCRUB growth (tools-board.SCRUB_RING, 2026-08-02) wedged FreeRouting at
+# pass #4-#6 in every pitch arrangement that merely satisfied the clearance
+# law.  Bounding the passes at the last one that COMPLETES does return a
+# session, exactly as the paragraph above promises — but that session was 11
+# connections short, and a route that short is not a route.  MEASURED on it:
+# the closer spends its whole 12-closure budget (38 segments) and the gate
+# still reads 3 rat lines, an "overlapping holes" DRC hit, and a pour cutout
+# 0.137 mm INSIDE a mount keep-out, which is the plane-killer band.  A bound
+# keeps the PIPELINE running; it does not keep the BOARD correct, and the
+# difference is invisible unless you look at what the closer had to invent.
+#
+# So the wedge was treated as what this file already calls it — a property of
+# the geometry — and the LED anode radius was swept until FreeRouting converged
+# on its own (full table at tools-board.LEAD_R_OUT; convergence is NOT
+# monotonic in the pitch, it switches back on at 18.59 and improves after).  At
+# LEAD_R_OUT 18.67 the router runs to its OWN stopping rule in 30 passes and 4
+# unrouted, matching the baseline exactly.  No truncation, no residue.
+#
+# The signature is worth writing down for the next person to hit it: every
+# healthy pass on this board finishes in under 2.5 seconds, so a pass still
+# running after ten is not slow, it is wedged, and no amount of waiting helps
+# (-do only writes on completion, so a wedged run costs the whole session).
+# Probe with ONE unbounded run and read the pass log.  If a bound is ever
+# genuinely needed, set it to the last pass that completes AND look at what the
+# closer is left holding before believing the result.
 #
 # The subprocess timeout below is the other half of that lesson.  It used to
 # be an hour, which is how a wedged run cost a full hour AND the session file
@@ -117,6 +146,68 @@ LAYER = {"F.Cu": "top", "B.Cu": "bottom"}
 # front plane is a disc of metal attached to nothing.  Promoted whether or not
 # the router happens to land front copper on it (SPEC "vias" lever 3).
 MANDATORY = {"PAD2-1"}
+
+# ---------------------------------------------------------------------------
+# DECLARED BENCH JUMPERS — the [[rules.gauge]] pattern, applied to connectivity
+# ---------------------------------------------------------------------------
+# A flip gauge is copper this board deliberately builds OUTSIDE a law (0.35
+# annulus against a 0.70 ring law) and gets away with it by DECLARING the
+# exception: the number is named, the reason is written down, the count is
+# fixed, and the gate checks the declaration rather than waiving the law.  A
+# bench jumper is the same shape of thing for connectivity — a connection the
+# COPPER does not make and a WIRE does — so it is declared the same way.
+#
+# THE MIGRATION FINDING, which is what earns this exception.  After the scrub
+# growth the board sits exactly ONE routable connection short, and which
+# connection is short is a property of the SEED SET, not of any one net.
+# MEASURED, four seed sets, each rerouted from scratch:
+#
+#     seeds                                  vias  residual open connection
+#     (C2-1)                                  24   GND   Q2-2/C3-2 cell
+#     (C2-1, Q2-2)                            25   RESET U1-1 -> TP5-1
+#     (C2-1, Q2-2, U1-1)                      31   VCC   rail -> C3-1
+#     (C2-1, Q2-2, U1-1, U1-2, TP1-1, C3-1)   28   L0    see below
+#
+# Every seed closed the connection it was aimed at and the deficit MOVED.  That
+# is not a defect in any of those nets; it is one global shortfall wearing a
+# different name each time, and chasing it with more seeds is a treadmill.
+#
+# So the shortfall is SPENT DELIBERATELY, on the pair of terminals that is
+# easiest to solder — because the one thing this board gets to choose is WHERE
+# the wire goes, and a jumper between two bare rings is a different object from
+# a jumper between two SOIC pins.  The route is SEALED against its DSN, so the
+# residual is stable: the same board comes back every build, and this
+# declaration keeps meaning what it says.
+#
+# WHY THIS ONE.  With the six-seed set the shortfall lands on L0, and L0 breaks
+# into exactly two pieces — everything, and TP4-1 on its own:
+#
+#     piece 0  LED1-2 LED3-2 LED5-2 (THT rings) + R2-2 R4-2 R6-2 U1-5 (lands)
+#     piece 1  TP4-1  (a bare Ø1.8 ISP pad)
+#
+# so the wire has a free choice of terminal at one end and a forced one at the
+# other, and BOTH ends come out bare.  LED1-2 is an LED ANODE: its ring is
+# soldered on the BACK, which is exactly where the operator already puts an
+# iron to solder that lead, and the body sits on the front where it is out of
+# the way.  TP4-1 is a bare pad designed to be touched.  Neither end is an
+# SOIC pin or an 0603 land, and no other seed set can say that — the GND-cell
+# residual is SOT-23 pin to 0603 land, the RESET residual lands on an SOIC pin,
+# the VCC residual on a rail track.  Ranked by solderability then length, the
+# measured shortlist was LED1-2->TP4-1 at 32.93 mm, LED5-2 at 47.89, LED3-2 at
+# 51.35; the SMD alternatives are shorter (R2-2 at 26.11) and are not taken,
+# because this declaration is spending ease-of-assembly, not millimetres.
+#
+# Both pads are on the BACK, so the wire lies flat on the back face for its
+# whole run and crosses no front component.  22 AWG solid, the same wire the
+# stitched vias use (Board A shipped seven of these).
+DECLARED_JUMPERS = (
+    {"net": "L0",
+     "from": "LED1-2", "from_xy": (14.685, 13.866),
+     "to": "TP4-1", "to_xy": (46.540, 5.540),
+     "face": "back", "length_mm": 32.93,
+     "why": "the board is one routable connection short after the scrub "
+            "growth; this is the pair with two bare solder points"},
+)
 
 VIA_BUDGET = 6                           # SPEC "Wire vias" planning number
 # The hard ceiling was REPEALED by operator ruling 2026-08-01: "there's
@@ -312,7 +403,39 @@ def closing_tracks(parts: list, tracks: list, vias: list,
     route = {"tracks": [t[:6] for t in tracks], "vias": vias,
              "track_nets": [t[6] for t in tracks], "promoted": promoted}
     others = TB.copper_objects(parts, route)
+
+    # THE M3 COPPER KEEP-OUTS, AS OBSTACLES THE CLOSER CAN SEE.
+    #
+    # MEASURED 2026-08-02, and it was a real hole in this stage rather than a
+    # tidy-up.  The ROUTER is told about these keep-outs — emit_dsn writes one
+    # per mount at ROUTE_MOUNT_KEEPOUT_R — but the CLOSER was not, so a closing
+    # track could be laid straight through a mount bore.  The gate DETECTS that
+    # (pour_hole_scan, the plane-killer check: a copper line whose pour cutout
+    # grazes a punched hole makes pcb-rnd's boolean fail and SILENTLY DISCARD
+    # the whole pour), but detection after the fact only converts a bad board
+    # into a failed build.  It fired for real on the scrub-growth board: a
+    # closure landed 0.245 mm inside H4's keep-out, and an earlier attempt put
+    # one at 0.137.  Both were legal by every clearance test this function ran,
+    # because no test knew the hole was there.
+    #
+    # The radius is ROUTE_MOUNT_KEEPOUT_R - CLEAR, chosen so that this stage's
+    # own `clears(...) >= CLEAR` reproduces pour_hole_scan's arithmetic exactly:
+    #
+    #   dist >= w/2 + CLEAR + (MOUNT_KEEPOUT_R + COPPER_CLEAR
+    #                          + POUR_HOLE_MARGIN - CLEAR)
+    #        == w/2 + COPPER_CLEAR + MOUNT_KEEPOUT_R + POUR_HOLE_MARGIN
+    #
+    # which IS the scan's safe side.  Tiers that demand more (COPPER_CLEAR,
+    # ROUTE_CLEAR) are simply stricter, and pathfind's Grid stamps the same
+    # list, so tier 3's journeys inherit it for free.  One obstacle list, one
+    # law, every tier — rather than a new check bolted onto each.
+    MOUNT_KEEPOUT = "__mount_keepout"
+    others = others + [(MOUNT_KEEPOUT, lay, [(mx, my)],
+                        TB.ROUTE_MOUNT_KEEPOUT_R - TB.CLEAR)
+                       for mx, my in TB.MOUNTS.values()
+                       for lay in ("top", "bottom")]
     out, new_vias, H = [], [], TB.BOARD_H
+    unclosed: list = []
 
     def nearby(pa, pb, layer, net, pad=7.0):
         """The only copper a path between pa and pb can possibly hit.  A spatial
@@ -357,8 +480,18 @@ def closing_tracks(parts: list, tracks: list, vias: list,
         for bx, by, keep in bodies:
             if math.hypot(bx - x, by - y) < keep + TB.RING_VIA / 2:
                 return False
+        # A via is a PADSTACK, and POUR_HOLE_MARGIN was measured to bind LINES
+        # only ("PADSTACK cutouts are unaffected — S2's own rings straddle the
+        # same hole harmlessly", tools-board.POUR_HOLE_MARGIN).  So a via gets
+        # the plain keep-out rule that seeded_vias already applies, not the
+        # inflated line rule, and the inflated obstacle is skipped here rather
+        # than costing legal via positions it has no measured claim on.
+        for mx, my in TB.MOUNTS.values():
+            if (math.hypot(mx - x, my - y) - TB.MOUNT_KEEPOUT_R
+                    - TB.RING_VIA / 2) < clear:
+                return False
         for n2, _l2, p2, r2 in others:
-            if n2 in (None, net):
+            if n2 in (None, net, MOUNT_KEEPOUT):
                 continue
             if TB.shape_gap(([(x, y)], TB.RING_VIA / 2), (p2, r2)) < clear:
                 return False
@@ -510,6 +643,29 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                 journey = (None if net in POUR_WELDED_NETS
                            else long_haul(net, w, objs, comps))
                 if journey is None:
+                    # GND arrives here on EVERY iteration by construction —
+                    # the line above never offers it a journey, because its
+                    # copper is WELDED into the pour and net_copper cannot see
+                    # the pour (POUR_WELDED_NETS).  Its leftover "pieces" are
+                    # joined by metal; reporting them would be crying wolf on
+                    # the one net that is fine, and the first version of this
+                    # reporter did exactly that.
+                    if net in POUR_WELDED_NETS:
+                        break
+                    # NOTHING LEGAL EXISTS for this pair.  Say so, by name.
+                    #
+                    # This used to `break` in silence and leave the gate to
+                    # report a bare "N rat lines" — which tells you a board is
+                    # broken but not WHERE, and 2026-08-02 was a day spent
+                    # guessing at geometry because of it.  A closer that gives
+                    # up is making a statement about a specific pair of copper
+                    # pieces on a specific face, and that statement is the most
+                    # useful thing this stage knows.
+                    unclosed.append(
+                        (net, len(comps),
+                         tuple(round(v, 2) for v in objs[i][1][0]),
+                         tuple(round(v, 2) for v in objs[j][1][0]),
+                         sorted(objs[i][0] & objs[j][0])))
                     break                   # nothing legal: let the gate speak
                 runs, hop_vias = journey
             else:
@@ -535,7 +691,7 @@ def closing_tracks(parts: list, tracks: list, vias: list,
                     # and pcb-rnd reads the result as a SHORT between two nets
                     # we drew ourselves.
                     others.append((net, lay, [a, b], w / 2))
-    return out, new_vias
+    return out, new_vias, unclosed
 
 
 def merge(parts: list, ses_path: str) -> dict:
@@ -606,7 +762,8 @@ def merge(parts: list, ses_path: str) -> dict:
     # joint into existence, so it is drawn on copper the bench is already
     # committed to.  Before everything else, so the ledger, the stitch list,
     # the clearance scan and pcb-rnd all see exactly one board.
-    closing, closing_vias = closing_tracks(parts, tracks, vias, promoted)
+    closing, closing_vias, unclosed = closing_tracks(parts, tracks, vias,
+                                                     promoted)
     tracks.extend(closing)
     vias.extend(closing_vias)
 
@@ -626,6 +783,8 @@ def merge(parts: list, ses_path: str) -> dict:
         "front_copper_on_leads": sorted(hits),
         "fantasy_bridges": fantasy,
         "closing_tracks": [list(t) for t in closing],
+        # what the closer could NOT do, by name — see closing_tracks
+        "unclosed": [list(u) for u in unclosed],
         "stitch_set": [list(p) for p in stitch],
     }
 
@@ -689,6 +848,95 @@ def galvanic(board: str) -> tuple[int, bool, int]:
     return (int(m.group(1)) if m else 0,
             "layout is complete" in out,
             out.count("Error while clipping"))
+
+
+def open_nets(parts: list, route: dict, m: dict) -> list[tuple]:
+    """-> [(net, n_pieces), ...] for every net whose copper is in >1 piece.
+
+    GND is excluded on the same grounds closing_tracks excludes it: its copper
+    WELDS into the pours, which net_copper cannot see, so its "pieces" are
+    joined by metal.  pcb-rnd is the oracle for GND, and gate A reads it.
+    """
+    tracks = [tuple(t) + (n,) for t, n in zip(m["tracks"], m["track_nets"])]
+    vias = [tuple(v) for v in m["vias"]]
+    promoted = set(m["promoted"])
+    out = []
+    for net in sorted({p.net for part in parts for p in part.pins} - {None}):
+        if net in POUR_WELDED_NETS:
+            continue
+        comps = components(net_copper(net, parts, tracks, vias, promoted))
+        if len(comps) > 1:
+            out.append((net, len(comps)))
+    return out
+
+
+def jumper_audit(parts: list, route: dict, m: dict) -> tuple[list, list]:
+    """-> (satisfied, undeclared).  The [[rules.gauge]] check for connectivity.
+
+    A declaration is only worth something if it is CHECKED, so this asks two
+    questions the count alone cannot:
+
+      * is every declared jumper still NEEDED — do its two named terminals
+        really sit in different pieces of their net?  A stale declaration that
+        names a connection the copper now makes would otherwise sit here
+        forever, quietly licensing a future break on that net.
+      * is every open net DECLARED?  Anything else is an undeclared open and
+        must fail, which is the whole point of writing the exception down
+        instead of loosening the law.
+    """
+    tracks = [tuple(t) + (n,) for t, n in zip(m["tracks"], m["track_nets"])]
+    vias = [tuple(v) for v in m["vias"]]
+    promoted = set(m["promoted"])
+    by_pid = {p.pid: p for part in parts for p in part.pins}
+    satisfied = []
+    for j in DECLARED_JUMPERS:
+        objs = net_copper(j["net"], parts, tracks, vias, promoted)
+        comps = components(objs)
+        where = {}
+        for ci, g in enumerate(comps):
+            for k in g:
+                for pid in (j["from"], j["to"]):
+                    p = by_pid[pid]
+                    if any(math.hypot(p.x - a, p.y - b) < 1e-6
+                           for a, b in [objs[k][1][0]]):
+                        where[pid] = ci
+        ok = (where.get(j["from"]) is not None
+              and where.get(j["to"]) is not None
+              and where[j["from"]] != where[j["to"]])
+        satisfied.append((j["net"], j["from"], j["to"], ok, len(comps)))
+    declared_nets = {j["net"] for j in DECLARED_JUMPERS}
+    undeclared = [(n, k) for n, k in open_nets(parts, route, m)
+                  if n not in declared_nets]
+    return satisfied, undeclared
+
+
+def rat_lines(board: str) -> list[tuple]:
+    """-> [(a, b, anchor_a, anchor_b), ...] for every rat pcb-rnd draws.
+
+    A COUNT cannot be checked against a declaration — "one rat line" is true of
+    a board whose one open connection is the declared jumper and equally true
+    of a board whose one open connection is something nobody has ever seen.
+    AddRats writes real `ha:rat` objects into the layout, so the honest way to
+    know WHICH connection is open is to let pcb-rnd draw them and read the
+    bytes back.  Coordinates are the lihata frame (y-down), as saved.
+    """
+    out = os.path.join(HERE, ".rats-out.lht")
+    if os.path.exists(out):
+        os.unlink(out)
+    TB.pcb_rnd("AddRats(AllRats)\nSaveTo(LayoutAs, %s)\n" % out, board)
+    if not os.path.exists(out):
+        return []
+    txt = open(out, encoding="utf-8").read()
+    os.unlink(out)
+    rows = []
+    for m in re.finditer(
+            r"ha:rat\.\d+ \{\s*x1=([\d.eE+-]+)mm; y1=([\d.eE+-]+)mm; "
+            r"lgrp1=\d+; anchor1=(\S+); x2=([\d.eE+-]+)mm; y2=([\d.eE+-]+)mm; "
+            r"lgrp2=\d+; anchor2=([^;]+);", txt):
+        rows.append(((round(float(m.group(1)), 3), round(float(m.group(2)), 3)),
+                     (round(float(m.group(4)), 3), round(float(m.group(5)), 3)),
+                     m.group(3), m.group(6)))
+    return sorted(rows)
 
 
 def excellon(board: str, tag: str) -> tuple[list, list]:
@@ -786,6 +1034,91 @@ def prune_vias(b: dict, m: dict) -> list:
 
 
 MATRIX = os.path.join(HERE, "MATRIX.md")
+GERBERS = os.path.join(HERE, "gerbers-rnd")
+
+
+def pour_census(parts: list, m: dict) -> list[str]:
+    """Every copper region on both faces, classified, from the RASTER.
+
+    Returns MATRIX lines, or a loud placeholder when the artwork has not been
+    exported yet — never a guess.  The classification is by MATCHING known
+    geometry (a dead ring's centre, a gauge's centre, a track's endpoint),
+    not by area, because a Ø2.50 dead ring and a small pour fragment are the
+    same size and only one of them is a defect.
+    """
+    need = ["orbit-F_Cu.gbr", "orbit-B_Cu.gbr", "orbit-Edge_Cuts.gbr"]
+    if not all(os.path.exists(os.path.join(GERBERS, f)) for f in need):
+        return ["- **not measured**: run `tools-fab.py`, then re-run the gate "
+                "so this section is written from real artwork."]
+    # Staleness is judged by CONTENT, not mtime: this build is deterministic,
+    # so a rebuild rewrites a byte-identical orbit.lht with a newer timestamp
+    # and an mtime test would call good artwork stale (it did).
+    stamp = os.path.join(GERBERS, ".source.sha256")
+    want = hashlib.sha256(open(FINAL_LHT, "rb").read()).hexdigest()
+    if not os.path.exists(stamp) or open(stamp).read().strip() != want:
+        return ["- **stale**: these gerbers were exported from a different "
+                "orbit.lht; run `tools-fab.py`, then re-run the gate."]
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(HERE)),
+                                        "src"))
+        from clauderacam.pcb import boardmaps as bm
+        import numpy as np
+        from scipy import ndimage
+    except Exception as e:                                   # noqa: BLE001
+        return [f"- **not measured**: {e}"]
+
+    win = bm.extents(os.path.join(GERBERS, "orbit-Edge_Cuts.gbr"),
+                     cross_check=True)
+    out = []
+    for face, gbr in (("FRONT", "orbit-F_Cu.gbr"), ("BACK", "orbit-B_Cu.gbr")):
+        A = bm.rasterize(os.path.join(GERBERS, gbr), win).astype(bool)
+        h, w = A.shape
+        lab, n = ndimage.label(A)
+        area = ndimage.sum(A, lab, range(1, n + 1))
+        pxmm2 = (w - 1) * (h - 1) / (win.w_mm * win.h_mm)
+
+        def at(bx, by):
+            return int(lab[int(round((win.y1 - by) / win.h_mm * (h - 1))),
+                           int(round((bx - win.x0) / win.w_mm * (w - 1)))])
+
+        pad2 = [p for part in parts if part.ref == "PAD2" for p in part.pins][0]
+        plane = at(pad2.x, pad2.y)
+        live = {plane: ["PAD2-1, the promoted GND lead"]}
+        for vx, vy, vnet in m["vias"]:
+            if vnet == "GND":
+                live.setdefault(at(vx, TB.BOARD_H - vy), []).append(
+                    f"GND wire via ({vx:.2f},{TB.BOARD_H - vy:.2f})")
+        dead = {}
+        if face == "FRONT":
+            for pid, x, y, dia, _j in TB.dead_front_rings(parts):
+                if pid not in m["promoted"]:
+                    dead[at(x, y)] = f"dead front ring {pid}"
+        for ref, (gx, gy) in TB.GAUGES.items():
+            dead.setdefault(at(gx, gy), f"flip gauge {ref}")
+        sig = {}
+        for lay, x1, y1, x2, y2, _w in m["tracks"]:
+            if (lay == "top") == (face == "FRONT"):
+                sig.setdefault(at(x1, TB.BOARD_H - y1), 0)
+                sig[at(x1, TB.BOARD_H - y1)] += 1
+        pads = {}
+        for part in parts:
+            for p in part.pins:
+                if face == "BACK":
+                    pads.setdefault(at(p.x, p.y), []).append(p.pid)
+        unex = [k for k in range(1, n + 1)
+                if k not in live and k not in dead and k not in sig
+                and k not in pads]
+        out.append(f"- **{face}: {n} regions.** GND plane is region {plane} at "
+                   f"{area[plane - 1] / pxmm2:.1f} mm2, live through "
+                   f"{'; '.join(live[plane])}.")
+        out.append(f"  - {len(dead)} region(s) dead BY DESIGN "
+                   f"(THT front rings own no net — the R3 finding — and the "
+                   f"four flip gauges are read with a loupe, never soldered).")
+        out.append(f"  - {len(sig)} region(s) are other nets' routed copper; "
+                   f"{len(pads)} carry component lands.")
+        out.append(f"  - **{len(unex)} unexplained region(s)**"
+                   + (f": {unex[:6]} — INVESTIGATE." if unex else "."))
+    return out
 
 
 def render(board: str) -> list[str]:
@@ -845,6 +1178,28 @@ def write_matrix(b: dict) -> None:
               "router left behind were removed after pcb-rnd confirmed they "
               "carry no connection."]
 
+    if DECLARED_JUMPERS:
+        L += ["", "## BENCH JUMPERS — wires the COPPER does not make", "",
+              f"**{len(DECLARED_JUMPERS)} jumper(s).**  Same 22 AWG solid wire "
+              "as the stitched vias (Board A shipped seven of these).  This is "
+              "not a repair and not an oversight: after the side-2 scrub growth "
+              "the board is exactly one routable connection short, and WHICH "
+              "connection is short moves with the seed set (four sets measured, "
+              "four different nets).  So the shortfall was spent deliberately, "
+              "on the pair of terminals that is easiest to solder.", ""]
+        for j in DECLARED_JUMPERS:
+            L += [f"- **{j['net']}** — solder a {j['length_mm']:.1f} mm wire "
+                  f"from **{j['from']}** ({j['from_xy'][0]:.3f}, "
+                  f"{j['from_xy'][1]:.3f}) to **{j['to']}** "
+                  f"({j['to_xy'][0]:.3f}, {j['to_xy'][1]:.3f}).",
+                  f"  Both pads are on the **{j['face']}** face, so the wire "
+                  f"lies flat on the back for its whole run and crosses no "
+                  f"front component.  `{j['from']}` is an LED anode ring — the "
+                  f"same joint you already solder that lead into — and "
+                  f"`{j['to']}` is a bare ISP pad.  Neither end is an SMD land.",
+                  "  Do this BEFORE the ISP header is used: without it "
+                  f"`{j['to']}` reads open."]
+
     prom = [p for p in m["promoted"]]
     L += ["", "## DUAL-SOLDER LEADS — the front-side bench work list", "",
           f"**{len(prom)} leads** must be soldered on the FRONT face as well "
@@ -871,6 +1226,17 @@ def write_matrix(b: dict) -> None:
                     f"back through this lead")
         L.append(f"| {pid} | {net} | {why} |")
     p1, p2 = by_ref["PAD1"].pins[0], by_ref["PAD2"].pins[0]
+    L += ["", "## Pour census — every copper region and what makes it live", "",
+          "MEASURED on the exported gerbers with gerbv (the rasterizer that "
+          "shares no code with this generator), not asserted from the model.  "
+          "A region with no conductor is not automatically a defect: on a "
+          "milled board with no plating, a THT lead's FRONT ring belongs to no "
+          "net by construction (the R3 finding), and the flip gauges are "
+          "deliberately dead copper you read with a loupe.  What matters is "
+          "that every region is either LIVE or dead ON PURPOSE.", ""]
+    for line in pour_census(parts, m):
+        L += [line]
+
     L += ["", "## Power pads — READ BEFORE WIRING", "",
           f"**PAD1 is `+` and is the RIGHT-HAND pad (x {p1.x}); PAD2 is `-` "
           f"and is the LEFT-HAND pad (x {p2.x}).** This TRANSPOSES the layout "
@@ -939,7 +1305,12 @@ def negative_control(b: dict, FANTASY: str) -> tuple:
                     "vias": m2["vias"], "promoted": set(m2["promoted"])},
              out_lht=NEG_LHT)
     rats, complete, _clip = galvanic(NEG_LHT)
-    return m2["fantasy_bridges"], rats, complete
+    # The condemnation must be about WHAT is open, not how many things are.
+    # Counting stopped working the moment the board carried a declared jumper:
+    # a fantasy board that happens to reroute into the same total is not
+    # innocent, it just has the same arithmetic.  The audit names nets.
+    _sat, undecl = jumper_audit(b["parts"], None, m2)
+    return m2["fantasy_bridges"], rats, complete, undecl
 
 
 def gate(b: dict) -> int:
@@ -965,7 +1336,31 @@ def gate(b: dict) -> int:
     print(f"    pcb-rnd on the FINAL board: {rats} rat lines, "
           f"complete={complete}, clipper failures={clip}")
     chk("the pour survives every polygon subtraction", clip, 0)
-    chk("every net complete, no shorted nets", complete and rats == 0, True)
+    # The law is unchanged for everything that is not written down: copper must
+    # close every connection.  What the declaration buys is EXACTLY the jumpers
+    # named in DECLARED_JUMPERS and nothing else, so the arithmetic below is a
+    # tightening, not a waiver — with an empty declaration this is the old
+    # `rats == 0 and complete` check character for character.
+    njump = len(DECLARED_JUMPERS)
+    chk(f"open connections == declared bench jumpers ({njump})", rats, njump)
+    chk("no shorted nets", "shorted" not in TB.pcb_rnd(
+        "AddRats(AllRats)\n", FINAL_LHT).lower(), True)
+    if njump == 0:
+        chk("every net complete", complete, True)
+    else:
+        sat, undeclared = jumper_audit(parts, route, m)
+        # NB: not `b` — that is the build dict this whole function reads, and
+        # shadowing it here made the fantasy controls 200 lines later explode
+        # on a string.
+        for jnet, jfrom, jto, ok, npieces in sat:
+            print(f"    declared jumper {jnet}: {jfrom} <-> {jto} — "
+                  f"{'joins 2 pieces, still needed' if ok else 'STALE'} "
+                  f"({npieces} pieces)")
+        chk("every declared jumper still joins two pieces of its net",
+            [s[3] for s in sat], [True] * njump)
+        for net, k in undeclared:
+            print(f"    UNDECLARED OPEN: {net} in {k} pieces")
+        chk("no net is open except the declared jumpers", undeclared, [])
 
     print("### B. THE LAWS — pcb-rnd DRC and an independent oracle ###")
     viol = [ln for ln in TB.run_drc(FINAL_LHT).splitlines()
@@ -1006,15 +1401,57 @@ def gate(b: dict) -> int:
     for pin in FANTASIES:
         print(f"    the DSN is corrupted to call {pin} an ordinary through "
               f"pin; the bench cannot reach that lead on the front.")
-        fant, nrats, ncomplete = negative_control(b, pin)
+        fant, nrats, ncomplete, nundecl = negative_control(b, pin)
         print(f"      merge names: {fant} — pcb-rnd on that board: {nrats} "
-              f"rat lines, complete={ncomplete}  (honest: {rats}, {complete})")
+              f"rat lines, complete={ncomplete}  (honest: {rats}, {complete}); "
+              f"undeclared opens {nundecl}")
         named.append(fant)
-        condemned.append((not ncomplete) and nrats > rats)
+        # A board built on a fantasy bridge is condemned when it is INCOMPLETE
+        # and worse than the declaration allows.  TWO independent oracles get a
+        # vote and either one convicts, because MEASURED, neither catches both:
+        #
+        #   BZ1-1   pcb-rnd 2 rats (> 1 declared)   model audit sees no split
+        #   LED8-2  pcb-rnd 1 rat  (== declared)    model audit names the split
+        #
+        # pcb-rnd resolves real copper and catches breaks the model's
+        # pad-and-track graph cannot; the model knows which NET is torn and
+        # catches breaks that reroute into the same total.  The old test —
+        # nrats > the honest board's rats — is the one thing that does NOT
+        # work any more: it silently stopped discriminating the moment the
+        # honest board carried a declared jumper of its own.
+        condemned.append((not ncomplete)
+                         and (nrats > len(DECLARED_JUMPERS) or bool(nundecl)))
     chk("the merge names every fantasy bridge and refuses to promote it",
         named, [[p] for p in FANTASIES])
     chk("pcb-rnd independently condemns each board built on one",
         condemned, [True] * len(FANTASIES))
+
+    # -- the DECLARED-JUMPER law's own control ------------------------------
+    # A declaration that cannot fail is a waiver wearing a checklist.  So cut
+    # one routed segment out of the FINAL merge — a break the declaration says
+    # nothing about — and prove the audit names the net and refuses.  The cut
+    # is chosen deterministically: the longest bottom segment on a net that is
+    # NOT the declared one, so it is guaranteed to open something new.
+    cand = sorted(
+        ((round(math.hypot(t[3] - t[1], t[4] - t[2]), 3), i)
+         for i, (t, n) in enumerate(zip(m["tracks"], m["track_nets"]))
+         if t[0] == "bottom" and n not in
+         ({j["net"] for j in DECLARED_JUMPERS} | POUR_WELDED_NETS | {None})),
+        reverse=True)
+    if cand:
+        cut = cand[0][1]
+        hurt = {k: (list(v) if isinstance(v, list) else v) for k, v in m.items()}
+        hurt["tracks"] = [t for i, t in enumerate(m["tracks"]) if i != cut]
+        hurt["track_nets"] = [n for i, n in enumerate(m["track_nets"])
+                              if i != cut]
+        broke = m["track_nets"][cut]
+        _sat, undecl = jumper_audit(parts, route, hurt)
+        print(f"    control: the longest {broke} segment is cut from the "
+              f"merge; the audit reports {undecl}")
+        chk("an UNDECLARED open is named and refused",
+            bool(undecl) and all(n != DECLARED_JUMPERS[0]["net"]
+                                 for n, _k in undecl) if DECLARED_JUMPERS
+            else bool(undecl), True)
 
     print("### E. VIA LEDGER ###")
     for row in via_ledger(m, parts):
@@ -1062,7 +1499,26 @@ def gate(b: dict) -> int:
     print(f"    deleting the BACK pour: {rats} rat lines -> {lost}"
           f"  ({lost - rats} GND terminal(s) reach the network only through "
           f"the fill)")
-    chk("the back pour is a real conductor, not decoration", lost > rats, True)
+    # This USED to assert lost > rats — "the pour is a real conductor, not
+    # decoration".  On the seeded board that is FALSE and the falsity is an
+    # improvement: with 28 wire vias the router closes GND entirely in copper,
+    # so no terminal depends on the fill and deleting it changes nothing.
+    #
+    # The incident this check was written for (2026-08-01: a clipper failure
+    # silently DISCARDED the back plane and eleven SMD GND terminals came open
+    # while DRC stayed clean) is still guarded, and by two sharper checks than
+    # this one ever was: gate A refuses any clipper failure outright, and the
+    # jumper audit refuses any undeclared open on any net including GND.  What
+    # remains worth asserting here is the hazard that a REDUNDANT pour could
+    # still hide — a plane that is FLOATING, i.e. a slab of copper attached to
+    # nothing, which is a real antenna and a real short risk on a handled
+    # board.  Deleting copper can never IMPROVE connectivity, so a floating
+    # plane shows up as lost < rats; a live-or-redundant one cannot.
+    chk("deleting the back pour never improves connectivity (it is not "
+        "floating copper masking an open)", lost >= rats, True)
+    role = ("LOAD-BEARING" if lost > rats
+            else "REDUNDANT — GND closes in copper alone")
+    print(f"    the back plane is {role}; either is legal, floating is not")
     os.unlink(probe)
 
     print("### F. DETERMINISM ###")
@@ -1099,6 +1555,9 @@ if __name__ == "__main__":
     print(f"  {len(mm['vias'])} wire vias, "
           f"{len(mm['promoted'])} promoted leads: "
           f"{' '.join(mm['promoted'])}")
+    for net, npieces, pa, pb, faces in mm.get("unclosed", ()):
+        print(f"  UNCLOSED {net}: {npieces} pieces, no legal path "
+              f"{pa} <-> {pb} on {faces}")
     if mm["fantasy_bridges"]:
         print(f"  FANTASY BRIDGES (never promoted): {mm['fantasy_bridges']}")
     sys.exit(gate(bb) if "--gate" in sys.argv else 0)

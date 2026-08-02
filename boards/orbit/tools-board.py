@@ -134,21 +134,157 @@ CORNER_R = 2.0
 # bottom strip (SW1's blade ring tops out at 6.62).
 RING_CX, RING_CY = 24.0, 30.0
 RING_R = 17.0                    # LED body pitch circle (bodies 8.9 mm apart)
-LEAD_R_IN, LEAD_R_OUT = 15.55, 18.45   # cathode INWARD, anode outward
-# LED lead pitch is 2.90, NOT the SPEC's 2.54.  Ø2.44 rings on two DIFFERENT
-# nets need hole pitch >= 2.44 + 0.40 = 2.84 before any routing happens; 2.54
+LEAD_R_IN, LEAD_R_OUT = 15.55, 18.63   # cathode INWARD, anode outward
+# LED lead pitch is 3.08, NOT the SPEC's 2.54.  Ø2.50 rings on two DIFFERENT
+# nets need hole pitch >= 2.50 + 0.40 = 2.90 before any routing happens; 2.54
 # caps the ring at 0.57 and is UNBUILDABLE under ring>=0.7.  Found independently
 # in both toolchains ("24 clearance errors, one per LED" on the first KiCad
-# build).  2.90 leaves 0.46 of real gap.
+# build).  3.08 leaves 0.58 of real gap.
+#
+# RE-SPREAD 2026-08-02, and this is THE MARGIN LESSON arriving for the fourth
+# time on this board.  The pitch was 2.90 against Ø2.44 rings — 0.46 of gap,
+# comfortable.  Growing the rings to the scrub law's Ø2.50 spends 0.06 of that
+# and lands the anode/cathode pair at EXACTLY 0.400, i.e. exactly on the
+# clearance law, 24 times over.  MEASURED at that pitch before the fix: the
+# independent scan reads 0.3996 on eight of the twelve LEDs (quantization takes
+# the tie the wrong way) and convicts the board.  So the pitch grows by the same
+# 0.06 the rings did and the gap is preserved, not merely made legal.
+#
+# ONLY LEAD_R_OUT MOVES, and it moves much further than the law needs: 18.45 ->
+# 18.67, a pitch of 3.12 where 2.92 would already be legal.  THE ROUTER CHOSE
+# THIS NUMBER, and that is the same doctrine this file applies everywhere else
+# ("a placement the router cannot solve is not an improvement, whatever the
+# wire lengths say"; "the ROUTER is the scarcer resource").
+#
+# WHY IT HAD TO BE SWEPT.  The scrub growth wedges FreeRouting, and the wedge
+# is a COMBINATION effect that no single change predicts.  Each ring grown
+# ALONE converges — MEASURED, one unbounded run each, on boards that all pass
+# the clearance scan:
+#
+#     baseline            (2.44/2.44/3.24)  CONVERGED 28 passes,  4 unrouted
+#     via ring only       (2.44/2.50/3.24)  CONVERGED 20 passes,  5 unrouted
+#     LED ring only       (2.50/2.44/3.24)  CONVERGED 18 passes,  8 unrouted
+#     SW1 ring only       (2.44/2.44/3.30)  CONVERGED 20 passes,  3 unrouted
+#
+# and every combination of the LED and via rings wedges, wherever the pitch is
+# taken from and whether or not SW1 grows too:
+#
+#     LED+via, pitch 2.96 (cathodes out)    WEDGE at pass #4, 20 open
+#     LED+via, pitch 2.96 (anodes out)      WEDGE at pass #6, 11 open
+#     all three, pitch 2.96                 WEDGE at pass #4, 20 open
+#
+# So the pitch was swept with everything at the scrub law, and convergence is
+# NOT monotonic in it — it switches back on and then improves:
+#
+#     LEAD_R_OUT   18.51   18.55   18.59    18.63    18.67
+#     result       wedge#6 wedge#5 conv 11  conv  5  conv  4
+#
+# 18.59 is where convergence switches back on, and it is NOT enough: 11 open is
+# a route the closer cannot finish.  18.63 returns a baseline-class 5 open, and
+# 18.67 returns the baseline's own 4.  The board is at 18.67 and the difference
+# between the last two is the whole reason to record this table: at 18.63 the
+# closer finishes four of the five and pcb-rnd hangs ONE rat line on the board,
+# which fails the galvanic gate and takes two more checks down with it — the
+# fantasy controls stop discriminating (they condemn a board by having MORE
+# rats than the honest one, and 1 is not more than 1) and the back-pour probe
+# loses its signal the same way.  One unclosed connection is not a near miss;
+# it is three failed checks and a board that is not a board.
+#
+# WHAT IT COSTS, stated plainly.  A 5 mm LED's leads leave the body 2.54 apart
+# and the operator splays them to 3.12 — 0.29 per lead, against the 0.18 the
+# 2.90 pitch already asked for.  That is a bend, not a law: nothing in the
+# process table bounds it, and the alternative on offer was a board the router
+# cannot route.  The geometry it buys is roomy, not tight: 0.62 mm between the
+# anode and cathode rings where the law needs 0.40.
+#
+# The ring's outer copper now reaches 24.0 + 18.67 + 1.25 = 43.92 (was 43.67),
+# still 1.21 mm clear of the right strip's nearest land (R15's 1206 edge at
+# 45.13), 4.08 mm from the left board edge against EDGE_CLEAR's 0.40, and
+# 10.08/49.92 in y inside a 0.4..53.6 pour.  The 12 LED BODIES do not move at
+# all — they sit on RING_R's pitch circle, which is untouched — so the silk
+# ticks that say which lead is the cathode stay exactly where the bodies are.
+# The leads are no longer symmetric about the body centre (15.55/18.67 midpoints
+# at 17.11 against RING_R 17.0); 0.11 mm of a 5 mm body, and the tick is what
+# tells the operator which hole is which, not the symmetry.
 LEAD_PITCH = LEAD_R_OUT - LEAD_R_IN
 
 HOLE_LED, HOLE_BTN, HOLE_BZ = 1.0, 1.0, 1.0
 HOLE_SW1, HOLE_PAD, HOLE_GAUGE = 1.8, 1.5, 1.0
 HOLE_MOUNT, HOLE_VIA = 3.4, 1.0
-RING_LED = HOLE_LED + 2 * RING + 2 * RING_MARGIN          # 2.44
-RING_SW1 = HOLE_SW1 + 2 * RING + 2 * RING_MARGIN          # 3.24
+
+# ---------------------------------------------------------------------------
+# THE SCRUB LAW — why every hole-centred pad on this board grew on 2026-08-02
+# ---------------------------------------------------------------------------
+# A milled double-sided board is not soldered on side 2 until the paint over
+# side 2's rings has been SCRUBBED off, and that scrub is a real toolpath the
+# lane generates: `reemit.annular_laps` walks the 0.30 mm scrub bit round and
+# round inside the annulus.  It needs somewhere to walk.  Its bounds are
+#
+#     rc_min = hole_r + r + (SCRUB_ANNULAR_RIM    + SCRUB_LAP_MARGIN)
+#     rc_max = pad_r  - r - (SCRUB_ANNULAR_INSIDE + SCRUB_LAP_MARGIN)
+#
+# and it REFUSES when rc_min > rc_max — no lap radius exists that both stays
+# off the bore rim and stays inside the pad.  MEASURED on this board's own
+# artwork, Ø2.44 pad over a Ø1.0 hole:
+#
+#     rc_min = 0.5 + 0.15 + 0.25 = 0.900   >   rc_max = 1.22 - 0.15 - 0.20
+#                                                     = 0.870      REFUSED
+#
+# Every Ø1.0 ring on orbit was that pad.  Solving the inequality gives one law
+# with no diameter special-casing:
+#
+#     pad_d >= hole_d + 2*(2r + INSIDE + RIM + 2*MARGIN) = hole_d + 1.50
+#
+# so the required ANNULAR RING is 0.30 + 0.15 + 0.20 + 0.10 = 0.75 mm.  That it
+# lands 0.05 above the 0.70 ring LAW is arithmetic, not design: the ring law is
+# about copper that survives milling, this is about a bit that has to fit.
+#
+# SPEC SAYS Ø2.4 AND SPEC IS OUT BY THE MARGIN — worth naming, because the two
+# numbers look like a contradiction and are not.  SPEC's process table does the
+# same arithmetic without SCRUB_LAP_MARGIN ("Ø2.4 pad + Ø1.0 hole leaves one
+# legal 0.3-wide lap at r~0.9"), which is 0.85..0.90 of band and true as far as
+# it goes.  The GENERATOR applies the margin to both bars, and it is the
+# generator that emits the toolpath: 0.900 > 0.850, refused.  SPEC's Ø2.4 misses
+# by 0.10 and this board's Ø2.44 missed by 0.06.
+#
+# THIS BAR ALREADY CARRIES ITS MARGIN, which is why sitting on it is allowed
+# here and nowhere else in this file.  Both bounds are built from SCRUB_LAP_
+# MARGIN, so a pad at exactly hole+1.50 gives a zero-width band whose single
+# lap still holds 0.05 mm off the rim and 0.05 mm inside the pad edge.  (The
+# recorded live run is the same shape: pad 2.6 / hole 1.0 -> band 0.05, one lap
+# at rc 0.925.)  RING_MARGIN's 0.02 is not added on top — it exists to keep a
+# ring off the min_ring bar, and 0.75 clears that bar by 0.05 already.
+SCRUB_TOOL_DIA = 0.30        # jobs' [[tool]] type="scrub"; r = 0.15
+SCRUB_ANNULAR_INSIDE = 0.15  # flip.SCRUB_ANNULAR_INSIDE
+SCRUB_ANNULAR_RIM = 0.20     # flip.SCRUB_ANNULAR_RIM
+SCRUB_LAP_MARGIN = 0.05      # reemit.SCRUB_LAP_MARGIN
+SCRUB_RING = (SCRUB_TOOL_DIA + SCRUB_ANNULAR_INSIDE + SCRUB_ANNULAR_RIM
+              + 2 * SCRUB_LAP_MARGIN)                     # 0.75
+assert SCRUB_RING >= RING + RING_MARGIN, \
+    "the scrub ring must also satisfy the annular-ring law it sits above"
+
+
+def scrubbable(hole: float) -> float:
+    """Smallest pad diameter a side-2 annular scrub can be walked inside.
+
+    (Rounds like q() does; q itself is defined further down and this runs at
+    import time, so the quantum is spelled out rather than borrowed.)
+    """
+    return round(hole + 2 * SCRUB_RING, 3)
+
+
+RING_LED = scrubbable(HOLE_LED)                           # 2.50 (was 2.44)
+RING_SW1 = scrubbable(HOLE_SW1)                           # 3.30 (was 3.24)
+RING_VIA = scrubbable(HOLE_VIA)                           # 2.50 (was 2.44)
+# SPEC's Ø3.6 wire pad is UNCHANGED: on a Ø1.5 hole it is a 1.05 ring, and the
+# scrub law asks for 3.00.  It clears by 0.60 — grow only what is short.
 RING_PAD = 3.6                                            # SPEC: Ø3.6 wire pad
-RING_VIA = HOLE_VIA + 2 * RING + 2 * RING_MARGIN          # 2.44
+assert RING_PAD >= scrubbable(HOLE_PAD)
+# The flip gauges are the DECLARED exception and stay at 1.7 (0.35 annulus,
+# SPEC Decision Q13).  They are not solderable, they are never scrubbed, and
+# they take no mask aperture — a loupe reads them through bare paint BEFORE the
+# squeegee.  A gauge grown to the scrub law would be a pad pretending to be a
+# joint; the honest encoding is a small ring that no scrub set contains.
 RING_GAUGE = 1.7         # DECLARED sub-law: 0.35 annulus, SPEC Decision Q13
 MOUNT_KEEPOUT_R = 3.2    # copper keep-out radius around each M3 bore
 
@@ -245,7 +381,21 @@ C1_XY = (VCC_DESCENT_X - 1.0375, 9.0)
 # annulus: the 1206 inner lands go from radius 9.10 to 9.53, and that annulus
 # is the escape space U1's west pins (U1-1 RESET, U1-2 L3) have to reach open
 # copper through now that the LED anodes are no longer layer bridges.
-RES_OUTER, RES_OUTER_1206 = 13.91, 13.91
+#
+# RUNG 3, 2026-08-02 (the SCRUB growth), and it moves the ceiling DOWN by 0.03.
+# The bound is written against the cathode ring's INNER edge, and that edge
+# moved when the ring grew to the scrub law: LEAD_R_IN - RING_LED/2 is now
+# 15.55 - 1.25 = 14.30, not 14.33.  Leaving RES_OUTER at 13.91 would hand back
+# exactly the tie this comment was written to avoid — the arc's 0.42 falls to
+# 0.39, UNDER the 0.40 law — so the arc is re-spread by the same 0.03 the ring
+# grew inward: 14.30 - 13.88 = 0.42, COPPER_CLEAR again, the number that reads
+# clean.  The interior annulus pays 0.03 for the scrub.
+#
+# Holding the ceiling at 13.91 by pulling the CATHODES outward instead was
+# tried, and the router rejected it: it converges as an LED-only change but
+# wedges at pass #4 with 20 open once the via ring grows too (see LEAD_R_IN).
+# The pitch is bought from the anode side alone for that reason.
+RES_OUTER, RES_OUTER_1206 = 13.88, 13.88
 
 # DERIVED from the edges, not hard-coded: these four bores belong to the corners
 # of the outline, so when the outline grows they move WITH it (2026-08-01).
@@ -907,6 +1057,63 @@ def fixed_tracks() -> list[tuple]:
         # cannot move, and it turned a 32-second route into 20+ minutes with no
         # convergence.  Two rat lines is the cheaper honest residue.  The real
         # fix is a placement that gives U1-4 an escape, not a protected stub.
+        #
+        # THE BUZZER CELL'S GND ESCAPE (2026-08-02).  Q2-2 and C3-2 are the
+        # driver cell's two GND lands, and on the scrub-grown board they came
+        # out as a 4.0 mm2 island joined to nothing: pcb-rnd hung the board's
+        # last rat line on them.  MEASURED on the raster — the live back plane
+        # is 1386.2 mm2 and its closest approach to that island is 4.213 mm,
+        # so this is not a pinched fill channel to widen.  The pour has been
+        # pushed clean out of the cell by FIFTEEN foreign-net back tracks
+        # (SND_B off Q2-1, SND_C off Q2-3, VCC into C3-1, plus the long runs at
+        # y 35.23 and y 36.74).  The cell is where four foreign nets converge,
+        # so every reroute fences it again — which is why the answer is not a
+        # placement nudge and not a wire via.
+        #
+        # A WIRE VIA IS IMPOSSIBLE HERE, and that was measured before this was
+        # written: SPEC's via geometry keeps a threaded via 1.5 mm clear of an
+        # SMD land, the orphan IS two SMD lands, and a sweep found ZERO legal
+        # via seats within 7 mm of it — before even asking for a track to reach
+        # one.  The reserve stitch cannot be spent on a defect like this.
+        #
+        # So the cell gets a PRE-PLACED, PROTECTED GND escape instead, and
+        # being GND it WELDS into the back pour along its whole length
+        # (emit_lihata: clearpoly False for GND) rather than cutting a moat
+        # through it.  That is what makes it deterministic: wherever the fill
+        # survives beside ANY part of this run, both lands are connected, so it
+        # does not depend on where the router happens to fence next time.
+        #
+        # The geometry was measured, not chosen.  Bearing and length were swept
+        # against every other net's copper on the unrouted board: the run
+        #
+        #     ("bottom", "GND", TRACK,
+        #      [(50.5, 30.95), (49.8625, 34.0), (56.52, 31.837)])
+        #
+        # holds 0.887 mm to the nearest foreign copper (law 0.40) and stays OUT
+        # of both reserved routing lanes — 2.84 mm below L2's lane into S2
+        # (y 35.4..37.1) and 6.6 mm above L1's into S1 (y 22.5..25.0).  The
+        # roomier northern bearings were rejected for sitting 0.09 mm off the
+        # L2 lane, which is this file's oldest mistake wearing a new hat.  The
+        # board gate passed it 21/21 with the tightest gap unmoved at 0.479.
+        #
+        # AND IT IS NOT EMITTED, because the ROUTER rejected it — the same way,
+        # and for the same reason, as the U1-4 stub above.  MEASURED: with this
+        # run protected in the DSN, FreeRouting completes six passes at its
+        # usual 1.3-2.1 s each (22, 23, 16, 12, 10, 11 unrouted) and then WEDGES
+        # inside pass #7, still running at 74 s where a healthy pass finishes
+        # under 2.5.  Bounding at the last completed pass returns a session 10-11
+        # connections short, which this board has already proven the closer
+        # cannot finish (that route came back with 3 rat lines, an overlapping-
+        # hole DRC hit, and a pour cutout inside a mount keep-out).
+        #
+        # So BOTH stubs this file has ever tried say the same thing, and it is
+        # worth stating as a law rather than an anecdote: on this board a
+        # pre-placed protected track that crosses routing space is an obstacle
+        # FreeRouting cannot move, and it costs convergence — the cost does not
+        # depend on whether the copper is inside the ring or out in the right
+        # strip.  Pre-placed copper belongs where the router would never go
+        # anyway (the bottom strip's power stack) or where it replaces routing
+        # demand outright (the leg links), never where it merely helps.
     ]
     # The leg links, drawn from the SAME table build_parts() places the pads
     # from, PAD CENTRE to PAD CENTRE — see BUTTONS for why they may not be
@@ -1042,6 +1249,36 @@ GLYPHS = {
     " ": "",
 }
 
+# Both button legends are SQUEEZED between their own button and the buzzer, and
+# 2026-08-02's ring growth is what made that a measurement rather than a
+# comfort.  CATCH sits above S1 with BZ1-1 above it; START sits below S2 with
+# BZ1-2 below it; the arrangement is mirror-symmetric, so one number serves
+# both and one number moves both.
+#
+# At 4.8 the near edge of each label stood 1.650 mm from the buzzer ring's
+# centre.  Growing that ring from Ø2.44 to Ø2.50 moves its edge out 0.03 and
+# leaves 0.276 against the 0.30 silk law — MEASURED as the ONE check the scrub
+# growth broke (front silk, 20/21).  Moving the buzzer is not the answer and
+# the record says why: BZ1's y is already pinned from below by this very
+# legend ("dropping it to 28.5 ... walked its lower ring into the CATCH
+# legend", see BZ1_XY), so the part that yields is the label.
+#
+# 4.72, not the 4.77 that would merely restore the old clearance.  A silk
+# stroke is the cheapest object on this board to move, so it buys the WIDEST
+# margin available instead of the minimum one.  SWEPT in 0.01 steps against
+# both neighbours (law 0.300):
+#
+#     R     4.65   4.66   4.70   4.72   4.75   4.77   4.78
+#     BZ1  0.426  0.416  0.376  0.356  0.326  0.306  0.296
+#     btn  0.294  0.304  0.343  0.363  0.393  0.413  0.423
+#     min  0.294  0.304  0.343  0.356  0.326  0.306  0.296
+#
+# The legal window is 4.66..4.77 — pulled in toward its button the label closes
+# on S1/S2's own leg rings, pushed out it closes on the buzzer again — and the
+# two constraints cross at 4.72, which is therefore the max-min seat and not a
+# taste.  It holds 0.356 to the buzzer and 0.363 to the button, where every
+# previous tenant of this seat sat within 0.01 of the bar.
+BUTTON_LEGEND_R = 4.72
 SILK_H = 1.5             # SPEC: text 1.5 mm
 SILK_W = 0.25            # SPEC: stroke 0.25, Makera's floor
 ADVANCE = 0.85           # x text height
@@ -1144,12 +1381,12 @@ def front_legend() -> list[tuple]:
     # clear of the cathode rings and over nothing but back-side copper.
     for label, ang in (("12", 90.0), ("3", 0.0), ("6", -90.0), ("9", 180.0)):
         out += text_strokes(label, *polar(RING_CX, RING_CY, ang, 11.5))
-    # Each button's legend sits 4.8 mm outboard of its body centre, so START
-    # followed S2 down when POUR_HOLE_MARGIN moved it (see BUTTONS).
+    # Each button's legend sits BUTTON_LEGEND_R outboard of its body centre, so
+    # START followed S2 down when POUR_HOLE_MARGIN moved it (see BUTTONS).
     out += text_strokes("CATCH", *polar(BUTTONS["S1"][0], BUTTONS["S1"][1],
-                                        90.0, 4.8))
+                                        90.0, BUTTON_LEGEND_R))
     out += text_strokes("START", *polar(BUTTONS["S2"][0], BUTTONS["S2"][1],
-                                        -90.0, 4.8))
+                                        -90.0, BUTTON_LEGEND_R))
     out += text_strokes("ON", SW1_X, 8.1)
     out += text_strokes("+", 16.0, 7.0)      # follows the layout, not the note:
     out += text_strokes("-", 10.0, 7.0)      # PAD1 (+) is the right-hand pad
@@ -1270,18 +1507,22 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
     protos = (
         # The DECLARED stitch: the only prototype on the board with hplated=1.
         # No object references it at R4a — R4b instantiates one per wire via.
-        L.ps_proto(PROTO_VIA, "WIRE_VIA_STITCHED", HOLE_VIA, True, RING_VIA) +
+        # Mask OPEN on both faces: a wire via is a hole the operator threads and
+        # solders on BOTH sides, so both rings are joints and both get scrubbed.
+        L.ps_proto(PROTO_VIA, "WIRE_VIA_STITCHED", HOLE_VIA, True, RING_VIA,
+                   mask_sides=("top", "bottom")) +
         # Bare bores: a hole with no copper anywhere.  H1-H4 carry no annulus
         # at all (SPEC: Ø3.4 bore, copper keep-out), and the G1-G4 gauge rings
         # are DEAD ISLANDS, not annuli of a terminal, so they are emitted as
         # separate copper below.  MEASURED: pcb-rnd raises no ring or drill
         # violation on a copper-less padstack, so this encoding is silent in
-        # DRC rather than a false positive.
+        # DRC rather than a false positive.  No mask on either: there is no
+        # copper here to expose, and the gauge rings are covered ON PURPOSE.
         L.ps_proto(PROTO_MOUNT, "MOUNT_BORE_M3", HOLE_MOUNT, False, 0.0,
                    sides=()) +
         L.ps_proto(PROTO_GAUGE, "GAUGE_BORE", HOLE_GAUGE, False, 0.0, sides=()))
 
-    objs, top, bot = [], [], []
+    objs, top, bot, top_mask = [], [], [], []
     for ref, (mx, my) in MOUNTS.items():
         objs.append(L.ps_ref(25000 + 2 * len(objs), PROTO_MOUNT,
                              *lht_xy(mx, my), name=ref, clearance=COPPER_CLEAR))
@@ -1299,17 +1540,33 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
         pins, protos_sub = [], ""
         if part.pins[0].kind == "tht":
             hole, ring = part.pins[0].shape[1], part.pins[0].shape[2]
+            # The mask opens where the terminal HAS copper — bottom only for an
+            # ordinary back-soldered lead.  The physical front ring of the same
+            # hole is a dead island belonging to no terminal, and it gets its
+            # own mask aperture below, from the same place its copper comes
+            # from.  Encoding it here instead would put an opening on a face
+            # this padstack does not own.
             protos_sub = L.ps_proto(0, "THT_BACK_ONLY", hole, False, ring,
-                                    sides=("bottom",))
+                                    sides=("bottom",), mask_sides=("bottom",))
             if part.pins[0].dual:
                 # Present, referenced by nothing: R4b promotes a lead by
                 # switching its proto to 1.  The prototypes differ ONLY in
-                # hplated and in owning the front face.
+                # hplated and in owning the front face — and therefore in
+                # having a front OPENING, which is the point: a promotion is a
+                # bench joint on the reflow face, and paint over it is a joint
+                # the operator cannot make.
                 protos_sub += L.ps_proto(1, "THT_DUAL_SOLDER_DECLARED",
-                                         hole, True, ring)
+                                         hole, True, ring,
+                                         mask_sides=("top", "bottom"))
         elif part.pins[0].kind == "circ":
+            # The 6 ISP pads: mask OPEN (they are touched with a pogo or a
+            # soldered wire), paste NONE.  SPEC's paste rule is about holes
+            # wicking, but the principle binds here too — an ISP pad is a
+            # contact, not a reflow land, and a stencil window on it would put
+            # solder where a probe tip has to sit flat.
             protos_sub = L.ps_proto(0, "ISP_BARE_PAD", 0.0, False,
-                                    part.pins[0].shape[1], sides=("bottom",))
+                                    part.pins[0].shape[1], sides=("bottom",),
+                                    mask_sides=("bottom",))
         else:
             w, h = part.pins[0].shape[1], part.pins[0].shape[2]
             # -prot, not +prot.  The model's rotation is CCW in the BOARD frame
@@ -1320,9 +1577,17 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
             # other 8, which is exactly the class of bug rect_corners' own
             # docstring was written for.  MEASURED: R4 (prot 300) came out as a
             # land at 60, i.e. 120 degrees off the body it has to solder to.
+            # The ONLY class that takes paste: a reflow land on the reflow
+            # face.  SPEC's rule is stated as a prohibition — no paste on a
+            # hole, because a pasted hole wicks and blocks the wire — and this
+            # is its positive form.  Mask and paste reuse the land's own
+            # rotated polygon, so all three shapes are literally the same
+            # corners (see lihata.ps_proto_rect).
             protos_sub = L.ps_proto_rect(0, "SMD_LAND", 0.0, False, w, h,
                                          sides=("bottom",),
-                                         rotation=-part.pins[0].prot)
+                                         rotation=-part.pins[0].prot,
+                                         mask_sides=("bottom",),
+                                         paste_sides=("bottom",))
         therm = {}
         for p in part.pins:
             # A promoted lead is the ONE object on this board with copper on
@@ -1346,6 +1611,18 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
     # A PROMOTED lead is the exception: its padstack now owns the front ring as
     # electrical copper, so emitting the dead island too would stack a second
     # disc of copper on the same spot and hand DRC a self-overlap.
+    #
+    # THE MASK OPENS OVER EVERY ONE OF THEM, dead or not, and the uniformity is
+    # the whole argument.  A dead front ring is copper no one will ever solder,
+    # so an opening there buys the operator nothing — but paint over it costs
+    # something real.  The lane's raster mask-blind law reads the mask against
+    # the hole-centred ring set and CANNOT tell a dead ring from a live one:
+    # it sees a ring with no window and reports a joint the bench cannot make.
+    # Openings that are uniform per hole class are therefore checkable;
+    # openings that encode which lead a human happens to solder are not.  And
+    # the asymmetry is one-sided — an open dead ring is a disc of bare copper
+    # on a board with no plating process, which is exactly what its flip-gauge
+    # neighbours are already — so the uniform rule is also the safe one.
     for i, (pid, x, y, dia, joins) in enumerate(dead_front_rings(parts)):
         if pid in promoted:
             continue
@@ -1353,6 +1630,10 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
         top.append(L.line(20000 + i, lx, ly, lx, ly, dia,
                           0.0 if joins else COPPER_CLEAR,
                           clearpoly=not joins))
+        # A zero-length line on the mask layer flashes one aperture of its own
+        # thickness — ROUND-TRIPPED through pcb-rnd's cam exporter, same as the
+        # padstack shapes.  Clearance 0: a mask layer has no pour to clear.
+        top_mask.append(L.line(60000 + i, lx, ly, lx, ly, dia, 0.0))
 
     # --- R4b: the routed copper --------------------------------------------
     # GND copper WELDS into the pour it crosses (clearpoly False) instead of
@@ -1421,10 +1702,16 @@ def emit_lihata(parts: list[Part], nets: dict, labels: dict,
                              clearance=0.0)
                       for i, s in enumerate(strokes)]
 
+    # Both mask layers and the paste layer are otherwise EMPTY, and that is the
+    # design: every other opening on this board belongs to a padstack, so it
+    # travels with the pad instead of being drawn a second time at coordinates
+    # that could drift.  The only free-standing mask objects are the dead front
+    # rings above, because their copper is free-standing too.
     return L.board(BOARD_W, BOARD_H, protos=protos, objects="\n".join(objs),
                    top="\n".join(top), bottom="\n".join(bot), outline=outline,
                    top_silk="\n".join(silk["front"]),
                    bottom_silk="\n".join(silk["back"]),
+                   top_mask="\n".join(top_mask),
                    netlist=L.netlist_block(sorted(nets.items())),
                    track=TRACK, clearance=CLEAR)
 
@@ -1542,7 +1829,55 @@ SEED_WINDOW = [round(s * (9.0 + 0.5 * k), 2)
 # not: give it a layer change within reach and it can rip up its own work to
 # get there.  So these three get a seed as well, placed by the same measured
 # search — nearest legal position wins, because a short hop is the whole point.
-SEEDED_ESCAPES = ()
+# RE-ARMED 2026-08-02 for VCC, and the board named the pin itself.
+#
+# The scrub growth left exactly one connection that neither FreeRouting nor the
+# closer could make, and for the first time the closer said WHICH (see
+# closing_tracks' `unclosed`): "UNCLOSED VCC: 2 pieces, no legal path
+# (25.04, 30.96) <-> (19.14, 10.45) on ['bottom']".  Those two points are the
+# whole story — the first is a stub off C2's VCC land INSIDE the LED ring, the
+# second is Q1-2, where the fixed rail starts, OUTSIDE it.  VCC has to cross the
+# ring to feed U1-8 and C2-1, the crossing is on the bottom face only, and the
+# grown rings closed the last lane that admitted a 0.8 mm RAIL.
+#
+# This is the same problem the ten anode seeds solve and it gets the same
+# answer: the BOARD buys the crossing instead of asking the router to find one.
+# C2-1 rather than U1-8 because C2's land is the outer of the two and the seed
+# search wants open copper to stand in.
+#
+# Q2-2 ADDED 2026-08-02 for the buzzer cell's GND, and it is the THIRD thing
+# tried on that defect — the first two are recorded where they failed, because
+# each ruled out a whole class of fix:
+#
+#   * a wire via ON the orphan is IMPOSSIBLE: SPEC's iron access keeps a via
+#     1.5 mm off an SMD land, the orphan IS two SMD lands (Q2-2, C3-2), and a
+#     sweep found ZERO legal seats within 7 mm under the extra demand that the
+#     via also land in the front pour and on the orphan at once.
+#   * a pre-placed protected GND track out of the cell CLEARS every law
+#     (0.887 mm, board gate 21/21) and still loses, because it WEDGES the
+#     router in pass #7 — see fixed_tracks, where that experiment is kept.
+#
+# A SEED IS NEITHER.  It is a point, not a barrier: FreeRouting treats it as
+# one more place GND may change layer, so it can route THROUGH the cell and
+# shove the four fencing nets aside to do it, which is exactly the demand the
+# orphan represents.  That is the difference this board keeps re-learning —
+# points do not wedge, tracks do.  The DSN already names Q2-2 and C3-2 among
+# GND's twelve pins, so the router was never unaware of them; what it lacked
+# was a way across, and a seed is that way.
+#
+# U1-1 ADDED next, and it is this list's ORIGINAL intended tenant — the escape
+# class above was written for "U1-1 (RESET), U1-2 (L3) and TP1-1 (L1)" and then
+# emptied because seeding them re-wedged the router of the day.  What re-armed
+# it is the measurement two paragraphs up: the wedge belonged to pre-placed
+# TRACKS, not to seeds, and the Q2-2 seed proved it by routing in 13 s.  So
+# when the Q2-2 reroute closed the buzzer cell and left RESET open between
+# U1-1 and TP5 instead, the fix was not a new mechanism but one more point.
+#
+# Seeds are cheap in exactly the way the operator's 2026-08-01 ruling says a
+# via is cheap, and expensive in the one way that matters here: each is a bench
+# joint, so this list is kept as short as the board's rat count allows and
+# every entry names the connection it bought.
+SEEDED_ESCAPES = ("C2-1", "Q2-2", "U1-1", "U1-2", "TP1-1", "C3-1")
 SEED_ESCAPE_R = [round(3.0 + 0.25 * k, 2) for k in range(21)]
 VIA_BODY_SMD, VIA_BODY_THT = 1.5, 2.0     # SPEC "Via geometry": iron access
 LED_POS = {led: pos for pos, led in POS_LED.items()}

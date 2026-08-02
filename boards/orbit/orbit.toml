@@ -1,0 +1,330 @@
+# Board B — "orbit": the PCB lane's first DOUBLE-SIDED job ([pcb] + [twosided]).
+#
+# Artwork: boards/orbit/gerbers-rnd/, exported by tools-fab.py from the SEALED
+# board orbit.lht (commit 8a0bb75 — no-LED-bridge, 28 wire vias, stitch 29,
+# both gates green) through pcb-rnd -x cam and gerber_filter.py.
+#
+# PROVENANCE. Nothing here is a preference. Every machine number is either (a)
+# a blessed value from Board A's cut job (tests/golden_pcb/coupon.toml, itself
+# traced to the zigbee-button V2 Tcl that cut copper on 2026-07-19), (b) a rule
+# in this board's SPEC.md, (c) an orbit Decision (Q11/Q12/Q13), or (d) a limit
+# the grammar enforces anyway. Where orbit differs from Board A, it says so.
+#
+# THE FRAME IS MEASURED, NOT TYPED. tools-fab.py reads the exported Edge_Cuts
+# with boardmaps.extents(cross_check=True) and asserts:
+#     extents  x 0.000..64.000   y 0.000..54.000   (64 x 54, SPEC's board)
+#     flip line at anchor (0,0)  x = 32.000        (= BOARD_W/2, exactly)
+# so `anchor = [0.0, 0.0]` is what puts the board's SW corner on G54 zero and
+# lands the mirror line on the board centreline. Note the export frame is
+# Y-MIRRORED against tools-board.py's board frame (export_y = 54 - board_y):
+# harmless for machining, but it is why the gauge positions below are listed in
+# the EXPORT frame and cross-referenced to their board-frame names.
+#
+# AT THE MACHINE: blank fixtured on two steel pins through the waste, board
+# copper UP for side 1 (front), flipped about the pins for side 2 (back). The
+# blank never moves within a setup — mask and legend registration die if it
+# does. Auto-level over the board area before each setup's phase 1; Z0 = that
+# side's copper top. Confirm the blank against the anchor before every program.
+
+[pcb]
+name = "orbit"
+stem = "orbit"
+gerbers = "gerbers-rnd"
+out = "out"
+
+[blank]
+# Same 150x100x1.5 copper-clad stock as Board A, long side along X. The board
+# is 64 x 54 and the pins sit 8mm off each short edge, so the blank must cover
+# 64 x 70 plus pin clearance — this stock clears that twice over.
+width = 150.0
+height = 100.0
+thickness = 1.5
+anchor = [0.0, 0.0]
+
+[spoilboard]
+# 1/2in MDF, as Board A and the two-sided coin job. Required: the -1.7 drills,
+# the edge cut and the 12mm pin bores all break through the blank.
+thickness = 12.7
+
+[material]
+# fr4 is the modeled material carrying this shop's actual cutting evidence
+# (physics.py anchors its limits to the flawless zigbee-button V2 cuts on
+# 1.5mm blanks). Identical numbers to fr1 today; this choice picks provenance.
+name = "fr4"
+
+[machine]
+inventory = "../../jobs/inventory.toml"
+
+[twosided]
+# Flip about the Y axis: the blank rotates about the board's vertical
+# centreline, which boardmaps.flip_line DERIVES from Edge_Cuts + anchor as
+# x = 32.000. The pins below sit ON that line so the flip is a pure involution.
+flip_axis = "y"
+
+[pins]
+# Registration pins in the blank's WASTE, on the mirror line, 8mm clear of the
+# board's short edges — tools-board.py's own comment fixes them at
+# (BOARD_W/2, -8) and (BOARD_W/2, BOARD_H+8). These are MACHINE-frame
+# coordinates (a pin is not on the board); the gauge positions in [rules] are
+# GERBER-frame. With anchor [0,0] the two frames coincide for the front setup,
+# which is why these read as board coordinates — verified against the grammar's
+# own symmetry test (flip about x=32.000 maps the pair onto itself) and its
+# keep-out test (machined envelope -3.4..67.4 x -3.4..57.4 after growing by the
+# 1.4 clear margin and pin_r + PIN_CLEAR; both pins fall outside).
+diameter = 2.0
+length = 12.0
+positions = [[32.0, -8.0], [32.0, 62.0]]
+# Decision Q11: BOTH allowances declared 0. seat_extra 0 because the pin is cut
+# to the blank+spoilboard stack and seating proud is caught at the bench, not
+# bought with depth; tip_allowance 0 because the pin is accepted seating on the
+# drill's point cone rather than spending reach this crib entry does not have.
+# The arithmetic is deliberately tight and the grammar checks all three bars:
+#   depth = 12.0 + 0 + 0 = 12.0
+#   > blank 1.5                             (passes through — a blind hole
+#                                            cannot register a flip)
+#   <= 1.5 + 12.7 - 2.0 = 12.2              (2mm of bed clearance left)
+#   <= T9 reach 12.0 + spot_depth 0.1       (the shank never enters the hole)
+seat_extra = 0.0
+tip_allowance = 0.0
+spot_tool = 1
+drill_tool = 9
+spot_depth = 0.1
+spot_feed = 60
+peck = 0.8
+# Decision Q12: F100, not the coin job's F120. That feed is a BRASS number; on
+# fr4 the sheet physics reads a O2 full-face peck at F120 as 107% of the
+# sustained chip limit, and F100 lands at 89%.
+feed = 100
+
+[rules]
+# SPEC "THT annular delta": >= 0.7mm on every hole-centered pad, BOTH sides.
+# The board draws O2.44 over O1.0 = 0.72 ring; tools-fab.py measures 0.705 on
+# the raster after the gate's honest half-pixel eps, so this declaration has
+# 0.005 of slack and no more. It is SPEC's number, not a fitted one.
+annular = 0.7
+
+# The four flip gauges are the board's DELIBERATE exception to that rule (SPEC
+# "deliberate exceptions" + Decision Q13): a O1.7 disc over a O1.0 bore is a
+# 0.35 annulus, and a thin annulus is exactly what makes a flip gauge readable
+# — an even ~0.35 ring under a loupe after side-2 iso is the operator's
+# measurement that the flip registered. They are NOT solderable and NOT in the
+# scrub set, so they are also the declared exemption for the mask-blind check.
+# Positions are GERBER frame; the export is Y-mirrored against the board frame
+# (export_y = 54 - board_y), so each block names both.
+[[rules.gauge]]
+name = "flip gauge G1"
+annular = 0.3
+positions = [[8.0, 46.0]]                 # board frame (8, 8)
+reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
+gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
+squeegee. Not solderable, not in the scrub set."""
+
+[[rules.gauge]]
+name = "flip gauge G2"
+annular = 0.3
+positions = [[56.0, 46.0]]                # board frame (56, 8)
+reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
+gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
+squeegee. Not solderable, not in the scrub set."""
+
+[[rules.gauge]]
+name = "flip gauge G3"
+annular = 0.3
+positions = [[8.0, 8.0]]                  # board frame (8, 46)
+reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
+gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
+squeegee. Not solderable, not in the scrub set."""
+
+[[rules.gauge]]
+name = "flip gauge G4"
+annular = 0.3
+positions = [[56.0, 8.0]]                 # board frame (56, 46)
+reason = """SPEC deliberate exception: a thin 0.35 annulus is what makes a flip \
+gauge sensitive; read with a loupe after side-2 iso and BEFORE the mask \
+squeegee. Not solderable, not in the scrub set."""
+
+# --- tools: every entry matches jobs/inventory.toml on type, diameter, shank,
+# flute count and reach, and claims no more reach than the crib records
+# (Article XI). T2/T3/T5/T7 are Board A's numbering, unchanged; T1 and T9 are
+# the pin pair this board adds.
+
+[[tool]]
+num = 1
+type = "flat"
+diameter = 3.175            # the counterbore: >= T9's 3.175 shank, so the
+#                             spot actually buys the drill its reach credit
+rpm = 12000
+flutes = 1
+flute_length = 12.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 2
+type = "vee"
+diameter = 3.175            # cone's widest cutting dia (crib)
+tip_diameter = 0.2          # crib + case label "30 deg . TIP 0.2 . 1F . FL 10"
+included_angle_deg = 30.0
+rpm = 12000
+flutes = 1
+flute_length = 10.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 3
+type = "flat"
+diameter = 0.8              # "6mm Flute Corn 0.8" — cut the zigbee boards
+rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 5
+type = "scrub"
+diameter = 0.3              # modeled as a flat 0.3 scrub width (mask guide
+#                             S3.1), never as a chamfer mill
+rpm = 6000
+flutes = 1
+flute_length = 2.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 7
+type = "flat"
+diameter = 1.0              # "6mm Flute Corn 1.0" — cut the zigbee cutouts
+rpm = 12000
+flutes = 2
+flute_length = 6.0
+shank_diameter = 3.175
+
+[[tool]]
+num = 9
+type = "drill"
+diameter = 2.0              # crib: "Twist Drill 2x12 (Spare Tools)", qty 5,
+#                             reach REPORTED AT THE BENCH — claimed exactly
+rpm = 3000
+flutes = 2
+flute_length = 12.0
+shank_diameter = 3.175
+
+# ===========================================================================
+# SIDE 1 — FRONT (setup A: copper up, no holes in the blank yet)
+# Chain: iso -> clear -> [mask squeegee + UV cure, OPERATOR] -> silk -> scrub
+#        -> drills. The drills come LAST in this setup: side 2's annular scrub
+#        needs the holes to exist, and side 1's disc scrub needs them not to.
+# ===========================================================================
+
+[phases.front.iso]
+# Board A verbatim: the 0.2 TIP diameter, one pass at tip_r offset isolates a
+# 0.4 gap from both sides. -0.15 is the guide's bow convention, safe because
+# SPEC sets every design clearance on this board at 0.4 or wider.
+tool = 2
+depth = -0.15
+feed = 500
+plunge = 200
+
+[phases.front.clear]
+# Board A verbatim, including the one number that differs from the field job:
+# offset 0.10, not 0.05. At 0.05 the clearing contour lands exactly on the
+# gate's opening bar (tool centre 0.450 from copper for an 0.8 corn) and a job
+# that asks for exactly a bar is a coin flip against any honest measurement.
+tool = 3
+depth = -0.15
+margin = 1.4
+offset = 0.10
+overlap = 25
+feed = 500
+plunge = 200
+
+[phases.front.silk]
+# dose S0.04 is OPERATOR-DIRECTED (Bill, 2026-07-30 post-run debrief): the
+# bracket ran field-validated S0.03/F100 -> S0.10 (too hot) -> S0.06 (cut the
+# board, but was compensating for a TOO-THICK white coat) -> S0.04 with a
+# deliberately thinner coat. Dose and coat thickness move together — re-bracket
+# on scrap if the coat changes. BOTH sides carry the same landed pair: this
+# board lasers two legends onto two separately-squeegeed coats, and the same
+# hand applies both. clearance 0.3 is the mask-guide law SPEC restates (cured
+# white on a solderable pad repels solder); the grammar refuses below 0.3.
+clearance = 0.3
+dose = 0.04
+feed = 100
+
+[phases.front.scrub]
+# Board A verbatim: -0.21 is spring PRELOAD, not cut depth, and it is
+# field-tuned — the grammar's band is [-0.25, -0.18] because -0.25 peeled
+# traces off a bowed blank and shallower than -0.18 leaves film. Side 1 has no
+# holes yet, so these are ordinary DISC laps (SPEC "scrub delta": side 1 disc
+# laps, pads deflated -0.10 — Board A's rule).
+tool = 5
+depth = -0.21
+overlap = 45
+offset = 0.15
+feed = 400
+plunge = 200
+
+[phases.front.drills]
+# Board A verbatim, milled not drilled: every hole is helically bored with the
+# 0.8 corn. The PCB twist-drill set is deliberately ABSENT from the crib (its
+# reach was never measured), so milldrills is the only honest option here
+# (Article XI). -1.7 = 1.5 blank + 0.2 breakthrough into the spoilboard.
+# F250 / dpp 0.4 / plunge 150 is Board A's gentled stage: at the field numbers
+# the stage read 99.8% of the fr4 sustained chip-load limit, and this lands it
+# at 67.2% for about a minute and a half of extra machine time.
+tool = 3
+depth = -1.7
+dpp = 0.4
+feed = 250
+plunge = 150
+
+# ===========================================================================
+# SIDE 2 — BACK (setup B: blank flipped about the pins, holes already drilled)
+# Chain: iso -> clear -> [mask squeegee + UV cure, OPERATOR] -> silk -> scrub
+#        -> cutout. Read the four flip gauges after this side's iso and BEFORE
+#        the mask squeegee — that is the registration measurement.
+# ===========================================================================
+
+[phases.back.iso]
+tool = 2
+depth = -0.15
+feed = 500
+plunge = 200
+
+[phases.back.clear]
+tool = 3
+depth = -0.15
+margin = 1.4
+offset = 0.10
+overlap = 25
+feed = 500
+plunge = 200
+
+[phases.back.silk]
+clearance = 0.3
+dose = 0.04
+feed = 100
+
+[phases.back.scrub]
+# Same spring preload as side 1, but the LAPS are different by SPEC ("scrub
+# delta NEW"): the holes are already drilled, and a 0.3 spring tip spiralling
+# across a O1.0 hole drops in and levers the pad off. Every hole-centred pad
+# therefore gets an ANNULAR lap — tool edge >= 0.15 inside copper AND >= 0.20
+# outside the hole rim — which reemit.annular_laps generates from this table.
+tool = 5
+depth = -0.21
+overlap = 45
+offset = 0.15
+feed = 400
+plunge = 200
+
+[phases.back.cutout]
+# Board A verbatim: 1.0 corn, 4 tabs of 1.5mm, -1.7 through, dpp 0.3 ("the
+# tool's own cutting data set the stepdown — 1mm tools like conservative").
+# The tabs are law, not taste (SPEC: >= 2 of >= 1.0mm): a freed board grabs
+# the cutter. The cutout runs LAST of everything, in the second setup.
+tool = 7
+depth = -1.7
+dpp = 0.3
+gaps = 4
+gapsize = 1.5
+feed = 500
+plunge = 200

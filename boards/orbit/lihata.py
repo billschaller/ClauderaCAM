@@ -31,9 +31,43 @@ MM = "mm"
 
 
 # ---------------------------------------------------------------- padstacks
+# ---------------------------------------------------------------- apertures
+# THE SWELL RULE, and it is not a choice this file gets to make: a mask
+# aperture is the SAME size as the copper it exposes.  Zero expansion.
+#
+# MEASURED on Board A's shipped artwork (tests/golden_pcb/gerbers/): the D-code
+# table of coupon-B_Mask.gbr is string-for-string identical to coupon-B_Cu.gbr
+# — same numbers, same order, same D-codes — differing only by the five extra
+# apertures copper appends for TRACK widths, and the two layers flash 104 D03s
+# each with identical per-aperture tallies.  It is also asserted board-side
+# ("mask expansion 0 asserted on every footprint", DESIGN.md) and the raster
+# checker is BUILT on the assumption (checks.MASK_RING_OPEN: "its aperture
+# (== pad, expansion 0 asserted board-side) must expose ~all of it").
+#
+# A swell would not be a cosmetic difference on a MILLED board.  DESIGN.md
+# records the incident: a fixture whose mask sat 0.2-0.4 mm proud of its pads
+# failed `scrub plateau margin` on both sides, and the fix was "real exports
+# open the mask at pad size; the fixture now does too".  Paste is the same
+# size again — Board A's B_Paste holds copper's 20 RoundRect apertures
+# unchanged and simply omits every circular THT one.
+#
+# So mask/paste shapes below reuse the copper shape's own dimensions.  There is
+# deliberately no swell PARAMETER: a number that must be zero is better spelled
+# as no number at all.
+def _shape(geom: str, layer: str, loc: str, clearance: float,
+           combining: str = "") -> str:
+    return f"""
+       ha:ps_shape_v4 {{{geom}
+        ha:layer_mask {{ {layer} = 1; {loc} = 1; }}
+        ha:combining {{ {combining} }}
+        clearance={clearance}{MM}
+       }}"""
+
+
 def ps_proto(pid: int, name: str, hdia: float, plated: bool, ringdia: float,
              sides: Sequence[str] = ("top", "bottom", "intern"),
-             clearance: float = 0.0) -> str:
+             clearance: float = 0.0,
+             mask_sides: Sequence[str] = ()) -> str:
     """One padstack prototype: a hole plus a round ring on each named side.
 
     *sides* selects which copper faces carry a ring.  A THT terminal whose lead
@@ -45,14 +79,20 @@ def ps_proto(pid: int, name: str, hdia: float, plated: bool, ringdia: float,
     dead islands, not annuli of a terminal).  MEASURED: pcb-rnd's min_ring and
     min_drill rules raise nothing on a copper-less padstack, so a bare bore is
     silent in DRC rather than a false ring violation.
+
+    *mask_sides* selects which faces get a solder-mask OPENING, at ring size
+    (see THE SWELL RULE above).  It is a separate argument and not derived from
+    *sides* because the two sets genuinely differ on this board: a gauge ring is
+    copper that must stay COVERED, and a promoted lead is copper on two faces
+    that must be open on both.  ROUND-TRIPPED through pcb-rnd 3.1.7b's `-x cam`
+    before it was written here: a mask shape emits one flash of exactly its own
+    diameter into the mask gerber (the OPENING, not the ink), and a padstack
+    with no mask shape emits nothing at all.
     """
-    shapes = "".join(f"""
-       ha:ps_shape_v4 {{
-        ha:ps_circ {{ x=0.0; y=0.0; dia={ringdia}{MM}; }}
-        ha:layer_mask {{ copper = 1; {loc} = 1; }}
-        ha:combining {{ }}
-        clearance={clearance}{MM}
-       }}""" for loc in sides)
+    circ = f"\n        ha:ps_circ {{ x=0.0; y=0.0; dia={ringdia}{MM}; }}"
+    shapes = "".join(_shape(circ, "copper", loc, clearance) for loc in sides)
+    shapes += "".join(_shape(circ, "mask", loc, clearance, "sub = 1; auto = 1;")
+                      for loc in mask_sides)
     return f"""
    ha:ps_proto_v6.{pid} {{
      name = {name}
@@ -82,13 +122,21 @@ def rect_corners(w: float, h: float, rotation: float = 0.0):
 def ps_proto_rect(pid: int, name: str, hdia: float, plated: bool,
                   w: float, h: float,
                   sides: Sequence[str] = ("bottom",),
-                  clearance: float = 0.0, rotation: float = 0.0) -> str:
+                  clearance: float = 0.0, rotation: float = 0.0,
+                  mask_sides: Sequence[str] = (),
+                  paste_sides: Sequence[str] = ()) -> str:
     """Padstack prototype with a RECTANGULAR pad (SMD land) on each named side.
 
     NOTE on `clearance` inside a shape: pcb-rnd stores the DOUBLE of the real
     clearance in this field for historical reasons, and it applies only when
     the padstack INSTANCE clearance is 0.  Kept at 0 here so the instance
     carries the clearance unambiguously.
+
+    *mask_sides* / *paste_sides* reuse this land's OWN polygon — same corners,
+    same rotation — so the opening and the stencil window can never drift off
+    the copper they belong to (THE SWELL RULE above).  Paste is bottom-only on
+    orbit and reaches SMD lands alone; the caller enforces that, because only
+    the caller knows which padstack is a reflow land.
     """
     corners = "\n".join(f"         {cx}{MM}; {cy}{MM};"
                         for cx, cy in rect_corners(w, h, rotation))
@@ -96,12 +144,11 @@ def ps_proto_rect(pid: int, name: str, hdia: float, plated: bool,
         li:ps_poly {{
 {corners}
         }}"""
-    shapes = "".join(f"""
-       ha:ps_shape_v4 {{{pts}
-        ha:layer_mask {{ copper = 1; {loc} = 1; }}
-        ha:combining {{ }}
-        clearance={clearance}{MM}
-       }}""" for loc in sides)
+    shapes = "".join(_shape(pts, "copper", loc, clearance) for loc in sides)
+    shapes += "".join(_shape(pts, "mask", loc, clearance, "sub = 1; auto = 1;")
+                      for loc in mask_sides)
+    shapes += "".join(_shape(pts, "paste", loc, clearance, "auto = 1;")
+                      for loc in paste_sides)
     return f"""
    ha:ps_proto_v6.{pid} {{
      name = {name}
@@ -259,17 +306,34 @@ def polygon(oid: int, pts: Sequence[Tuple[float, float]],
 # thermal that names "layer 1" and the bottom-copper objects can never drift
 # apart (Article IV's spirit: one definition, no re-derivation).
 LID_TOP_CU, LID_BOT_CU, LID_OUTLINE, LID_TOP_SILK, LID_BOT_SILK = 0, 1, 2, 3, 4
+# ADDED 2026-08-02.  The five above keep their ids on purpose: a thermal is
+# written as `li:<lid> { on; round; }`, so renumbering copper would silently
+# re-aim every thermal on the board.  New groups are APPENDED instead.
+#
+# There is no TOP paste group and that is a physical statement, not an
+# omission: orbit reflows on ONE face (SPEC "footprints": every SMD land is
+# B.Cu), so a top stencil window would open onto a face that never sees a
+# squeegee.  The [twosided] pcbjob resolves exactly F/B mask + B paste.
+LID_TOP_MASK, LID_BOT_MASK, LID_BOT_PASTE = 5, 6, 7
 
 
 def board(width: float, height: float, protos: str = "", objects: str = "",
           top: str = "", bottom: str = "", outline: str = "",
           top_silk: str = "", bottom_silk: str = "", netlist: str = "",
           track: float = 0.6, clearance: float = 0.4,
-          substrate: float = 1.5) -> str:
-    """Assemble a complete 2-copper-layer board with both silk layers.
+          substrate: float = 1.5, top_mask: str = "", bottom_mask: str = "",
+          bottom_paste: str = "") -> str:
+    """Assemble a complete 2-copper-layer board with both silk layers, both
+    mask layers and the bottom paste layer.
 
     *substrate* 1.5 mm is the blank this board is milled from (SPEC process
     table: double-sided 1.5 mm FR-1/FR-4).
+
+    The mask layers carry `sub` combining, which is pcb-rnd's way of saying the
+    sheet is solid and the objects drawn on it are HOLES in that sheet.  The
+    gerber exporter still writes those objects positively — one flash per
+    opening, at the opening's own size — which is the KiCad convention the
+    lane's raster stack reads.  MEASURED, not assumed (see ps_proto).
     """
     return f"""ha:pcb-rnd-board-v8 {{
  ha:attributes {{ {{PCB::grid::unit}}=mm }}
@@ -340,6 +404,33 @@ def board(width: float, height: float, protos: str = "", objects: str = "",
 {bottom_silk}
     }}
    }}
+
+   ha:top-mask {{
+    lid={LID_TOP_MASK}
+    group=6
+    ha:combining {{ sub=1; auto=1; }}
+    li:objects {{
+{top_mask}
+    }}
+   }}
+
+   ha:bottom-mask {{
+    lid={LID_BOT_MASK}
+    group=7
+    ha:combining {{ sub=1; auto=1; }}
+    li:objects {{
+{bottom_mask}
+    }}
+   }}
+
+   ha:bottom-paste {{
+    lid={LID_BOT_PASTE}
+    group=8
+    ha:combining {{ auto=1; }}
+    li:objects {{
+{bottom_paste}
+    }}
+   }}
   }}
  }}
 
@@ -353,6 +444,9 @@ def board(width: float, height: float, protos: str = "", objects: str = "",
            purpose = uroute }}
    ha:4 {{ name = top_silk;       ha:type {{ silk=1; top=1; }}         li:layers {{ {LID_TOP_SILK}; }} }}
    ha:5 {{ name = bottom_silk;    ha:type {{ silk=1; bottom=1; }}      li:layers {{ {LID_BOT_SILK}; }} }}
+   ha:6 {{ name = top_mask;       ha:type {{ mask=1; top=1; }}         li:layers {{ {LID_TOP_MASK}; }} }}
+   ha:7 {{ name = bottom_mask;    ha:type {{ mask=1; bottom=1; }}      li:layers {{ {LID_BOT_MASK}; }} }}
+   ha:8 {{ name = bottom_paste;   ha:type {{ paste=1; bottom=1; }}     li:layers {{ {LID_BOT_PASTE}; }} }}
   }}
  }}
 
