@@ -4,7 +4,8 @@ A session is one open job document (the job TOML is the document format).
 Sessions are keyed by the resolved path of the artifact the operator
 posts: the .nc's job file for a one-sided job, one per side for a
 two-sided document, and one per PROGRAM for a [pcb] document (four files
-reach the machine, so four sessions do — see pcb/session.py).
+reach the machine, so four sessions do — nine plus the artwork report
+when that document flips; see pcb/session.py).
 Opening a file that is already open JOINS its session, which is the
 collaboration model: Claude
 regenerates and verifies through the MCP while a human watches the same
@@ -179,11 +180,13 @@ def _load_in_background(path: Path) -> str:
                 # a [pcb] document opens as one session per PROGRAM of the
                 # canonical split (four files reach the machine, so four
                 # sessions do); the placeholder dissolves into them, exactly
-                # like the two-sided case below
+                # like the two-sided case below. A DOUBLE-SIDED document is
+                # the same move with both setups in the list — nine programs
+                # and the artwork report (pcb/session.build_twosided)
                 from ..pcb import pcbjob as pcbjobmod
                 pj = pcbjobmod.load(path)
-                progs = pcbsess.program_paths(pj)
-                if not progs:
+                progs = pcbsess.document_programs(pj)
+                if not pcbsess.program_count(progs):
                     error_session(str(path),
                                   f"no programs in {pj.out_dir} — ask "
                                   f"Claude to run the pcb engine")

@@ -45,7 +45,10 @@ programs ride simulate.carve() for real rapid/contact/depth/physics readings;
 it renders the non-carving programs (laser silk, spring-tool scrub) as a 2D
 overlay of what their bytes DRAW instead of a heightmap that would be a flat
 sheet (Article VI); and it builds the run-sheet card. `clauderacam verify`
-and `view` walk a [pcb] document through it — four sessions, one per program.
+and `view` walk a [pcb] document through it — four sessions, one per program;
+a DOUBLE-SIDED document composes both setups into one list instead (nine
+programs keyed `<side>/<program>`, plus the `board` session carrying flip.py's
+artwork report, and a run sheet in machining order across the flip).
 
   from clauderacam.pcb import pcbjob, session
   job = pcbjob.load("boards/coupon/coupon.toml")

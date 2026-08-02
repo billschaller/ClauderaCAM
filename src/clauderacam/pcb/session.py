@@ -7,6 +7,18 @@ session carries what every other session carries: a stage list recovered
 from the program's own `(begin operation: ...)` markers, per-stage stats,
 the gate's checks, and the verified bytes to download.
 
+A DOUBLE-SIDED document is the same thing TWICE plus its artwork report
+(WS8, 2026-08-02). Each setup is a pcbjob.side_view — a job shaped like a
+single-sided one — so every function below runs on it unchanged; the
+sessions are then composed into ONE list, keyed and named `<side>/<program>`
+the way flip.verify_twosided keys its reports and tools-cam.py names its
+files (`orbit-front-mill.nc`). The document's own checks (flip.board_checks:
+artwork, frame, annular ring, paste-vs-hole) belong to no program, so they
+get a session of their own named `board` — the operator sees one list with
+every artifact in it, in machining order, and nothing that judged this board
+is left off the screen. Board A's four sessions are untouched by all of it:
+the single-sided path builds from the same helpers with no side prefix.
+
 Two things are new here, and both exist because half this chain does not
 carve:
 
@@ -78,7 +90,7 @@ import numpy as np
 
 from .. import simulate, stages as stagesmod
 from ..verify import Report
-from . import boardmaps, checks, pcbjob
+from . import boardmaps, checks, flip, pcbjob
 # The sheet stock model MOVED to checks.py (2026-07-30): a bare verify_pcb()
 # used to prove less than a viewer session, and the gate must be the
 # strictest reader. The names are re-imported here because this module and
@@ -102,18 +114,42 @@ def is_pcb(path) -> bool:
 
 
 def program_paths(job: PcbJob) -> dict[str, Path]:
-    """{program: path} for the canonical split. The engine writes into
-    `out_dir`; a blessed asset set (tests/golden_pcb) keeps the programs
+    """{program: path} for the split THIS job is made of. The engine writes
+    into `out_dir`; a blessed asset set (tests/golden_pcb) keeps the programs
     beside the TOML — try both, and report what is missing rather than
-    inventing a path."""
+    inventing a path.
+
+    On a SIDE VIEW the file stem is pcbjob.program_stem's (`orbit-front-mill`,
+    the convention tools-cam.py writes with) and the split is that side's —
+    one naming law, so the viewer looks where the generator wrote."""
+    def nc(name: str) -> str:
+        return (f"{pcbjob.program_stem(job, name)}.nc" if job.side
+                else f"{job.stem}-{name}.nc")
+
     out: dict[str, Path] = {}
-    for name in checks.PROGRAM_PHASES:
-        for cand in (job.out_dir / f"{job.stem}-{name}.nc",
-                     job.path.parent / f"{job.stem}-{name}.nc"):
+    for name in pcbjob.programs_of(job):
+        for cand in (job.out_dir / nc(name),
+                     job.path.parent / nc(name)):
             if cand.is_file():
                 out[name] = cand
                 break
     return out
+
+
+def document_programs(job: PcbJob):
+    """Everything this DOCUMENT's programs are on disk, in the shape build()
+    takes as `programs`: {program: path} single-sided, {side: {program: path}}
+    for a flipped board (flip.verify_twosided's shape — one convention for the
+    gate and the viewer)."""
+    if job.twosided:
+        return {side: program_paths(pcbjob.side_view(job, side))
+                for side in job.sides}
+    return program_paths(job)
+
+
+def program_count(progs) -> int:
+    """How many program files document_programs() actually found."""
+    return sum(len(v) if isinstance(v, dict) else 1 for v in progs.values())
 
 
 # ----------------------------------------------------------------- overlays
@@ -396,7 +432,17 @@ def overlay_for(job: PcbJob, name: str, text: str, nc_path,
                         "The gate deliberately does not bar scrub COVERAGE " \
                         "(checks.py): this layer is a picture, not a verdict."
         layers.append(mask)
-    paste_p = job.gerber_dir / f"{job.stem}-B_Paste.gbr"
+    paste_p = job.files.get(
+        "paste", job.gerber_dir / f"{job.stem}{pcbjob.PASTE_SUFFIX}")
+    if job.side and job.side != pcbjob.SIDE_ORDER[1]:
+        # ONE stencil, and it is the BACK side's (orbit SPEC's paste rule).
+        # Drawing B.Paste in side A's frame would place a back-side layer
+        # through the front's unmirrored transform — an overlay that lies
+        # about where the pads are. Say where the stencil lives instead.
+        notes.append(f"the stencil artwork is the BACK setup's "
+                     f"({paste_p.name}) — it belongs to the other side's "
+                     f"frame and is not drawn here")
+        return {"layers": layers, "notes": notes}
     paste = _gerber_layer(offset, paste_p, "paste_ap",
                           "B.Paste apertures (gerber)", "#7aa2ff",
                           mirror=job.mirror)
@@ -541,6 +587,216 @@ def run_sheet(job: PcbJob, progs: dict[str, Path],
     return steps
 
 
+def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
+                       progs: dict[str, dict[str, Path]],
+                       est: dict[str, float],
+                       tool_order: dict[str, list[int]],
+                       paste: bool) -> list[dict]:
+    """The bench workflow of a board that FLIPS: both setups, in ONE order.
+
+    Same card, same step kinds and the same numbers-from-this-job rule as the
+    single-sided sheet above; what is new is the sequence, and the sequence is
+    not a choice. Provenance: boards/orbit/SPEC.md "Assembly / run-sheet order"
+    steps 1-11 (side A phases 1-5 → ALL through-holes → the pin bores → set
+    pins, flip about the axis, deburr the back, re-level → side B phases 1-5,
+    with the flip gauges read after side B's iso and BEFORE its mask squeegee →
+    the cutout, last of everything → off-machine), reemit._SIDE_STEPS (the same
+    steps compressed into the program headers, so the card and the bytes the
+    operator posts cannot disagree), pcbjob.py's grammar law that `drills`
+    belongs to side 1 and `cutout` to side 2 only, and the guides the
+    single-sided card cites for the mask/legend/scrub cycle it repeats twice.
+
+    `est` and `tool_order` are keyed `<side>/<program>`, the same keys the
+    sessions carry, so a step points at the session that machines it.
+    """
+    first, second = pcbjob.SIDE_ORDER
+    cut = sides[second].phases["cutout"]
+    _where = pcbjob.tab_where(cut["gaps"])
+    cut_where = f" ({_where})" if _where else ""
+    n_pins = len(job.pins["positions"])
+
+    def note(side: str, ph: str) -> str:
+        return str(sides[side].phases.get(ph, {}).get("note") or "")
+
+    def prog(side: str, name: str, title: str, detail: str) -> dict:
+        key = f"{side}/{name}"
+        letter = "ABCDEFGH"[list(pcbjob.programs_of(sides[side])).index(name)]
+        tools = tool_order.get(key, [])
+        pauses = max(0, len(tools) - 1)
+        d = detail
+        if len(tools) > 1:
+            d += (f" — {pauses} M6 pause"
+                  + ("s" if pauses > 1 else "")
+                  + " inside the program: "
+                  + " then ".join(f"T{t}" for t in tools))
+        p = progs.get(side, {}).get(name)
+        return {"kind": "program", "program": key,
+                "title": f"{side} program {letter} — {title}",
+                "detail": d, "est_s": est.get(key, 0.0),
+                "file": Path(p).name if p else None, "missing": p is None}
+
+    def cycle(side: str) -> list[dict]:
+        """The mask → legend → scrub cycle, which every setup runs (the
+        operator's revised chain: silk BEFORE the pad scrub)."""
+        j = sides[side]
+        silk, scrub = j.phases["silk"], j.phases["scrub"]
+        face = side.upper()
+        out = [
+            prog(side, "mill", "mill (isolation + copper clearing)",
+                 f"iso at Z{j.phases['iso']['depth']:g} with the "
+                 f"Ø{j.phase_tool('iso').tip_diameter:g}-tip engraver, "
+                 f"clearing at Z{j.phases['clear']['depth']:g} — this side's "
+                 f"own depths and feeds"),
+        ]
+        if side == second and job.rules.get("gauge"):
+            # the registration measurement, and it has exactly one window:
+            # after side 2's iso cut the rings, before the mask hides them
+            out.append({
+                "kind": "operator",
+                "title": "read the flip gauges, write the numbers down",
+                "detail": f"after side 2's iso and BEFORE the mask goes on "
+                          f"(SPEC 'Assembly' step 6): read the "
+                          f"{len(job.rules['gauge'])} flip gauges with a "
+                          f"loupe — an even ring means a perfect flip, and "
+                          f"an eccentric one measures the registration error "
+                          f"this board exists to measure. Nothing downstream "
+                          f"can recover it once the mask covers the copper."})
+        out += [
+            {"kind": "operator",
+             "title": f"squeegee the solder mask on the {face}, cure it",
+             "detail": f"UV mask over the whole {face} copper face while the "
+                       f"board is still in the fixture; cure with the UV lamp "
+                       f"at the machine. Mask guide §4, machine-tested."
+                       + (f" {note(side, 'mask')}" if note(side, "mask")
+                          else "")},
+            {"kind": "operator", "title": "coat white mask for the legend",
+             "detail": "thin, even coat of WHITE UV mask over the cured "
+                       "green — the laser cures the legend out of this layer "
+                       "and the rest wipes off. Mask guide §5: the technique "
+                       "is G-code-verified but NOT yet hardware-validated; "
+                       "test-fire on scrap first."},
+            {"kind": "operator", "title": "fit the 455nm laser module",
+             "detail": "M321 parks the spindle tool and swaps the PWM/fan "
+                       "state. The program's own G0 Z0 is the focus law — a "
+                       "parked head projects a big square and cures mask in "
+                       "washes."},
+            prog(side, "silk", "silk legend (laser)",
+                 f"dose S{silk['dose']:g} at F{silk['feed']:g}, every stroke "
+                 f"kept ≥{silk['clearance']:g}mm clear of a solderable "
+                 f"aperture"),
+            {"kind": "operator",
+             "title": "wipe the uncured white off with IPA",
+             "detail": "the cured legend stays. This instruction also rides "
+                       "in the silk program's own header, where the operator "
+                       "reads it at the machine."},
+            {"kind": "operator",
+             "title": "refit the spindle and the spring tool",
+             "detail": f"T{j.phase_tool('scrub').num}, the "
+                       f"Ø{j.phase_tool('scrub').diameter:g} spring mask "
+                       f"removal tool. Same G54 zero — the board has not "
+                       f"moved within this setup."},
+            prog(side, "scrub", "scrub the mask off the pads",
+                 f"Z{scrub['depth']:g} of spring PRELOAD (not cut depth), "
+                 f"{scrub['overlap']:g}% overlap, regions deflated "
+                 f"{scrub['offset']:g}."
+                 + (f" The holes are all there by now, so every hole-centred "
+                    f"pad gets an ANNULAR lap, never a disc — a "
+                    f"Ø{j.phase_tool('scrub').diameter:g} tip spiralling "
+                    f"across a bore drops in and levers the pad off."
+                    if side == second else
+                    " No holes in the blank yet, so these are ordinary disc "
+                    "laps.")
+                 + (f" {note(side, 'scrub')}" if note(side, "scrub") else "")),
+        ]
+        return out
+
+    steps: list[dict] = [
+        {"kind": "setup", "title": f"fixture the blank, {first.upper()} "
+                                   f"copper UP",
+         "detail": f"{job.blank_w:g}x{job.blank_h:g}x{job.thickness:g} "
+                   f"copper-clad on FULL-coverage double-stick tape (a bowed "
+                   f"blank turns every depth number into fiction), clamps in "
+                   f"the WASTE and clear of the pin holes. The board SW "
+                   f"corner is G54 (0,0) and the blank must overhang on all "
+                   f"four sides — the programs work off the board, and the "
+                   f"{n_pins} registration pins land in the waste, outside "
+                   f"the outline."},
+        {"kind": "setup",
+         "title": f"auto-level, then zero Z on {first.upper()} copper",
+         "detail": "probe over the board area before the first program; "
+                   "Z0 = this side's copper top. Do not re-probe Z once mask "
+                   "is on top of it."},
+    ]
+    steps += cycle(first)
+    steps += [
+        prog(first, "holes", "every through-hole, bored from side 1",
+             f"every hole helically bored to "
+             f"Z{sides[first].phases['drills']['depth']:g} (through the "
+             f"{job.thickness:g} blank into the spoilboard). Side 1 bores "
+             f"them ALL: both artworks then reference the same physical "
+             f"holes, so flip accuracy equals pin-to-hole clearance and no "
+             f"via is ever bored twice from two frames"),
+        prog(first, "pins", "the registration pin bores",
+             f"{n_pins}x Ø{job.pins['diameter']:g} spot-faced to "
+             f"Z{sides[first].phases['pinspot']['depth']:g} then pecked to "
+             f"Z{sides[first].phases['pindrill']['depth']:g}, into the "
+             f"spoilboard — the LAST thing cut on side 1, in the same setup, "
+             f"so the pins inherit this side's zero and the flip inherits the "
+             f"pins"),
+        {"kind": "operator",
+         "title": f"set the pins, FLIP about {job.flip_axis.upper()}, "
+                  f"deburr, re-level",
+         "detail": f"set the {n_pins} dowels in the bores just cut, lift the "
+                   f"blank, DEBURR THE BACK by hand (scotchbrite — the "
+                   f"drill's exit burr lives there and a burr under tape "
+                   f"bows the blank), turn it about the "
+                   f"{job.flip_axis.upper()} axis onto the pins, re-tape FULL "
+                   f"coverage. Re-level and re-touch Z0 on the "
+                   f"{second.upper()} copper — and confirm no probe point "
+                   f"sits in a drilled hole, which would write a false low "
+                   f"into the height map. NEVER re-zero XY: it is the "
+                   f"registration the holes bought."},
+    ]
+    steps += cycle(second)
+    steps += [
+        prog(second, "holes", "the outline cut with tabs",
+             f"the outline with {pcbjob.tab_count(cut['gaps'])} tabs"
+             f"{cut_where} of {cut['gapsize']:g}mm, at "
+             f"Z{cut['depth']:g} — side 2 only, and last of everything"),
+        {"kind": "operator", "title": "release the board, snap the tabs",
+         "detail": f"{pcbjob.tab_count(cut['gaps'])} tabs{cut_where} of "
+                   f"{cut['gapsize']:g}mm hold it; snap, file the stubs and "
+                   f"deburr. The cut rides a tool radius OUTSIDE the outline "
+                   f"ink, so the board comes out one Edge.Cuts line width "
+                   f"oversize per side (measured and accepted 2026-07-19)."},
+        {"kind": "offmachine", "title": "stencil, paste, reflow the BACK",
+         "detail": ("send the B.Paste gerber to stenchill.com, print the "
+                    "stencil at 0.3-0.4mm in PLA/PETG with a 0.2mm nozzle, "
+                    "squeegee paste, place, hotplate reflow. One stencil, "
+                    "back side."
+                    if paste else
+                    "NO paste gerber is exported for this board, so there is "
+                    "no stencil artwork — export the paste layer before "
+                    "promising a stencil step.")},
+        {"kind": "offmachine", "title": "wire vias — after reflow, never "
+                                        "before",
+         "detail": "insert, solder both faces, clip flush. A wire standing "
+                   "off the back holds the board off the hotplate, so the "
+                   "vias go in after the reflow, not before (SPEC 'Assembly' "
+                   "step 10)."},
+        {"kind": "offmachine", "title": "THT from the FRONT, then flash and "
+                                        "power up",
+         "detail": "through-hole parts inserted from the front with their "
+                   "leads soldered on the back, every dual-solder lead "
+                   "soldered on the front too; then flash and power it. "
+                   "Firmware/function is the last verification the gate "
+                   "cannot do."},
+    ]
+    for i, s in enumerate(steps, 1):
+        s["n"] = i
+    return steps
+
+
 # ------------------------------------------------------------- the sessions
 @dataclass
 class PcbSession:
@@ -585,53 +841,51 @@ def _scrub_stage(job: PcbJob, sj: SheetJob,
                       "nothing (Article IX exemption)"}], est)
 
 
-def build(job: PcbJob, programs: dict[str, Path] | None = None,
-          gate: bool = True, ppm: float = SHEET_PPM,
-          dpi: int | None = None) -> list[PcbSession]:
-    """Build the four viewer sessions of a [pcb] job.
+@dataclass
+class _Facts:
+    """What one SETUP's programs measured, before any session exists: the run
+    sheet needs the estimates and the tool order, and every session in the
+    document carries the same card."""
+    carves: dict[str, simulate.CarveResult]
+    stats: dict[str, list[dict]]
+    est: dict[str, float]
+    tool_order: dict[str, list[int]]
+    texts: dict[str, str]
 
-    `gate` runs checks.verify_pcb over the board maps (needs gerbv) and
-    folds each program's Report into its session, so a session's PASS badge
-    is the gate's verdict and nothing else. Without it — no gerbv on the box
-    — the sessions still show the sheet sim, the overlays and the run sheet,
-    with `ok = None` and a stated reason: a session that cannot verify says
-    so instead of showing a green badge (Article I).
 
-    A DOUBLE-SIDED document refuses here rather than half-working: the viewer
-    has one session list per document, and a flipped board has two setups,
-    nine programs and an artwork report (flip.verify_twosided). Hand it one
-    SIDE (pcbjob.side_view) and it behaves exactly as it does for a
-    single-sided job; the per-document view is WS8's remaining viewer work,
-    and a confusing KeyError is not a substitute for saying so.
-    """
-    if job.twosided:
-        raise ValueError(
-            f"{job.name} is a double-sided [pcb] document — the viewer does "
-            f"not compose two setups into one session list yet. Verify it "
-            f"with pcb.flip.verify_twosided, or build sessions one side at a "
-            f"time via pcbjob.side_view(job, 'front'|'back')")
-    sheet = sheet_stock(job, ppm=ppm)
-    sj = sheet_job(job, sheet)
-    progs = programs if programs is not None else program_paths(job)
-    missing = [n for n in checks.PROGRAM_PHASES if n not in progs]
+@dataclass
+class _Setup:
+    """One setup's state. A single-sided document has one; a flipped one has
+    two, and `job` is a pcbjob.side_view — which is why everything below
+    reads the same in both cases."""
+    job: PcbJob
+    sheet: SheetStock
+    sj: SheetJob
+    progs: dict[str, Path]
+    reports: dict[str, Report]
+    facts: _Facts
 
-    reports: dict[str, Report] = {}
-    gate_note = ""
-    if gate and not missing:
-        try:
-            reports = checks.verify_pcb(job, progs, dpi=dpi)
-        except FileNotFoundError as e:          # no gerbv: boardmaps says so
-            gate_note = str(e)
-        except (ValueError, RuntimeError) as e:
-            gate_note = f"the PCB gate could not run: {e}"
-    elif missing:
-        gate_note = (f"programs {missing} are not on disk — generate the "
-                     f"whole split before the gate can judge it")
-    elif not gate:
-        gate_note = "the PCB gate was not run for this session"
 
-    # per-program stage stats first: the run sheet needs the estimates and
-    # the tool order, and every session carries the same card.
+@dataclass
+class _Doc:
+    """Document-level state every session repeats: whose board this is, why
+    the gate did or did not run, the one run-sheet card, the chain estimate
+    and the whole program list."""
+    board: str
+    gate_note: str
+    card: list[dict]
+    chain_est: float
+    programs: list[dict]
+
+
+def _program_facts(job: PcbJob, sheet: SheetStock, sj: SheetJob,
+                   progs: dict[str, Path],
+                   reports: dict[str, Report]) -> _Facts:
+    """Measure every program of ONE setup: stage stats, estimate, tool order.
+
+    The CARVING programs serve the gate's OWN simulation when it ran (its
+    Report carries the CarveResult), so the picture and the verdict can never
+    drift apart; the overlay-only pair is measured from the same bytes."""
     carves: dict[str, simulate.CarveResult] = {}
     stats: dict[str, list[dict]] = {}
     est: dict[str, float] = {}
@@ -668,77 +922,269 @@ def build(job: PcbJob, programs: dict[str, Path] | None = None,
             stats[name], _ = _scrub_stage(job, sj, path)
             tool_order[name] = [job.phase_tool("scrub").num]
         est[name] = sum(s["est_s"] for s in stats[name])
+    return _Facts(carves=carves, stats=stats, est=est, tool_order=tool_order,
+                  texts=texts)
 
+
+def _session(doc: _Doc, st: _Setup, name: str, key: str) -> PcbSession:
+    """One program's session. `key` is what the operator and the viewer call
+    it — the program name on a single-sided job, `<side>/<program>` on a
+    flipped one — and `name` is always the program within its own split."""
+    job, sheet, sj = st.job, st.sheet, st.sj
+    path = Path(st.progs[name]).resolve()
+    rep = st.reports.get(name)
+    chk = list(rep.checks) if rep else []
+    res = st.facts.carves.get(name)
+    if res is not None and rep is None:
+        # the gateless path (no gerbv): the gate's report would already
+        # carry the sheet checks; without it the session still shows
+        # them — with ok = None below, never as a verdict
+        chk += sheet_checks(job, sheet, sj, res)
+    # a verdict ONLY when the gate itself ran: the sheet sim is an
+    # ADDITION to the PCB gate, never a substitute for it, so a session
+    # whose board maps never loaded stays UNVERIFIED however clean its
+    # own simulation came out (Article I).
+    ok = all(c.ok for c in chk) if rep is not None else None
+    stocks = [sheet.crop(g) for g in res.stage_stocks] if res else []
+    meta = {
+        "kind": "pcb",
+        "job": f"{doc.board} {key}",
+        "board": doc.board,
+        "program": key,
+        "phases": list(pcbjob.programs_of(job)[name]),
+        "path": str(path),
+        "toml": str(job.path),
+        "nc": path.name,
+        "ok": ok,
+        "gate": {"ran": rep is not None,
+                 "verdict": ("PASS" if rep and rep.ok else "FAIL"
+                             if rep else "not run"),
+                 "note": doc.gate_note,
+                 "sheet_sim": res is not None},
+        "carves": res is not None,
+        "n": sheet.n, "ppm": sheet.ppm, "half": sheet.half,
+        "nx": sheet.nx, "ny": sheet.ny,
+        "i_off": sheet.i_off, "j_off": sheet.j_off,
+        "sheet": sheet.as_meta(),
+        "sim": {"ppm": sheet.ppm, "mm_per_px": 1.0 / sheet.ppm,
+                "virgin": True,
+                "note": "each program simulates on a VIRGIN sheet — "
+                        "carrying stock across programs needs an "
+                        "initial-stock kernel parameter that does not "
+                        "exist yet; more stock than reality is the "
+                        "conservative reading"},
+        "material": job.material["name"],
+        "machine": job.machine["name"],
+        "stock_size": 2 * sheet.half,
+        "stock_thickness": sheet.thickness,
+        "total_est_s": st.facts.est.get(name, 0.0),
+        "chain_est_s": doc.chain_est,
+        "stages": st.facts.stats.get(name, []),
+        "tools": stagesmod.tool_cards(sj, res, st.facts.stats.get(name, []))
+        if res else [],
+        "checks": [{"name": c.name, "value": c.value, "limit": c.limit,
+                    "ok": c.ok, "detail": c.detail} for c in chk],
+        "overlay": overlay_for(job, name, st.facts.texts[name], path, sj)
+        if name in OVERLAY_ONLY else None,
+        "run_sheet": doc.card,
+        "programs": doc.programs,
+    }
+    if job.side:
+        # only a flipped document says which setup this is: the single-sided
+        # payload must not grow a key (Board A's sessions do not move)
+        meta["side"] = job.side
+    body = (rep.program if rep and rep.program else st.facts.texts[name])
+    return PcbSession(name=key, path=str(path), meta=meta,
+                      stocks=stocks, program=body.encode())
+
+
+def build(job: PcbJob,
+          programs: dict[str, Path] | dict[str, dict[str, Path]] | None = None,
+          gate: bool = True, ppm: float = SHEET_PPM,
+          dpi: int | None = None) -> list[PcbSession]:
+    """Build the viewer sessions of a [pcb] document: four for a single-sided
+    job, one per program of the canonical split.
+
+    `gate` runs checks.verify_pcb over the board maps (needs gerbv) and
+    folds each program's Report into its session, so a session's PASS badge
+    is the gate's verdict and nothing else. Without it — no gerbv on the box
+    — the sessions still show the sheet sim, the overlays and the run sheet,
+    with `ok = None` and a stated reason: a session that cannot verify says
+    so instead of showing a green badge (Article I).
+
+    A DOUBLE-SIDED document composes its two setups into ONE list here
+    (build_twosided): nine sessions for orbit, named `<side>/<program>`, plus
+    the `board` session that carries the document's own artwork checks. Pass
+    `programs` as {side: {program: path}} for it, the shape
+    flip.verify_twosided takes.
+    """
+    if job.twosided:
+        return build_twosided(job, programs=programs, gate=gate, ppm=ppm,
+                              dpi=dpi)
+    sheet = sheet_stock(job, ppm=ppm)
+    sj = sheet_job(job, sheet)
+    progs = programs if programs is not None else program_paths(job)
+    missing = [n for n in checks.PROGRAM_PHASES if n not in progs]
+
+    reports: dict[str, Report] = {}
+    gate_note = ""
+    if gate and not missing:
+        try:
+            reports = checks.verify_pcb(job, progs, dpi=dpi)
+        except FileNotFoundError as e:          # no gerbv: boardmaps says so
+            gate_note = str(e)
+        except (ValueError, RuntimeError) as e:
+            gate_note = f"the PCB gate could not run: {e}"
+    elif missing:
+        gate_note = (f"programs {missing} are not on disk — generate the "
+                     f"whole split before the gate can judge it")
+    elif not gate:
+        gate_note = "the PCB gate was not run for this session"
+
+    facts = _program_facts(job, sheet, sj, progs, reports)
     paste = (job.gerber_dir / f"{job.stem}-B_Paste.gbr").is_file()
-    card = run_sheet(job, progs, est, tool_order, paste)
+    card = run_sheet(job, progs, facts.est, facts.tool_order, paste)
+    st = _Setup(job=job, sheet=sheet, sj=sj, progs=progs, reports=reports,
+                facts=facts)
+    doc = _Doc(board=job.name, gate_note=gate_note, card=card,
+               chain_est=sum(facts.est.values()),
+               programs=[{"name": n, "nc": Path(p).name,
+                          "est_s": facts.est.get(n, 0.0)}
+                         for n, p in progs.items()])
+    return [_session(doc, st, name, name)
+            for name in checks.PROGRAM_PHASES if name in progs]
 
-    out: list[PcbSession] = []
-    for name in checks.PROGRAM_PHASES:
-        if name not in progs:
-            continue
-        path = Path(progs[name]).resolve()
-        rep = reports.get(name)
-        chk = list(rep.checks) if rep else []
-        res = carves.get(name)
-        if res is not None and rep is None:
-            # the gateless path (no gerbv): the gate's report would already
-            # carry the sheet checks; without it the session still shows
-            # them — with ok = None below, never as a verdict
-            chk += sheet_checks(job, sheet, sj, res)
-        # a verdict ONLY when the gate itself ran: the sheet sim is an
-        # ADDITION to the PCB gate, never a substitute for it, so a session
-        # whose board maps never loaded stays UNVERIFIED however clean its
-        # own simulation came out (Article I).
-        ok = all(c.ok for c in chk) if rep is not None else None
-        stocks = [sheet.crop(g) for g in res.stage_stocks] if res else []
-        meta = {
-            "kind": "pcb",
-            "job": f"{job.name} {name}",
-            "board": job.name,
-            "program": name,
-            "phases": list(checks.PROGRAM_PHASES[name]),
-            "path": str(path),
-            "toml": str(job.path),
-            "nc": path.name,
-            "ok": ok,
-            "gate": {"ran": rep is not None,
-                     "verdict": ("PASS" if rep and rep.ok else "FAIL"
-                                 if rep else "not run"),
-                     "note": gate_note,
-                     "sheet_sim": res is not None},
-            "carves": res is not None,
-            "n": sheet.n, "ppm": sheet.ppm, "half": sheet.half,
-            "nx": sheet.nx, "ny": sheet.ny,
-            "i_off": sheet.i_off, "j_off": sheet.j_off,
-            "sheet": sheet.as_meta(),
-            "sim": {"ppm": sheet.ppm, "mm_per_px": 1.0 / sheet.ppm,
-                    "virgin": True,
-                    "note": "each program simulates on a VIRGIN sheet — "
-                            "carrying stock across programs needs an "
-                            "initial-stock kernel parameter that does not "
-                            "exist yet; more stock than reality is the "
-                            "conservative reading"},
-            "material": job.material["name"],
-            "machine": job.machine["name"],
-            "stock_size": 2 * sheet.half,
-            "stock_thickness": sheet.thickness,
-            "total_est_s": est.get(name, 0.0),
-            "chain_est_s": sum(est.values()),
-            "stages": stats.get(name, []),
-            "tools": stagesmod.tool_cards(sj, res, stats.get(name, []))
-            if res else [],
-            "checks": [{"name": c.name, "value": c.value, "limit": c.limit,
-                        "ok": c.ok, "detail": c.detail} for c in chk],
-            "overlay": overlay_for(job, name, texts[name], path, sj)
-            if name in OVERLAY_ONLY else None,
-            "run_sheet": card,
-            "programs": [{"name": n, "nc": Path(p).name,
-                          "est_s": est.get(n, 0.0)}
-                         for n, p in progs.items()],
-        }
-        body = (rep.program if rep and rep.program else texts[name])
-        out.append(PcbSession(name=name, path=str(path), meta=meta,
-                              stocks=stocks, program=body.encode()))
+
+def _board_session(job: PcbJob, doc: _Doc, rep: Report | None,
+                   sheet: SheetStock) -> PcbSession:
+    """The document's own session: the checks that belong to no program.
+
+    flip.board_checks judges the ARTWORK (both coppers in one window, the
+    frame, every hole's annular ring, paste against the hole schedule) — a
+    verdict on the board itself, which no single program can carry and which
+    would therefore be the one thing the operator never sees. It is keyed
+    `<toml>#board` in twosided.py's `#side` spelling, so it joins the list
+    without colliding with the document's own placeholder session."""
+    path = job.path.with_name(job.path.name + "#board")
+    chk = list(rep.checks) if rep else []
+    meta = {
+        "kind": "pcb",
+        "job": f"{doc.board} board",
+        "board": doc.board,
+        "program": "board",
+        "phases": [],
+        "path": str(path),
+        "toml": str(job.path),
+        "nc": "",
+        "ok": (all(c.ok for c in chk) if rep is not None else None),
+        "gate": {"ran": rep is not None,
+                 "verdict": ("PASS" if rep and rep.ok else "FAIL"
+                             if rep else "not run"),
+                 "note": doc.gate_note,
+                 "sheet_sim": False},
+        "carves": False,
+        "n": sheet.n, "ppm": sheet.ppm, "half": sheet.half,
+        "nx": sheet.nx, "ny": sheet.ny,
+        "i_off": sheet.i_off, "j_off": sheet.j_off,
+        "sheet": sheet.as_meta(),
+        "sides": list(job.sides),
+        "material": job.material["name"],
+        "machine": job.machine["name"],
+        "stock_size": 2 * sheet.half,
+        "stock_thickness": sheet.thickness,
+        "total_est_s": 0.0,
+        "chain_est_s": doc.chain_est,
+        "stages": [],
+        "tools": [],
+        "checks": [{"name": c.name, "value": c.value, "limit": c.limit,
+                    "ok": c.ok, "detail": c.detail} for c in chk],
+        "overlay": None,
+        "run_sheet": doc.card,
+        "programs": doc.programs,
+        "note": "the DOCUMENT's artwork report: both coppers in one raster "
+                "window, the derived mirror line, every hole's annular ring "
+                "and the paste layer against the hole schedule. It carves "
+                "nothing — there is no stock preview here because there is "
+                "no program. The board rectangle drawn is the same in both "
+                "setups (the flip is about its own centreline); the sheet "
+                "window around it is side 1's.",
+    }
+    return PcbSession(name="board", path=str(path), meta=meta, stocks=[],
+                      program=b"")
+
+
+def build_twosided(job: PcbJob,
+                   programs: dict[str, dict[str, Path]] | None = None,
+                   gate: bool = True, ppm: float = SHEET_PPM,
+                   dpi: int | None = None) -> list[PcbSession]:
+    """The session list of a pin-and-flip [pcb] document, in MACHINING order.
+
+    Each setup is a pcbjob.side_view — a job shaped like a single-sided one —
+    so the sheet model, the stage stats, the overlays and the sessions are
+    built by the same helpers the single-sided path uses, with the side's own
+    artwork, its own mirror and its own phase table. What is composed here is
+    only the list: the artwork report first, then side 1's five programs, then
+    side 2's four, each keyed `<side>/<program>` (flip.verify_twosided's key,
+    tools-cam.py's file name) and each pointing at its own .nc in out/.
+
+    The gate is flip.verify_twosided, never four separate verify_pcb calls:
+    the cross-side checks (annular scrub, tab-zone copper, the frame) exist
+    precisely because a side judged alone is not judged.
+    """
+    sides = {side: pcbjob.side_view(job, side) for side in job.sides}
+    progs = (programs if programs is not None
+             else {side: program_paths(sv) for side, sv in sides.items()})
+    missing = [f"{side}/{n}" for side, sv in sides.items()
+               for n in pcbjob.programs_of(sv)
+               if n not in progs.get(side, {})]
+
+    reports: dict[str, Report] = {}
+    gate_note = ""
+    if gate and not missing:
+        try:
+            reports = flip.verify_twosided(job, progs, dpi=dpi, ppm=ppm)
+        except FileNotFoundError as e:          # no gerbv: boardmaps says so
+            gate_note = str(e)
+        except (ValueError, RuntimeError) as e:
+            gate_note = f"the PCB gate could not run: {e}"
+    elif missing:
+        gate_note = (f"programs {missing} are not on disk — generate BOTH "
+                     f"setups before the gate can judge the document")
+    elif not gate:
+        gate_note = "the PCB gate was not run for this session"
+
+    setups: dict[str, _Setup] = {}
+    est: dict[str, float] = {}
+    tool_order: dict[str, list[int]] = {}
+    for side, sv in sides.items():
+        sheet = sheet_stock(sv, ppm=ppm)
+        sj = sheet_job(sv, sheet)
+        mine = progs.get(side, {})
+        sreps = {n: reports[f"{side}/{n}"] for n in mine
+                 if f"{side}/{n}" in reports}
+        facts = _program_facts(sv, sheet, sj, mine, sreps)
+        setups[side] = _Setup(job=sv, sheet=sheet, sj=sj, progs=mine,
+                              reports=sreps, facts=facts)
+        est.update({f"{side}/{n}": v for n, v in facts.est.items()})
+        tool_order.update({f"{side}/{n}": v
+                           for n, v in facts.tool_order.items()})
+
+    paste_p = job.gerber_dir / f"{job.stem}{pcbjob.PASTE_SUFFIX}"
+    paste = "paste" in job.files or paste_p.is_file()
+    card = run_sheet_twosided(job, sides, progs, est, tool_order, paste)
+    doc = _Doc(board=job.name, gate_note=gate_note, card=card,
+               chain_est=sum(est.values()),
+               programs=[{"name": f"{side}/{n}", "nc": Path(p).name,
+                          "est_s": est.get(f"{side}/{n}", 0.0)}
+                         for side in job.sides
+                         for n, p in progs.get(side, {}).items()])
+
+    out = [_board_session(job, doc, reports.get("board"),
+                          setups[job.sides[0]].sheet)]
+    for side in job.sides:
+        st = setups[side]
+        out += [_session(doc, st, name, f"{side}/{name}")
+                for name in pcbjob.programs_of(st.job) if name in st.progs]
     return out
 
 
@@ -753,7 +1199,9 @@ def report_text(sessions: list[PcbSession]) -> str:
         verdict = ("PASS" if s.meta["ok"] else "FAIL" if s.meta["ok"]
                    is False else "UNVERIFIED")
         ok_all &= s.meta["ok"] is True
-        lines.append(f"=== program {s.name} ({s.meta['nc']}) — {verdict} "
+        what = (f"artwork {s.name} (the whole document)" if s.name == "board"
+                else f"program {s.name} ({s.meta['nc']})")
+        lines.append(f"=== {what} — {verdict} "
                      f"[{len(s.meta['checks'])} checks, gate "
                      f"{gate['verdict']}]")
         if gate["note"]:
@@ -767,7 +1215,10 @@ def report_text(sessions: list[PcbSession]) -> str:
                          f"{st['volume_mm3']:.0f}mm³ removed"
                          + (" (overlay only, nothing carved)"
                             if st.get("overlay") else ""))
-    lines.append("PCB VERDICT: " + ("PASS — every program cleared"
-                                    if ok_all else
-                                    "NOT CLEARED — do NOT cut this board"))
+    both = any(s.name == "board" for s in sessions)   # a flipped document
+    lines.append("PCB VERDICT: "
+                 + (("PASS — the artwork and every program of both setups "
+                     "cleared" if both else "PASS — every program cleared")
+                    if ok_all else
+                    "NOT CLEARED — do NOT cut this board"))
     return "\n".join(lines)

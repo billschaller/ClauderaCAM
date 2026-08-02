@@ -53,6 +53,12 @@ WHAT MUST HOLD
   - all nine programs of the fixture PASS the whole gate, and each new check
     has a NEGATIVE control that is caught BY NAME while its neighbours still
     pass
+  - the VIEWER composes both setups into ONE session list (WS8): ten sessions
+    — the artwork report plus nine keyed `<side>/<program>`, each pointing at
+    its own side's .nc, its own frame and its own phase numbers — the gate's
+    verdicts (cross-side checks included) folded in, and a run-sheet card in
+    MACHINING order: side A's phases, the holes, the pins, the flip, side B's
+    phases, the cutout last
 
 gerbv-dependent sections skip LOUDLY (same posture as pcb_checks_suite): the
 grammar, the frame math, the Tcl and the pin block need no raster and always
@@ -447,9 +453,18 @@ check("program names carry the side (twosided's name-side convention)",
       pcbjob.program_stem(front, "mill") == "stub2-front-mill"
       and pcbjob.program_stem(back, "holes") == "stub2-back-holes")
 from clauderacam.pcb import session  # noqa: E402
-caught("the viewer refuses a whole double-sided document, loudly",
-       lambda: session.build(job), "one side at a time")
-check("...and takes a SIDE view without complaint", bool(session.is_pcb(JOBP)))
+check("the viewer finds each side's programs under the side's own stem",
+      session.program_paths(front) == {} and session.program_count(
+          session.document_programs(job)) == 0,
+      "nothing generated yet at this point in the suite")
+_empty = session.build(job, gate=False)
+check("a document with no programs on disk still composes its card, and "
+      "every program step says it is MISSING",
+      [s.name for s in _empty] == ["board"]
+      and all(st["missing"] for st in _empty[0].meta["run_sheet"]
+              if st["kind"] == "program")
+      and "not on disk" in _empty[0].meta["gate"]["note"],
+      _empty[0].meta["gate"]["note"][:70])
 
 print("\ngrammar refusals:")
 caught("a flipped document with ONE phase table refuses",
@@ -1222,6 +1237,120 @@ check("report_text names the artwork and every side/program",
       "artwork board" in flip.report_text(reports)
       and "program back/holes" in flip.report_text(reports)
       and "PCB VERDICT (double-sided): PASS" in flip.report_text(reports))
+
+# ---------------------------------------------------------------------------
+print("\nTHE VIEWER: both setups composed into ONE session list (WS8):")
+WANT = ["board", "front/mill", "front/silk", "front/scrub", "front/holes",
+        "front/pins", "back/mill", "back/silk", "back/scrub", "back/holes"]
+vs = session.build(job, programs=PROGS, gate=False)
+vby = {s.name: s for s in vs}
+check("ten sessions: the artwork report, then both setups in machining order",
+      [s.name for s in vs] == WANT, str([s.name for s in vs]))
+check("each session is keyed by the .nc the operator posts, under its own "
+      "side's stem",
+      all(Path(vby[f"{s2}/{n}"].path).name
+          == f"{pcbjob.program_stem(pcbjob.side_view(job, s2), n)}.nc"
+          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2])
+      and Path(vby["front/mill"].path).name == "stub2-front-mill.nc",
+      Path(vby["back/holes"].path).name)
+check("every program session names its side, its document and its phases",
+      all(vby[f"{s2}/{n}"].meta["side"] == s2
+          and vby[f"{s2}/{n}"].meta["board"] == job.name
+          and vby[f"{s2}/{n}"].meta["program"] == f"{s2}/{n}"
+          and tuple(vby[f"{s2}/{n}"].meta["phases"])
+          == pcbjob.SIDE_PROGRAMS[s2][n]
+          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2]))
+check("each side's sessions carry that side's OWN frame and phase numbers",
+      vby["front/mill"].meta["sheet"] != vby["back/mill"].meta["sheet"]
+      or front.phases["iso"]["depth"] != back.phases["iso"]["depth"],
+      f"front iso Z{front.phases['iso']['depth']}, "
+      f"back iso Z{back.phases['iso']['depth']}")
+check("the carving programs of BOTH sides serve stage stocks; the "
+      "overlay-only pair serves none, on both sides",
+      all(len(vby[f"{s2}/{n}"].stocks) > 0
+          for s2 in job.sides for n in ("mill", "holes"))
+      and len(vby["front/pins"].stocks) > 0
+      and all(not vby[f"{s2}/{n}"].stocks
+              for s2 in job.sides for n in ("silk", "scrub")))
+check("the artwork session carries no toolpath and no stock — it judges the "
+      "board, not a program",
+      not vby["board"].stocks and not vby["board"].program
+      and vby["board"].meta["nc"] == ""
+      and vby["board"].meta["sides"] == list(job.sides))
+check("side 1's overlay does NOT draw the BACK's paste layer in the front "
+      "frame (it would be a mirrored lie)",
+      not [L for L in vby["front/scrub"].meta["overlay"]["layers"]
+           if L["key"] == "paste_ap"]
+      and any("stencil artwork is the BACK setup" in n
+              for n in vby["front/scrub"].meta["overlay"]["notes"])
+      and [L for L in vby["back/scrub"].meta["overlay"]["layers"]
+           if L["key"] == "paste_ap"])
+
+card = vby["board"].meta["run_sheet"]
+seq = [st["program"] for st in card if st["kind"] == "program"]
+check("the same card rides every session", all(s.meta["run_sheet"] == card
+                                               for s in vs))
+check("numbered, gapless, in order",
+      [st["n"] for st in card] == list(range(1, len(card) + 1)))
+check("the run sheet machines side A's phases, then the holes, then the "
+      "pins, then side B's phases, and the cutout LAST",
+      seq == WANT[1:], str(seq))
+n_of = {st["program"]: st["n"] for st in card if st["kind"] == "program"}
+n_flip = next(st["n"] for st in card if "FLIP" in st["title"])
+n_gauge = next(st["n"] for st in card if "flip gauges" in st["title"])
+n_mask2 = next(st["n"] for st in card
+               if st["title"].startswith("squeegee") and "BACK" in st["title"])
+check("the FLIP sits between side 1's pin bores and side 2's first program",
+      n_of["front/pins"] < n_flip < n_of["back/mill"],
+      f"pins {n_of['front/pins']}, flip {n_flip}, back mill "
+      f"{n_of['back/mill']}")
+check("the flip gauges are read after side 2's iso and BEFORE its mask "
+      "(SPEC 'Assembly' step 6 — the measurement dies under the mask)",
+      n_of["back/mill"] < n_gauge < n_mask2,
+      f"back mill {n_of['back/mill']}, gauge {n_gauge}, mask {n_mask2}")
+check("every program step names its file, and the pin step names the pins",
+      all(st["file"] and not st["missing"] for st in card
+          if st["kind"] == "program")
+      and f"{len(job.pins['positions'])}x" in
+      next(st["detail"] for st in card if st.get("program") == "front/pins"))
+check("the card ends off the machine with the wire vias AFTER the reflow",
+      [st["kind"] for st in card[-3:]] == ["offmachine"] * 3
+      and "reflow" in card[-3]["title"]
+      and "wire vias" in card[-2]["title"])
+
+# THE VERDICTS. The gate that judged this document is flip.verify_twosided —
+# the same reports the positive control above proved, injected here so the
+# composition is tested without rasterizing the board a second time.
+_real_gate = flip.verify_twosided
+flip.verify_twosided = lambda j, p, **kw: reports
+try:
+    gvs = session.build(job, programs=PROGS)
+finally:
+    flip.verify_twosided = _real_gate
+gby = {s.name: s for s in gvs}
+check("with the gate run, every session shows the gate's OWN verdict",
+      all(s.meta["ok"] is True and s.meta["gate"]["ran"]
+          and s.meta["gate"]["verdict"] == "PASS" for s in gvs),
+      str({s.name: s.meta["ok"] for s in gvs if s.meta["ok"] is not True}))
+check("the artwork session carries the board report's checks, and nobody "
+      "else claims them",
+      [c["name"] for c in gby["board"].meta["checks"]]
+      == [c.name for c in reports["board"].checks]
+      and gby["board"].meta["checks"],
+      f"{len(gby['board'].meta['checks'])} checks")
+check("the CROSS-SIDE checks reach the operator's screen",
+      any(c["name"] == "annular scrub inside copper"
+          for c in gby["back/scrub"].meta["checks"])
+      and any(c["name"] == "tab-zone copper keep-out"
+              for c in gby["back/holes"].meta["checks"]))
+check("a session downloads the bytes the GATE judged, not the live file",
+      all(gby[f"{s2}/{n}"].program.decode() == reports[f"{s2}/{n}"].program
+          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2]))
+check("session.report_text names the artwork and every side/program",
+      "artwork board" in session.report_text(gvs)
+      and "program back/holes" in session.report_text(gvs)
+      and "PASS — the artwork and every program of both setups cleared"
+      in session.report_text(gvs))
 
 print("\n  the pin block's own report:")
 pins_rep = reports["front/pins"]

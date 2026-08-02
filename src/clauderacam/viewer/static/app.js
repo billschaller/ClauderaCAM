@@ -306,20 +306,29 @@ function renderHeader() {
     const g = meta.gate ?? {};
     $('jobfacts').innerHTML =
       `<b>${esc(meta.material ?? '?')}</b> · ${esc(meta.machine ?? '')} · ` +
-      `program <b>${esc(meta.program)}</b> (${(meta.phases ?? []).join(' + ')})<br>` +
+      // the document's own artwork report is not a program and has no phases
+      (meta.program === 'board'
+        ? `<b>artwork report</b> — the whole document` +
+          (meta.sides ? ` (${meta.sides.join(' + ')})` : '') + `<br>`
+        : `program <b>${esc(meta.program)}</b> ` +
+          `(${(meta.phases ?? []).join(' + ')})<br>`) +
       `board ${(b[2] - b[0]).toFixed(1)}×${(b[3] - b[1]).toFixed(1)} mm at ` +
       `machine ${b[0].toFixed(1)},${b[1].toFixed(1)} · sheet ${t} mm thick, ` +
       `window ${meta.sheet.x0.toFixed(1)}…${meta.sheet.x1.toFixed(1)} × ` +
       `${meta.sheet.y0.toFixed(1)}…${meta.sheet.y1.toFixed(1)}<br>` +
-      `<b>${esc(meta.nc ?? '')}</b> · ${nst} stage${nst === 1 ? '' : 's'} · ` +
-      `~${fmtTime(meta.total_est_s ?? 0)} ` +
-      `<span style="color:var(--dimmer)">(est) of ~` +
-      `${fmtTime(meta.chain_est_s ?? 0)} for the chain</span><br>` +
+      (meta.program === 'board'
+        ? `no .nc — this session is the verdict on the board, not on a ` +
+          `program · chain ~${fmtTime(meta.chain_est_s ?? 0)}<br>`
+        : `<b>${esc(meta.nc ?? '')}</b> · ${nst} stage` +
+          `${nst === 1 ? '' : 's'} · ~${fmtTime(meta.total_est_s ?? 0)} ` +
+          `<span style="color:var(--dimmer)">(est) of ~` +
+          `${fmtTime(meta.chain_est_s ?? 0)} for the chain</span><br>`) +
       `<span style="color:var(--dimmer)">` +
       (meta.carves
         ? `sheet sim ${(meta.sim.mm_per_px).toFixed(3)} mm/px, virgin sheet ` +
           `per program (upper-bound engagement)`
-        : `no stock simulation — this program removes no material`) +
+        : esc(meta.note ?? 'no stock simulation — this program removes no ' +
+              'material')) +
       `</span><br>` +
       (g.ran
         ? `<span class="${meta.ok ? 'ok-t' : 'bad-t'}">PCB gate ` +
@@ -538,6 +547,11 @@ function setCardsVisible(on) {
     pcb && (meta.overlay?.layers ?? []).length ? '' : 'none';
   $('toolsCard').style.display = on && (meta?.tools ?? []).length
     ? '' : 'none';
+  // a session with no stages (the artwork report) has no stage detail to
+  // show, and a stale card from the last session would be a lie
+  $('stagesCard').style.display =
+    $('detailCard').style.display =
+      on && (meta?.stages ?? []).length ? '' : 'none';
   if (mesh) mesh.visible = stock;
   if (ovGroup) ovGroup.visible = on;
   // an overlay-only [pcb] program has no stock and still has something true
