@@ -53,9 +53,13 @@ MEASUREMENT HONESTY (Article IX, the same posture as checks.py):
     walk is radial and not a distance transform — a 0.6 track on a Ø2.4 pad is
     NEARER to the rim than the pad's own boundary, so an in-copper distance
     field reads 0.3 where the annular ring is really 0.7.
-  * Concentricity is measured as half the ring's spread over the non-capped
-    angles, which assumes hole-centred pads are ROUND. Every hole-centred pad
-    on the boards this lane has specified is (orbit: Ø2.4 vias, Ø1.6 gauges,
+  * Concentricity is measured on the SHORT SIDE of the ring only — the low
+    quantiles of the exit radius — and deliberately ignores late exits, which
+    are what attached tracks produce. See _short_side_ecc: the statistic is a
+    measured eccentricity in mm, it assumes hole-centred pads are ROUND, and
+    it assumes more than 40% of the ring's perimeter is exposed copper-to-void
+    rather than buried under attached copper. Every hole-centred pad on the
+    boards this lane has specified is round (orbit: Ø2.4 vias, Ø1.6 gauges,
     Ø3.6 wire pads); a deliberately oval one would read as eccentric, and that
     is a refusal to be argued with evidence, not a number to loosen here.
   * Distances carry the same calibrated half-pixel over-read every check in
@@ -89,6 +93,24 @@ CONCENTRIC_TOL = 0.05   # mm of pad eccentricity allowed in the ARTWORK. The
 #                         until orbit's gauges are read), and the two errors
 #                         add. The artwork's half of that budget is the half
 #                         software can hold near zero, so it is held there.
+#                         UNCHANGED by the 2026-08-02 rewrite of the statistic
+#                         underneath it: the old proxy and the new one are both
+#                         in mm of eccentricity, so the physical bar did not
+#                         move — only the thing that can actually measure it.
+SHORT_Q = (0.10, 0.40)  # the two low quantiles of exit radius _short_side_ecc
+#                         reads. Reading nothing above the 40th percentile is
+#                         the whole point: late exits are TRACKS. The pair
+#                         costs coverage (see _short_side_ecc) and buys the
+#                         only region of the ring an attached track cannot
+#                         reach.
+SHORT_GAIN = float(np.cos(np.pi * SHORT_Q[0]) - np.cos(np.pi * SHORT_Q[1]))
+#                         0.6421: d(Q_hi - Q_lo)/d(eccentricity) for a round
+#                         pad. The statistic's own gain, and therefore the
+#                         factor its raster uncertainty is multiplied by.
+SHORT_FREE_MIN = 0.5    # a pad-side whose rays mostly run to the cap (a hole
+#                         in a pour) has no boundary to centre on. Below this
+#                         fraction of free rays the pad-side is reported
+#                         unmeasurable and counted, never quietly measured.
 SCRUB_ANNULAR_INSIDE = 0.15   # orbit SPEC "scrub Δ NEW": on side 2 the holes
 SCRUB_ANNULAR_RIM = 0.20      # are already drilled, and a 0.3 spring tip
 #                               spiralling across a Ø1.0 hole drops in and
@@ -214,14 +236,91 @@ def context(job: PcbJob, dpi: int | None = None,
 
 
 # --------------------------------------------------------------- the ring walk
+def _short_side_ecc(r_exit: np.ndarray, step: float, eps: float) -> float:
+    """How far the pad's centre sits from the HOLE's centre, in mm, measured
+    from the SHORT SIDE of the annular ring only (2026-08-02, Board B).
+
+    WHAT IT MEASURES. A round pad of radius R whose centre sits `e` from the
+    hole centre puts its boundary, along the ray at angle t, at the exit radius
+    r solving |r*u - c| = R, i.e.
+
+        r^2 - 2 r (u.c) = R^2 - e^2          <- the same constant on every ray
+
+    Over the whole circle of rays that makes the exit radius a sinusoid about
+    R, so the p-th quantile of the exit radius belongs to the known direction
+    u_p = -cos(pi*p) — and evaluating the constant above at TWO quantiles and
+    subtracting eliminates R outright:
+
+        e = (Q_lo^2 - Q_hi^2) / (2 (Q_lo*u_lo - Q_hi*u_hi))
+
+    That is exact (no small-e linearisation) and it needs no declared pad
+    diameter: the artwork's own short side states both R and e.
+
+    WHAT IT DELIBERATELY IGNORES: everything above the 40th percentile of exit
+    radius. That is where attached copper lives. Copper is only ever ADDED by a
+    track, so a track can only move a ray's first copper->void crossing OUTWARD
+    — never inward. This is exactly the property the retired proxy lacked: it
+    read max-min, so one track set the max and the pad's eccentricity never
+    entered the number (2026-08-02: 62 of 71 Board B pads "orbited" at 0.3925
+    on artwork that is mirror-law-perfect, and its own 0.25 displaced-pad
+    control scored 0.2525 — indistinguishable from one centred pad with one
+    0.6mm track).
+
+    WHY A REAL ECCENTRICITY CANNOT HIDE IN THE IGNORED REGION. A displaced pad
+    ALWAYS squeezes the ring on one side: the exit radius at the squeeze is
+    R - e, below R, and no arrangement of added copper can raise the *rank* of
+    a ray without removing rays from BELOW the quantiles being read. Removing
+    rays from the bottom moves Q_hi up faster than Q_lo (dQ/dp = e*pi*sin(pi*p)
+    is 2.99e at p=0.4 against 0.97e at p=0.1), so a track lying on the squeezed
+    side INFLATES the reading rather than masking it. The corner case is a
+    track attached exactly on the squeezed side: the ring edge under it is
+    pushed out, but the track only buries the rays within
+    2*asin(t/2R) of its own direction — 29 degrees for a 0.6mm track on a Ø2.4
+    via pad, 44 on a Ø1.6 gauge pad — and the adjacent off-track rays on that
+    same side still exit early, at R - e*cos(22 deg) = R - 0.93e in the widest
+    case. Measured over 382320 synthetic pad/hole/track/displacement/sub-pixel
+    configurations: no pad whose true eccentricity reaches CONCENTRIC_TOL ever
+    reads below it (a true 0.05 reads >= 0.0535 in the worst case), and a truly
+    centred pad with up to four 0.6mm tracks never reads above 0.0234.
+
+    THE COVERAGE ASSUMPTION, quantified. Reading the lowest 40% tolerates 60%
+    (216 degrees) of the ring's perimeter buried under attached copper: seven
+    0.6mm tracks on a Ø2.4 pad, four on a Ø1.6 pad. Past that the quantiles
+    themselves sit in buried copper and the statistic OVER-reads, which fails
+    the check — the correct refusal, since a pad with under 40% of its boundary
+    exposed has no short side to measure. It cannot silently pass.
+
+    THE RASTER ALLOWANCE. Each exit radius is located to within the walk's
+    radial sample step plus the raster's own half pixel; a difference of two
+    such radii carries at most their sum, and 1/SHORT_GAIN turns that into
+    0.0156mm of eccentricity here. It is added, i.e. carried in the
+    CONSERVATIVE direction (for an eccentricity, conservative is larger), the
+    same posture BoardMaps.eps has everywhere else in the lane. This is what
+    makes the bar hard at 0.05 rather than soft.
+    """
+    q_lo, q_hi = np.quantile(r_exit, SHORT_Q)
+    u_lo, u_hi = (-np.cos(np.pi * p) for p in SHORT_Q)
+    den = 2.0 * (q_lo * u_lo - q_hi * u_hi)
+    if den > -1e-9:
+        # a round pad gives den ~= -1.28*R, bounded away from zero. Anything
+        # else is not a hole-centred round pad, and is refused rather than
+        # divided by.
+        return float(RING_PROBE)
+    e = float((q_lo * q_lo - q_hi * q_hi) / den)
+    return e + (step + eps) / SHORT_GAIN
+
+
 def _ring_walk(ctx: FlipContext, cu: np.ndarray, hx: float, hy: float,
                hd: float) -> dict:
     """Walk outward from ONE hole's rim, at RING_RAYS angles, until the copper
     ends or the walk hits RING_PROBE.
 
     -> {"pad": is this a hole-centred pad at all, "rim_frac": how much of the
-    rim is copper, "ring": min annular ring over the angles, "spread": max-min
-    over the non-capped angles, "capped": how many rays ran to the cap}.
+    rim is copper, "ring": min annular ring over the angles, "ecc": the
+    short-side eccentricity in mm (_short_side_ecc), "free": how many rays
+    found a boundary, "capped": how many ran to the cap, "spread": the RETIRED
+    max-min proxy, kept because it is the witness the twosided suite prints to
+    show the two apart on a pad with tracks — no check reads it}.
 
     Radial by construction — see the module docstring on why a distance field
     is the wrong operator for an annular ring.
@@ -253,8 +352,14 @@ def _ring_walk(ctx: FlipContext, cu: np.ndarray, hx: float, hy: float,
     ring = np.where(capped, RING_PROBE, rs[np.minimum(first, rs.size - 1)]
                     - r_h)
     free = ring[~capped]
+    # the eccentricity statistic reads ABSOLUTE exit radii (the chord relation
+    # in _short_side_ecc is about the hole centre), and a capped ray is
+    # recorded at the cap: it is known to exit at LEAST that late, which is all
+    # the short side ever needs to know about it.
     return {"pad": rim_frac >= 0.9, "rim_frac": rim_frac,
             "ring": float(ring.min()) - ctx.eps,
+            "ecc": _short_side_ecc(ring + r_h, step, ctx.eps),
+            "free": int((~capped).sum()),
             "spread": float(free.max() - free.min()) if free.size else 0.0,
             "capped": int(capped.sum())}
 
@@ -344,13 +449,13 @@ def annular_checks(ctx: FlipContext) -> list[Check]:
                             + ("" if w["pad"] else " — NO PAD on this side, "
                                "rim copper "
                                f"{w['rim_frac'] * 100:.0f}%"))
-            ecc = w["spread"] / 2.0
-            if w["capped"] < RING_RAYS and ecc > ecc_worst:
-                ecc_worst = ecc
-                ecc_at = (f"{side} pad at ({hx:.2f},{hy:.2f}), ring spread "
-                          f"{w['spread']:.3f} over {RING_RAYS - w['capped']} "
-                          f"free rays")
-            if w["capped"] == RING_RAYS:
+            if w["free"] >= SHORT_FREE_MIN * RING_RAYS:
+                if w["ecc"] > ecc_worst:
+                    ecc_worst = w["ecc"]
+                    ecc_at = (f"{side} pad at ({hx:.2f},{hy:.2f}) sits "
+                              f"{w['ecc']:.4f} off its hole, short side of "
+                              f"{w['free']} free rays")
+            else:
                 ecc_capped += 1
     if not pads:
         return [Check("both-side annular ring", 0.0, "unmeasurable", False,
@@ -367,9 +472,12 @@ def annular_checks(ctx: FlipContext) -> list[Check]:
               worst >= 0.0, detail + f"; worst {worst_at}"),
         Check("via/hole concentricity across the flip", ecc_worst,
               f"<= {CONCENTRIC_TOL}", ecc_worst <= CONCENTRIC_TOL,
-              (f"worst {ecc_at}" if ecc_at else "no measurable pad boundary")
-              + (f"; {ecc_capped} pad-sides sit in continuous copper (pour) "
-                 f"and have no boundary to centre on" if ecc_capped else "")),
+              (f"short-side eccentricity, late exits (tracks) ignored; worst "
+               f"{ecc_at}" if ecc_at else "no measurable pad boundary")
+              + (f"; {ecc_capped} pad-sides have under "
+                 f"{SHORT_FREE_MIN:.0%} of their rays free (continuous "
+                 f"copper) and no short side to centre on" if ecc_capped
+                 else "")),
     ]
 
 

@@ -43,6 +43,13 @@ WHAT MUST HOLD
   - the PIN BLOCK composes the shipped machinery: ops/drill.py's spot-face and
     peck, positions symmetric about the DERIVED mirror line, keep-out carried
     into every program of both setups
+  - CONCENTRICITY is measured on the ring's SHORT SIDE and is not fooled by
+    attached tracks (the 2026-08-02 Board B incident: the retired max-min
+    proxy was a track detector). Five controls: the 0.25-displaced pad still
+    FAILS; a displaced pad that ALSO feeds a track on the squeezed side FAILS;
+    a centred pad feeding one track and three tracks PASS; and the retired
+    proxy's own two readings are asserted to lie closer together than the
+    tolerance, which is what "indistinguishable" meant
   - all nine programs of the fixture PASS the whole gate, and each new check
     has a NEGATIVE control that is caught BY NAME while its neighbours still
     pass
@@ -147,6 +154,34 @@ def strokes(segs, dia=0.2):
     for (x0, y0), (x1, y1) in segs:
         out += f"X{gnum(x0)}Y{gnum(y0)}D02*\nX{gnum(x1)}Y{gnum(y1)}D01*\n"
     return out + "M02*\n"
+
+
+def routed(items, tracks, dia=0.6):
+    """A copper layer of flashed pads PLUS routed TRACKS — a stroked round
+    aperture is exactly what a PCB track is.
+
+    The stub artwork was flash-only until 2026-08-02, and that is precisely
+    why the concentricity proxy shipped as a track detector: no control it
+    ever ran on had a track in it. Board B did.
+    """
+    out = ""
+    for n, (d, pts) in enumerate(items):
+        out += f"%ADD{10 + n}C,{d:.6f}*%\n"
+    out += f"%ADD{10 + len(items)}C,{dia:.6f}*%\nG01*\n"
+    for n, (d, pts) in enumerate(items):
+        out += f"D{10 + n}*\n"
+        out += "".join(f"X{gnum(x)}Y{gnum(y)}D03*\n" for x, y in pts)
+    out += f"D{10 + len(items)}*\n"
+    for (x0, y0), (x1, y1) in tracks:
+        out += f"X{gnum(x0)}Y{gnum(y0)}D02*\nX{gnum(x1)}Y{gnum(y1)}D01*\n"
+    return HDR + out + "M02*\n"
+
+
+def radial(centre, deg, length=3.5):
+    """One track leaving `centre` at `deg`, as (start, end)."""
+    a = math.radians(deg)
+    return (centre, (centre[0] + length * math.cos(a),
+                     centre[1] + length * math.sin(a)))
 
 
 # Edge.Cuts: four separate two-point draws, DELIBERATELY out of perimeter
@@ -1204,6 +1239,64 @@ nj, nctx = rebuild(B_Cu=flashes([(VIA_PAD, [(V1[0] + 0.25, V1[1]), V2]),
 catches("a back pad 0.25 off its hole (concentricity across the flip)",
         flip.board_checks(nctx),
         "via/hole concentricity across the flip")
+retired_displaced = nctx.rings("back")[0]["spread"] / 2
+
+# 4b/4c. THE 2026-08-02 INCIDENT (Board B), made law. The retired max-min
+# proxy was a TRACK detector: 62 of 71 pads on mirror-law-perfect routed
+# artwork "orbited" at 0.3925, and its own 0.25-displaced control scored
+# 0.2525 — the SAME number a centred pad feeding one 0.6mm track produces.
+# Every control below prints both statistics on the SAME artwork, because
+# "indistinguishable" is the finding and telling them apart is the fix.
+B_FLASH = [(VIA_PAD, [V1, V2]), (GAUGE_PAD, [G1]), (SMD_PAD, [SMD])]
+OFF_V1 = (V1[0] + 0.25, V1[1])
+SQUEEZE = 180.0          # V1 displaced +x => its ring is squeezed at -x
+CONC = "via/hole concentricity across the flip"
+
+# 4b. POSITIVE control: a CENTRED pad that feeds tracks. No routed board can
+#     pass the gate unless this passes, and none could.
+retired_centred = {}
+for n_tr, angles in ((1, (SQUEEZE,)), (3, (SQUEEZE, 60.0, 300.0))):
+    nj, nctx = rebuild(B_Cu=routed(B_FLASH, [radial(V1, a) for a in angles]))
+    w = nctx.rings("back")[0]
+    bc = flip.board_checks(nctx)
+    retired_centred[n_tr] = w["spread"] / 2
+    short_centred = w["ecc"]
+    check(f"POS a CENTRED pad feeding {n_tr} 0.6mm track(s) PASSES",
+          all(c.ok for c in bc),
+          f"short-side {w['ecc']:.4f} (bar {flip.CONCENTRIC_TOL}) — the "
+          f"RETIRED proxy read {w['spread'] / 2:.4f} on this same pad"
+          + ("" if all(c.ok for c in bc) else
+             "; FAILED " + ", ".join(c.name for c in bc if not c.ok)))
+# the incident itself, asserted rather than remembered: on the retired proxy a
+# PERFECT pad feeding one track and a 0.25-DISPLACED pad with no track land
+# closer together than the tolerance is wide, so no threshold could have
+# separated them. That is what "it was a track detector" means, and it is why
+# this control exists — to refuse the proxy if anyone brings it back.
+check("the RETIRED proxy could not separate a perfect tracked pad from a "
+      "0.25 displacement",
+      abs(retired_centred[1] - retired_displaced) < flip.CONCENTRIC_TOL,
+      f"centred+1 track {retired_centred[1]:.4f} vs displaced-no-track "
+      f"{retired_displaced:.4f}: "
+      f"{abs(retired_centred[1] - retired_displaced):.4f} apart, tolerance "
+      f"{flip.CONCENTRIC_TOL}")
+
+# 4c. the case the retired proxy COULD NOT distinguish: a displaced pad that
+#     ALSO feeds a track, and the track lies on the SQUEEZED side — the
+#     hardest geometry there is, because the ring edge under the track is
+#     pushed OUT, exactly where the eccentricity is trying to show itself.
+nj, nctx = rebuild(B_Cu=routed(
+    [(VIA_PAD, [OFF_V1, V2]), (GAUGE_PAD, [G1]), (SMD_PAD, [SMD])],
+    [radial(OFF_V1, SQUEEZE)]))
+w = nctx.rings("back")[0]
+catches("a back pad 0.25 off its hole AND feeding a track on the SQUEEZED "
+        "side", flip.board_checks(nctx), CONC)
+check("  ...and the short side separates it from the centred pad by more "
+      "than the bar",
+      w["ecc"] - short_centred > flip.CONCENTRIC_TOL,
+      f"short-side {w['ecc']:.4f} here vs {short_centred:.4f} centred — "
+      f"{w['ecc'] - short_centred:.4f} apart; the retired proxy spans only "
+      f"{retired_centred[1]:.4f}..{w['spread'] / 2:.4f} over the same two "
+      f"boards, and that span is set by the TRACK, not by the displacement")
 # 5. paste over a via hole
 nj, nctx = rebuild(B_Paste=flashes([(1.8, [SMD]), (2.0, [V1])]))
 catches("a B.Paste aperture over a via hole (it wicks and blocks the wire)",

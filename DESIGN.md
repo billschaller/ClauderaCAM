@@ -1571,7 +1571,7 @@ Board level (gerbers + schedule, no program — a new `"board"` report):
 | side frame board box | ≤1e-6 mm | one Edge.Cuts, two derived transforms: the board must occupy the same machine rectangle in both setups |
 | side frame mirror law | ≤1e-6 mm | the WS2 mirror law, closed-loop over every hole's two machine positions |
 | both-side annular ring | ≥ the JOB's declared value | orbit SPEC "THT annular Δ" (0.7 there). Named `[[rules.gauge]]` exceptions for orbit's 0.3 flip gauges |
-| via/hole concentricity across the flip | ≤0.05 mm | the flip contributes an estimated 0.02–0.04 (DESIGN.md, still UNMEASURED); the artwork's half of that budget is the half software can hold near zero |
+| via/hole concentricity across the flip | ≤0.05 mm | the flip contributes an estimated 0.02–0.04 (DESIGN.md, still UNMEASURED); the artwork's half of that budget is the half software can hold near zero. The bar is unchanged; the STATISTIC under it was replaced 2026-08-02 (see "the concentricity proxy was a track detector") |
 | paste clear of the hole schedule | >0 mm | orbit SPEC "paste Δ": paste in a via wicks and blocks the wire, and vias are stitched AFTER reflow |
 
 Program level:
@@ -1596,10 +1596,13 @@ Three measurement decisions, stated as Article IX requires:
   per-side census would quietly reclassify that hole as a bare bore on the
   bad side. Bores bare on both sides (mounting holes) are excluded and
   COUNTED in the detail.
-- **Concentricity assumes round hole-centred pads** (half the ring's spread
-  over the non-capped rays). Every hole-centred pad either board specifies is
-  round; a deliberately oval one would read as eccentric, and that is a
-  refusal to argue with evidence, not a number to loosen.
+- **Concentricity assumes round hole-centred pads.** Every hole-centred pad
+  either board specifies is round; a deliberately oval one would read as
+  eccentric, and that is a refusal to argue with evidence, not a number to
+  loosen. (The statistic written here — half the ring's spread over the
+  non-capped rays — was SUPERSEDED on 2026-08-02: it measured the widest
+  track on the pad, not the pad. See "the concentricity proxy was a track
+  detector". The round-pad assumption survives the replacement.)
 - **`annular scrub clear of the hole rim` is the one check the disc-lap laws
   cannot express.** The copper gerber draws a pad as a SOLID disc — the hole
   lives only in the Excellon — so a lap straight across the hole centre reads
@@ -1953,6 +1956,116 @@ Closure: DRC 0 ×2; raster diff vs the committed set — Cu/Mask/Paste/drl
 PASS ×4; mill/scrub/holes **byte-identical to golden** (the labeler
 cannot touch copper); silk re-blessed at 1562 strokes (was 536 — the
 legend tripled, still one M3 block under `lint_laser`).
+
+## 2026-08-02: the concentricity proxy was a track detector
+
+The first real ROUTED board through the twosided gate failed it. Board B's
+artwork is mirror-law-perfect — `side frame mirror law` reads **0.0000 over
+75 holes** — and `via/hole concentricity across the flip` failed **62 of 71
+pads, reading 0.3925** against a 0.05 bar. Re-measured here on the same
+gerbers: **90 of 142 pad-sides fail, max 0.3925 exactly**. Nothing was wrong
+with the board.
+
+**What broke.** `_ring_walk` reported `spread` — max minus min of each ray's
+FIRST copper→void exit — and the check halved it and called it eccentricity.
+An attached track only ever makes rays exit LATE. A track of width `t` on a
+pad of radius `R` buries the rays within `2·asin(t/2R)` of its own direction
+(29° for a 0.6mm track on a Ø2.4 via pad); the rays straight down the track
+run to `RING_PROBE` and are dropped as capped, but the GRAZING rays at the
+sector edge exit at `t/(2·sinψ)` — arbitrarily far out — and those set the
+max. The proxy measured the widest track on the pad.
+
+**The finding that condemns it**, now asserted in the suite rather than
+remembered: on the retired proxy a PERFECT centred pad feeding one 0.6mm
+track reads **0.2175**, and a pad DISPLACED 0.25 with no track reads
+**0.2525**. **0.0350 apart — less than the tolerance is wide.** No threshold
+could ever have separated them. The check had only ever run on flash-only
+stub artwork, so no control it had ever seen contained a track; it could not
+have passed any routed board, and it was not measuring eccentricity on any
+board at all.
+
+**The law: measure the SHORT side.** Copper is only ever ADDED by a track, so
+a track can only move a ray's first copper→void crossing OUTWARD. Pad-vs-hole
+eccentricity does the opposite on one side: it squeezes the ring, and those
+rays exit EARLY. So the statistic reads the low quantiles of exit radius and
+ignores everything above the 40th percentile — the region tracks live in.
+
+The inversion is exact, not a proxy. For a round pad of radius `R` whose
+centre sits `e` from the hole centre, every ray satisfies
+`r² − 2r(u·c) = R² − e²` — the same constant on every ray — and the p-th
+quantile of exit radius belongs to the known direction `u_p = −cos(πp)`.
+Evaluating that constant at two quantiles and subtracting eliminates `R`:
+
+    e = (Q_lo² − Q_hi²) / (2·(Q_lo·u_lo − Q_hi·u_hi))     p = 0.10, 0.40
+
+No small-`e` linearisation, and no declared pad diameter — the artwork's own
+short side states both `R` and `e`. The result is mm of eccentricity, so
+**`CONCENTRIC_TOL` stays 0.05 and keeps its meaning**: the units did not
+change, only the instrument.
+
+**Why a real eccentricity cannot hide in the ignored region.** A displaced pad
+ALWAYS squeezes one side, and added copper cannot raise a ray's rank without
+removing rays from BELOW the quantiles being read. Removing them moves `Q_hi`
+up faster than `Q_lo` (`dQ/dp = eπ·sin(πp)` is 2.99e at p=0.4 against 0.97e at
+p=0.1), so a track lying on the squeezed side INFLATES the reading rather than
+masking it. The corner case — a track attached exactly on the squeezed side —
+pushes the ring edge under itself outward, but it buries only its own 29–44°,
+and the adjacent off-track rays on that same side still exit early, at
+`R − 0.93e` in the widest case.
+
+**The allowance, derived.** Each exit radius is located to within the walk's
+radial sample step (0.005) plus the raster's half pixel (`BoardMaps.eps`,
+0.005); a difference of two such radii carries at most their sum, and the
+statistic's own gain `1/0.6421` turns that into **0.0156mm**, added — the
+conservative direction for an eccentricity, the same posture every distance in
+the lane has. This is load-bearing and it is honest about a falsification: the
+strict claim "attached copper can only raise the reading" is true of the exit
+radii but NOT of the finished statistic, because the quantisation re-rolls when
+the ray set changes (worst observed **−0.0103mm** over 203,040 track layouts).
+The allowance is what makes the bar HARD instead of soft. Measured over
+**382,320 synthetic pad/hole/track/displacement/sub-pixel configurations**: no
+pad whose true eccentricity reaches 0.05 ever reads below it (worst 0.0535),
+and a centred pad feeding up to four 0.6mm tracks never reads above 0.0234.
+
+**The coverage assumption, quantified.** Reading only the lowest 40% tolerates
+60% — 216° — of the ring's perimeter buried under attached copper: seven 0.6mm
+tracks on a Ø2.4 pad, four on a Ø1.6 pad. Past that the quantiles themselves
+sit in buried copper, the statistic over-reads and the check FAILS — the
+correct refusal, since a pad with under 40% of its boundary exposed has no
+short side to measure. It cannot silently pass. Separately `SHORT_FREE_MIN =
+0.5`: a pad-side with fewer than half its rays free (a hole in a pour) is
+reported unmeasurable and COUNTED in the detail, never quietly measured — the
+generalisation of the old fully-capped rule, and it fires on real artwork.
+
+**On the real board.** Board B as of the 02:14 revision — 142 pad-sides on 71
+hole-centred pads: retired proxy **90 FAIL, max 0.3925**; short side **0 FAIL,
+max 0.0235, median 0.0148**. The 02:41 relayout (43 pads / 86 pad-sides, a
+pour): retired **12 FAIL, max 0.3300**; short side **0 FAIL, max 0.0313**, one
+pad-side fully capped and reported unmeasurable. Real pads are measurable for
+the first time, and the readings are what mirror-law-perfect artwork should
+give: the floor 0.0156 IS the allowance, i.e. raw zero.
+
+**Five controls, all in `tests/pcb_twosided_suite.py`** (the stub grew a
+`routed()` builder — flashed pads plus stroked tracks — precisely because
+flash-only artwork is what let this ship):
+
+- the existing 0.25-displaced pad still FAILS: **0.2698**
+- NEW, the case the old proxy could not distinguish: 0.25 displaced AND
+  feeding a track ON THE SQUEEZED SIDE (the hardest geometry) — FAILS at
+  **0.3005**, separated from the centred pad by 0.2849, five times the bar
+- NEW positive: a centred pad feeding ONE 0.6mm track PASSES at **0.0156**
+- NEW positive: the same pad feeding THREE tracks PASSES at **0.0156**
+- NEW falsification: the retired proxy's own two numbers (0.2175 vs 0.2525)
+  are asserted to lie closer together than the tolerance — the control that
+  refuses the proxy if anyone brings it back
+
+`_ring_walk` still returns `spread`, used by no check: it is the witness the
+suite prints beside the new statistic on the same artwork, so the incident is
+visible in the output rather than only in this file.
+
+`pcb_twosided_suite` and `pcb_checks_suite` green; the single-sided path is
+untouched and the coupon's three program headers still regenerate
+byte-identically.
 
 ## Roadmap
 
