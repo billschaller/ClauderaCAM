@@ -383,6 +383,13 @@ class SilkClip:
     silently lost strokes is a lie — and so is one that silently lost PARTS of
     strokes, which is why clipped and dropped are counted separately."""
     strokes: list[list[tuple]] = field(default_factory=list)  # machine frame
+    on_copper: list[bool] = field(default_factory=list)  # parallel to
+    #                          strokes: True = the stroke's ink lies mostly
+    #                          over copper (the heat-sink substrate) — the
+    #                          2026-08-03 test-fire ladder measured that a
+    #                          dose crisp on bare fiberglass rubs off copper
+    #                          after one pass, so these strokes fire twice
+    #                          when phases.silk.copper_passes says so
     chains: int = 0          # stroke chains in the gerber
     clipped: int = 0         # chains that lost part of themselves
     dropped: int = 0         # chains that lost all of themselves
@@ -527,7 +534,8 @@ def _clip_chain(pts: list[tuple], probe, need: float, step: float,
 
 
 def silk_strokes(job: PcbJob, win: boardmaps.BoardWindow,
-                 mask_map: np.ndarray) -> SilkClip:
+                 mask_map: np.ndarray,
+                 cu_dist: np.ndarray | None = None) -> SilkClip:
     """Stroke chains from the B.Silkscreen gerber, machine-framed with the
     SAME derived transform as every layer, CLIPPED against the mask-opening
     map: the part of a stroke nearer than the configured clearance to a
@@ -553,6 +561,26 @@ def silk_strokes(job: PcbJob, win: boardmaps.BoardWindow,
     need = clearance + SILK_EPS_PX / win.ppmm + SILK_EPS_MM
     step = min(0.5 / win.ppmm, SILK_BACKOFF)   # the bracket <= backoff law
     probe = _mask_probe(win, boardmaps.dist_mm(mask_map, win))
+    # substrate classification (the 2026-08-03 dose ladder): a stroke is
+    # "over copper" when the MAJORITY of its sampled centreline sits on
+    # copper ink — majority, not any-touch, because the ladder also showed
+    # the fiberglass sweet spot is ONE pass and a boundary-crossing stroke
+    # should not drag its whole length into the second pass. cu_probe reads
+    # the copper distance field; 0 (within half a pixel) means inside ink.
+    cu_probe = (None if cu_dist is None else _mask_probe(win, cu_dist))
+    on_cu_bar = 0.5 / win.ppmm
+
+    def over_copper(pc) -> bool:
+        if cu_probe is None:
+            return False
+        xs, ys = [], []
+        for p, q in zip(pc[:-1], pc[1:]):
+            n = max(2, int(np.hypot(q[0] - p[0], q[1] - p[1]) / 0.2) + 1)
+            for t in np.linspace(0.0, 1.0, n):
+                xs.append(p[0] + (q[0] - p[0]) * t)
+                ys.append(p[1] + (q[1] - p[1]) * t)
+        return float(np.mean(cu_probe(xs, ys) <= on_cu_bar)) >= 0.5
+
     off = boardmaps.machine_offset(win, job.anchor, job.mirror)
     rep = SilkClip(chains=len(chains), asked=clearance,
                    clearance=need - 0.5 / win.ppmm)
@@ -573,21 +601,46 @@ def silk_strokes(job: PcbJob, win: boardmaps.BoardWindow,
                                           [p[0] for p in pc],
                                           [p[1] for p in pc])
             rep.strokes.append([(float(a), float(b)) for a, b in zip(mx, my)])
+            rep.on_copper.append(over_copper(pc))
     return rep
 
 
 def silk_program(job: PcbJob, win: boardmaps.BoardWindow,
                  mask_map: np.ndarray) -> tuple[str, SilkClip]:
-    """-> (program text, the SilkClip report)."""
-    rep = silk_strokes(job, win, mask_map)
+    """-> (program text, the SilkClip report).
+
+    phases.silk.copper_passes = 2 fires every mostly-over-copper stroke
+    TWICE, back to back (2026-08-03 dose ladder: at the dose that reads
+    crisp on bare fiberglass in one pass, a line over copper wipes off with
+    the IPA — the copper under the coat is a heat sink). Pass count is
+    GEOMETRY, not power, so the program still carries exactly one M3 S and
+    the laser law holds; absent or 1, this emits byte-identically to
+    before the knob existed.
+    """
+    silk = job.phases["silk"]
+    cpasses = int(silk.get("copper_passes", 1))
+    cu_dist = None
+    if cpasses > 1:
+        cu_map = boardmaps.rasterize(job.files["cu"], win)
+        cu_dist = boardmaps.dist_mm(cu_map, win)
+    rep = silk_strokes(job, win, mask_map, cu_dist=cu_dist)
     if not rep.strokes:
         raise ValueError("silk layer produced no strokes clear of pads — "
                          "nothing to cure is a design problem, not a "
                          "program")
-    silk = job.phases["silk"]
-    return assemble_laser(f"{job.name} silk", rep.strokes,
+    strokes: list[list[tuple]] = []
+    for s, oc in zip(rep.strokes, rep.on_copper):
+        strokes += [s] * (cpasses if oc else 1)
+    header = program_header(job, "silk")
+    if cpasses > 1:
+        n_cu = sum(rep.on_copper)
+        header = header + [
+            f"(dose ladder 2026-08-03: {n_cu} strokes over copper fire "
+            f"{cpasses}x back to back, {len(rep.strokes) - n_cu} over "
+            f"fiberglass fire once)"]
+    return assemble_laser(f"{job.name} silk", strokes,
                           dose_s=silk["dose"], feed=silk["feed"],
-                          header=program_header(job, "silk")), rep
+                          header=header), rep
 
 
 def _stroke_chains(gbr: Path) -> list[list[tuple]]:

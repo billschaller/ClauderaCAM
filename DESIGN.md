@@ -2379,3 +2379,36 @@ sliver-dwell proxy revisions; ink-size silk keep-outs; nested parens
 never reach a G-code comment; styled tab placement with the
 silent-sever refusals; the fantasy-control family (BZ1-1, LED8-2)
 proving the class boundaries bite on every build.
+
+## The dose ladder lands the silk pair: S0.06, twice over copper (2026-08-03)
+
+The S0.04-with-thin-coat prediction from Board A's debrief was never a
+landed number, and before orbit's silk programs fired the operator asked
+for the measurement: `boards/orbit/tools-testfire.py` emits a nine-program
+scrap rig — one T3 clearing program that bares a 20×24 fiberglass window
+beside intact copper and engraves an ID tick per rung (the long tick names
+the target), then eight one-dose laser programs S0.01..S0.06, one stroke
+over each substrate at fixed F100. One dose per file because the laser law
+allows exactly one `M3 S` per program; running them back to back is safe
+because M321 is a guarded mode-enter, not a toggle (Community firmware
+`Laser.cpp:261` — later calls no-op until M322).
+
+**The bench measurement (operator, 2026-08-03, thin coat):** on bare
+fiberglass S0.06 is the sweet spot in ONE pass; over copper S0.06 reads
+"ehhh ok" but the line RUBS OFF with the IPA wipe — the copper under the
+coat is a heat sink stealing the cure. Ruling: one silk file per side,
+S0.06, strokes over copper fire TWICE back to back, strokes over
+fiberglass once. Pass count is GEOMETRY, not power — the program still
+carries one `M3 S` and every laser law holds unchanged.
+
+The mechanism is `phases.silk.copper_passes` (grammar refuses anything
+but 1 or 2 — a third pass is unbracketed territory, and the refusal names
+the rig to measure it with). `reemit.silk_strokes` classifies each kept
+stroke against the side's copper raster — MAJORITY of the sampled
+centreline on copper ink, not any-touch, because the same ladder showed
+one pass is the fiberglass sweet spot and a boundary-crossing stroke must
+not drag its whole length into the second pass. Absent or 1, emission is
+byte-identical to before the knob existed — the golden coupon proves it.
+This supersedes the S0.04 prediction; the superseded bracket history
+stays in orbit.toml's silk block. Dose and coat still move together:
+re-bracket on scrap when the coat changes, the rig is reusable as-is.

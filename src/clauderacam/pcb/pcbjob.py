@@ -510,6 +510,14 @@ def _validate_phases(j: PcbJob) -> None:
     need("clear", ("tool", "depth", "margin", "offset", "overlap",
                    "feed", "plunge"))
     need("silk", ("clearance",))
+    cp = j.phases["silk"].get("copper_passes", 1)
+    if cp not in (1, 2):
+        raise ValueError(
+            f"phases.silk.copper_passes = {cp!r} — only 1 or 2 are "
+            f"bench-measured (the 2026-08-03 dose ladder landed S0.06 x2 "
+            f"over copper, x1 over fiberglass); anything else is "
+            f"unbracketed territory, measure it on scrap first "
+            f"(boards/orbit/tools-testfire.py is the rig)")
     need("scrub", ("tool", "depth", "overlap", "offset", "feed", "plunge"))
     if j.has_phase("drills"):
         need("drills", ("tool", "depth", "dpp", "feed", "plunge"))

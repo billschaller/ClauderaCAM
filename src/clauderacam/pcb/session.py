@@ -683,7 +683,11 @@ def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
             prog(side, "silk", "silk legend (laser)",
                  f"dose S{silk['dose']:g} at F{silk['feed']:g}, every stroke "
                  f"kept ≥{silk['clearance']:g}mm clear of a solderable "
-                 f"aperture"),
+                 f"aperture"
+                 + (" — strokes over copper fire twice, back to back "
+                    "(the 2026-08-03 dose ladder: copper heat-sinks the "
+                    "cure)" if int(silk.get("copper_passes", 1)) > 1
+                    else "")),
             {"kind": "operator",
              "title": "wipe the uncured white off with IPA",
              "detail": "the cured legend stays. This instruction also rides "

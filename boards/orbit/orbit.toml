@@ -258,16 +258,24 @@ feed = 500
 plunge = 200
 
 [phases.front.silk]
-# dose S0.04 is OPERATOR-DIRECTED (Bill, 2026-07-30 post-run debrief): the
-# bracket ran field-validated S0.03/F100 -> S0.10 (too hot) -> S0.06 (cut the
-# board, but was compensating for a TOO-THICK white coat) -> S0.04 with a
-# deliberately thinner coat. Dose and coat thickness move together — re-bracket
-# on scrap if the coat changes. BOTH sides carry the same landed pair: this
-# board lasers two legends onto two separately-squeegeed coats, and the same
-# hand applies both. clearance 0.3 is the mask-guide law SPEC restates (cured
-# white on a solderable pad repels solder); the grammar refuses below 0.3.
+# dose S0.06 + copper_passes 2 is BENCH-MEASURED (Bill, 2026-08-03, the
+# tools-testfire.py dose ladder on scrap — S0.01..S0.06 on both substrates):
+# "For fiberglass, 0.6 [S0.06] is the sweet spot. 0.6 works ehhh ok for the
+# copper part but the line rubs off very easily with IPA. For over copper we
+# do 0.6, 2 passes, and for fiberglass 0.6, 1 pass." Copper under the coat
+# is a heat sink; pass count is geometry, not power, so one file still
+# carries one M3 S and the laser law holds. This SUPERSEDES the S0.04 +
+# thin-coat prediction from the 2026-07-30 Board A debrief (that bracket:
+# S0.03 field -> S0.10 burned -> S0.06 cut the board through a TOO-THICK
+# coat — the ladder ran on a thin coat, which is the going-forward coat).
+# Dose and coat move together — re-bracket on scrap if the coat changes.
+# BOTH sides carry the same landed pair: this board lasers two legends onto
+# two separately-squeegeed coats, and the same hand applies both.
+# clearance 0.3 is the mask-guide law SPEC restates (cured white on a
+# solderable pad repels solder); the grammar refuses below 0.3.
 clearance = 0.3
-dose = 0.04
+dose = 0.06
+copper_passes = 2
 feed = 100
 
 [phases.front.scrub]
@@ -320,8 +328,11 @@ feed = 500
 plunge = 200
 
 [phases.back.silk]
+# same landed pair as the front — see the front block for the 2026-08-03
+# dose-ladder provenance
 clearance = 0.3
-dose = 0.04
+dose = 0.06
+copper_passes = 2
 feed = 100
 
 [phases.back.scrub]
