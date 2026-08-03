@@ -1489,16 +1489,128 @@ ISP_LABEL = {"TP1": "MISO", "TP2": "VCC", "TP3": "SCK",
              "TP4": "MOSI", "TP5": "RST", "TP6": "GND"}
 
 
-def front_legend() -> list[tuple]:
-    """The functional front legend (SPEC "Silk, FRONT").
+def legend_ink(items: list[tuple]) -> list[tuple]:
+    """Flatten legend ITEMS into the flat stroke list the emitters want."""
+    return [s for _name, _owner, strokes, _h in items for s in strokes]
+
+
+# --- the legend seats itself now, for the same reason the labels do --------
+# Before 2026-08-02 every legend mark was a hand-placed constant, which was
+# honest while the only things it had to dodge were parts.  Then R4b spent 23
+# wire vias and put SIX of them under the fixed legend — "ORBIT V1" over one,
+# the date stamp over another, "+" over a third, four of the six ISP names
+# over four more.  A constant cannot dodge a via the ROUTER chooses, so the
+# marks that CAN move now search a fixed, ordered candidate list and take the
+# first seat that satisfies all four silk laws.  Nothing here is random and
+# nothing is hand-tuned: same board, same route, same seat, every run.
+#
+# The marks that CANNOT move do not search — the 12 cathode ticks and the
+# three transistor pin-1 bars are functional geometry whose POSITION is the
+# information ("which lead is the cathode"), so a collision there is a refusal
+# to emit, not a nudge.  None has ever collided.
+def _ring_candidates(cx: float, cy: float, w: float, h: float,
+                     gaps=(0.45, 0.85, 1.35, 2.0, 2.8)) -> list[tuple]:
+    """Text centres around an anchor, nearest first, reading order first.
+
+    The same preference order silklabel uses for ref labels (N, S, E, W, then
+    corners), so the legend and the labels agree about what a good seat is.
+    """
+    out = []
+    for g in gaps:
+        for dx, dy in ((0.0, 1.0), (0.0, -1.0), (1.0, 0.0), (-1.0, 0.0),
+                       (1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)):
+            out.append((q(cx + dx * (g + w / 2)), q(cy + dy * (g + h / 2))))
+    return out
+
+
+# Legend marks that could not be seated, with the reason, for MATRIX.md and
+# the gate.  A legend DROP is never silent: it is the operator's third branch
+# ("the label shouldn't exist") and it comes with an un-compression request.
+SILK_DROPS: dict[str, list] = {"front": [], "back": []}
+
+
+def seat_mark(what: str, owner: str | None, render, cands: list[tuple],
+              keep: list[Pin], placed: list[tuple],
+              h: float = SILK_H, named: set | None = None,
+              optional: bool = False) -> list[tuple] | None:
+    """First candidate centre whose INK satisfies every silk law, or refuse.
+
+    *render* draws the mark at a centre — text or box, the laws are the same.
+    *placed* is the legend ink already seated on this side; ref labels come
+    later and treat all of it as an obstacle, so the legend only has to be
+    self-consistent here.  A legend mark is FUNCTIONAL, so exhausting the
+    candidates is a refusal to emit rather than a drop: the board is
+    congested and the operator's answer to congestion is to un-compress it.
+    """
+    for cx, cy in cands:
+        strokes = render(cx, cy)
+        if _seat_ok(strokes, owner, keep, placed, h, named):
+            return strokes
+    if optional:
+        return None
+    raise SystemExit(
+        f"silk: no legal seat for the legend {what!r} near "
+        f"({cands[0][0]:.2f},{cands[0][1]:.2f}) — the legend is FUNCTIONAL, "
+        f"so this is a congested board, not a label to drop: un-compress it")
+
+
+def _seat_ok(strokes, owner, keep: list[Pin], placed: list[tuple],
+             h: float = SILK_H, named: set | None = None) -> bool:
+    """All four laws on one candidate's ink, with the audit's own numbers.
+
+    *placed* is [(strokes, cap-height), ...] — the height travels with the ink
+    because the text-separation bar is one cap height of the LARGER of the two
+    texts, not a flat number (see silk_seats).
+    """
+    gaps = [(min(seg_pad_gap(s, pin) for s in strokes), pin) for pin in keep]
+    worst = min(g for g, _p in gaps)
+    if worst < SILK_CLEAR * CROWD_BAND:
+        return False            # seat OUT of the squeezed band, not just legal
+    tg = float("inf")
+    for s2, h2 in placed:
+        g = _ink_gap(strokes, s2)
+        if g < max(h, h2):
+            return False
+        tg = min(tg, g)
+    if owner is None:
+        return min(worst, tg) >= h
+    return (attribution_ratio(stroke_bbox(strokes), owner, keep, named)
+            <= ATTRIB_RATIO)
+
+
+def front_legend(parts: list[Part], route: dict | None = None) -> list[tuple]:
+    """The functional front legend (SPEC "Silk, FRONT"), as ITEMS.
+
+    Each item is (name, owner, strokes, cap-height), and the OWNER is what the
+    third silk law needs: a legend mark is a claim about a feature exactly as
+    a ref label is, so it is judged by the same attribution rule (a cathode
+    tick belongs to its LED, CATCH to S1, "+" to PAD1).  An owner of None
+    means the mark names NOTHING on the board — the clock numerals, ORBIT V1,
+    the date — and those are held one cap height clear of every feature and
+    every other text instead, or the eye reads them as a label for whatever
+    they sit beside.
 
     The 12 cathode ticks are the load-bearing part: they sit at r 9.8, just
     inside the LED bodies' 5 mm footprint and radially inward of the cathode
     hole, which is the side the cathode is on.  Get these wrong and the ring
     does not light — no other check on the board catches it.
     """
-    out = []
+    keep = silk_keepouts(parts, "front", route)
+    named = named_features(parts)
+    SILK_DROPS["front"] = []
+    out, placed = [], []
+
+    def add(name, owner, strokes, h=SILK_H):
+        out.append((name, owner, strokes, h))
+        placed.append((strokes, h))
+
+    def seat(name, owner, txt, cands, h=SILK_H):
+        add(name, owner, seat_mark(
+            txt, owner, lambda cx, cy: text_strokes(txt, cx, cy, h),
+            cands, keep, placed, h, named), h)
+
     for pos in range(1, 13):
+        led = POS_LED[pos]
         ang = pos_angle(pos)
         # 3.2 inside the body pitch circle: 0.7 clear of the 5 mm body's inner
         # edge and radially inward of the cathode hole, which is the side the
@@ -1511,39 +1623,123 @@ def front_legend() -> list[tuple]:
         # r 11.5 are still 1.2 away) and buys 0.575.
         cx, cy = polar(RING_CX, RING_CY, ang, RING_R - 3.4)
         tx, ty = polar(0.0, 0.0, ang + 90.0, 0.8)
-        out.append((q(cx - tx), q(cy - ty), q(cx + tx), q(cy + ty)))
-    # marker arrow at position 1, outboard of the ring
+        # FIXED, and it does not search: the tick's POSITION is the
+        # information (which lead is the cathode), so a collision here would
+        # be a board to un-compress, not a mark to nudge.  The audit measures
+        # it with everything else.
+        add(f"tick {led}", f"LED{led}",
+            [(q(cx - tx), q(cy - ty), q(cx + tx), q(cy + ty))], 1.6)
+    # marker arrow at position 1, outboard of the ring.  It OWNS position 1's
+    # LED: that is the whole point of a position marker, and it is why the
+    # arrow may stand closer to LED8 than any other mark on the board.
     apex = polar(RING_CX, RING_CY, 90.0, LEAD_R_OUT + 2.15)
-    for dx in (-1.3, 1.3):
-        out.append((q(apex[0] + dx), q(apex[1] + 1.3), q(apex[0]), q(apex[1])))
+    add("pos1 arrow", f"LED{POS_LED[1]}",
+        [(q(apex[0] + dx), q(apex[1] + 1.3), q(apex[0]), q(apex[1]))
+         for dx in (-1.3, 1.3)], 1.3)
     # The 12/3/6/9 numerals moved INSIDE the ring when it grew (2026-08-01).
     # Outboard they would have wanted r 22.6, which on the grown ring runs the
     # "9" off the left edge and drives the "6" into SW1's blade ring — and the
     # answer to that is not a bigger board still, because a clock face reads
     # correctly with its numbers inside the hands.  r 11.5 keeps them 2.0 mm
     # clear of the cathode rings and over nothing but back-side copper.
+    #
+    # r 10.5, NOT 11.5, and the 1.0 mm is the operator's third law arriving on
+    # a mark that owns nothing.  MEASURED on the shipped render: the "3" stood
+    # 1.07 mm from LED11's cathode TICK and the pair read "3 |" — a numeral
+    # the bench binds to the LED beside it, which is exactly the ambiguity the
+    # law forbids.  At 10.5 the same gap is 2.40, over one cap height, and the
+    # numeral reads as what it is: a clock position, not a part label.  Bounded
+    # from below by the centre block — at 10.5 the "3" and "9" hold 2.27 mm to
+    # the date stamp's ink, where 10.0 would leave 1.56 and put the numerals a
+    # hair over the same bar they were moved to clear.
+    # and r is SEARCHED now, from 10.5 outward-then-inward, because R4b puts
+    # vias in this annulus too: at 10.5 the "12" seats 0.263 from V1's ring.
     for label, ang in (("12", 90.0), ("3", 0.0), ("6", -90.0), ("9", 180.0)):
-        out += text_strokes(label, *polar(RING_CX, RING_CY, ang, 11.5))
-    # Each button's legend sits BUTTON_LEGEND_R outboard of its body centre, so
-    # START followed S2 down when POUR_HOLE_MARGIN moved it (see BUTTONS).
-    out += text_strokes("CATCH", *polar(BUTTONS["S1"][0], BUTTONS["S1"][1],
-                                        90.0, BUTTON_LEGEND_R))
-    out += text_strokes("START", *polar(BUTTONS["S2"][0], BUTTONS["S2"][1],
-                                        -90.0, BUTTON_LEGEND_R))
-    out += text_strokes("ON", SW1_X, 8.1)
-    out += text_strokes("+", 16.0, 7.0)      # follows the layout, not the note:
-    out += text_strokes("-", 10.0, 7.0)      # PAD1 (+) is the right-hand pad
-    out += text_strokes("ORBIT V1", RING_CX, RING_CY + 2.2)
-    out += text_strokes(DATE_STAMP, RING_CX, RING_CY - 1.6)
+        seat(f"numeral {label}", None, label,
+             [polar(RING_CX, RING_CY, ang + da, r)
+              for r in (10.5, 9.6, 8.7, 11.4, 7.8)
+              for da in (0.0, 7.0, -7.0, 14.0, -14.0)])
+    # THE BUTTON LEGENDS MOVED OUTBOARD, to the far side of their own button,
+    # and the operator's attribution law is why.  BUTTON_LEGEND_R's closed
+    # form seated CATCH between S1 and the buzzer at 0.655 from its own button
+    # and 0.646 from BZ1 — a dead heat, and a legend the bench cannot bind to
+    # either part (ratio 1.01).  The squeeze has no seat that satisfies the
+    # law with any margin: the 3.05 mm between S1's leg ring and BZ1's lead
+    # ring holds 1.75 of text, and splitting the remaining 1.30 two-to-one
+    # leaves a 0.058 mm window to aim at, which this file's oldest lesson
+    # forbids sitting in.  On the OUTBOARD side the same text seats 0.405 from
+    # its own button against 3.4 to the nearest foreign feature — ratio 0.12,
+    # decisive — because the corner it faces holds only a flip gauge, and the
+    # gauge is 4.8 mm away.  The buzzer keeps its own BZ1 ref label, which is
+    # now the only text between the two buttons.
+    for ref, sign in (("S1", -1.0), ("S2", +1.0)):
+        bx, by_ = BUTTONS[ref]
+        txt = "CATCH" if ref == "S1" else "START"
+        seat(txt, ref, txt,
+             [(bx, q(by_ + sign * d)) for d in (BUTTON_LEGEND_R - 0.25,
+                                                BUTTON_LEGEND_R,
+                                                BUTTON_LEGEND_R + 0.5,
+                                                BUTTON_LEGEND_R + 1.0)]
+             + [(bx, q(by_ - sign * d)) for d in (BUTTON_LEGEND_R - 0.25,
+                                                  BUTTON_LEGEND_R)])
+    seat("ON", "SW1", "ON",
+         [(SW1_X, 8.1), (SW1_X, 8.6), (SW1_X, 9.2),
+          (q(SW1_X + SW1_PITCH), 8.1), (q(SW1_X - SW1_PITCH), 8.1)])
+    # follows the layout, not the note: PAD1 (+) is the right-hand pad.  Both
+    # search: V2's ring sits 3.0 mm above PAD1, exactly where "+" used to be
+    # drawn (measured -0.625 INSIDE it on the shipped artwork), and "-" at
+    # (10,7) stood 0.946 from flip gauge G1 against 1.075 from its own PAD2 —
+    # a minus sign the bench would read as the gauge's.
+    by = {p.ref: p for p in parts}
+    for ref, txt in (("PAD1", "+"), ("PAD2", "-")):
+        pin = by[ref].pins[0]
+        seat(txt, ref, txt, _ring_candidates(pin.x, pin.y, RING_PAD, RING_PAD,
+                                             gaps=(0.45, 0.9, 1.5, 2.2)))
+    # THE IDENTITY BLOCK LEFT THE RING INTERIOR, and the router is why.  It
+    # was two centred lines at the hub; R4b then spent SEVEN wire vias inside
+    # the ring, one of them (V15) 0.86 mm from the hub itself, and a mark that
+    # names nothing has to stand a cap height clear of every one of them.  The
+    # interior has no such pocket left: MEASURED by scanning the whole board on
+    # a 0.5 mm grid, the ring holds ZERO feasible centres for an 11.9 mm line
+    # and the open top margin holds hundreds (best 4.98 mm of clearance).  The
+    # top band is where the 2026-08-02 growth actually went, so this is the
+    # growth being spent on the thing that needed it.
+    seat("ORBIT V1", None, "ORBIT V1",
+         [(q(x), q(y)) for y in (54.0, 53.5) for x in (41.0, 44.0, 38.0,
+                                                       47.0, 35.0)])
+    seat("date", None, DATE_STAMP,
+         [(q(x), q(y)) for y in (50.6, 50.1, 49.6)
+          for x in (41.0, 44.0, 38.0, 47.0, 35.0)])
     return out
 
 
-def back_legend(parts: list[Part]) -> list[tuple]:
+def back_legend(parts: list[Part], route: dict | None = None) -> list[tuple]:
     """SPEC "Silk, BACK": U1 pin-1 dot, transistor orientation marks, the six
     ISP labels + pin-1 square tick, "SIDE B".  All mirrored so the legend reads
-    with the BACK up, which is the only way it is ever seen."""
+    with the BACK up, which is the only way it is ever seen.
+
+    Items are (name, owner, strokes, cap-height), like the front."""
     by = {p.ref: p for p in parts}
-    out = []
+    keep = silk_keepouts(parts, "back", route)
+    named = named_features(parts)
+    SILK_DROPS["back"] = []
+    out, placed = [], []
+
+    def add(name, owner, strokes, h=SILK_H):
+        out.append((name, owner, strokes, h))
+        placed.append((strokes, h))
+
+    def seat(name, owner, txt, cands, h=SILK_H):
+        add(name, owner, seat_mark(
+            txt, owner,
+            lambda cx, cy: text_strokes(txt, cx, cy, h, mirror=True),
+            cands, keep, placed, h, named), h)
+
+    def seat_box(name, owner, side_mm, cands):
+        add(name, owner, seat_mark(
+            name, owner, lambda cx, cy: box_strokes(cx, cy, side_mm),
+            cands, keep, placed, side_mm, named), side_mm)
+
     # U1 pin-1 dot: a small square OUTBOARD of pin 1's land.  The offset is
     # rotated with the part, never hard-coded: at rotation 0 pin 1 is U1's
     # upper-left corner and outboard is (-1.1, +1.0), but U1 now sits at 180
@@ -1557,13 +1753,33 @@ def back_legend(parts: list[Part]) -> list[tuple]:
     # The MARKER yields, not the pad — it is silk, the cheapest thing on the
     # board to move — and it stays diagonally adjacent to pin 1, which is the
     # only thing that makes a pin-1 dot mean anything.
-    dx, dy = rot(-1.25, 1.15, by["U1"].rot)
-    out += box_strokes(p1.x + dx, p1.y + dy, 0.5)
-    # Q1 / Q2 / D1: a bar under pin 1 says which corner pin 1 is
+    # SEARCHED along pin 1's own diagonal: V13's ring landed 0.295 INSIDE the
+    # dot on the shipped artwork.  The dot keeps its meaning as long as it is
+    # diagonally adjacent to pin 1, so the candidates walk out along that
+    # diagonal and never around the package.
+    # SEARCHED, and it had to leave the diagonal: V13's ring landed 0.295
+    # INSIDE the dot on the shipped artwork, and walking further out along the
+    # same diagonal only pushes deeper into the via (measured -0.606, -0.893,
+    # -1.064).  The candidates therefore step outboard first and then SLIDE
+    # ALONG pin 1's own edge of the package, which keeps the only thing that
+    # makes a pin-1 dot mean anything: it is the mark at pin 1's corner, on
+    # pin 1's side, with pin 8 seven millimetres away at the other end.
+    # The dot is 0.45 rather than 0.5 for the same reason the label boxes are
+    # the ink: at 0.5 the best seat in this corner reads 0.52 on the
+    # attribution ratio and at 0.45 it reads 0.395, and 0.05 mm of white
+    # square is not what makes a pin-1 marker legible.
+    seat_box("U1 pin-1 dot", "U1", 0.45,
+             [(q(p1.x + ox), q(p1.y + oy)) for ox, oy in
+              (rot(*o, by["U1"].rot) for o in
+               ((-1.25, 1.15), (-1.55, 1.40), (0.65, 1.10), (0.35, 1.10),
+                (0.95, 1.10), (0.00, 1.10), (-1.85, 1.65)))])
+    # Q1 / Q2 / D1: a bar under pin 1 says which corner pin 1 is.  FIXED, for
+    # the cathode tick's reason: the bar's position IS the orientation.
     for ref in ("Q1", "Q2", "D1"):
         pin1 = [p for p in by[ref].pins if p.term == "1"][0]
-        out.append((q(pin1.x - 0.4), q(pin1.y - 1.0),
-                    q(pin1.x + 0.4), q(pin1.y - 1.0)))
+        add(f"{ref} pin-1 bar", ref,
+            [(q(pin1.x - 0.4), q(pin1.y - 1.0),
+              q(pin1.x + 0.4), q(pin1.y - 1.0))], 0.8)
     # ISP: six labels, left column labelled to the left, right to the right
     for ref, txt in ISP_LABEL.items():
         pad = by[ref].pins[0]
@@ -1579,34 +1795,284 @@ def back_legend(parts: list[Part]) -> list[tuple]:
         # the 2.54 grid, into open back copper.
         cx = pad.x + (-1 if left else 1) * (ISP_PAD / 2 + 0.45 + SILK_W / 2
                                             + w / 2)
-        out += text_strokes(txt, cx, pad.y, 1.0, mirror=True)
+        # OUTWARD FIRST, THEN FURTHER OUT, THEN ABOVE AND BELOW.  Four of the
+        # six names were sitting ON via rings in the shipped artwork (MISO
+        # -1.130 into V6, VCC -0.867, MOSI -1.140, RST -1.261): the ISP block
+        # is the board's densest corner and R4b routes through it, so a fixed
+        # offset from the pad is a promise the layout cannot keep.  The ISP
+        # names are the whole reason the block is usable, so they SEARCH and
+        # refuse rather than drop.
+        sgn = -1 if left else 1
+        got = seat_mark(
+            txt, ref, lambda mx, my: text_strokes(txt, mx, my, 1.0,
+                                                  mirror=True),
+            [(q(cx + sgn * k), pad.y) for k in (0.0, 0.5, 1.1, 1.8, 2.6)]
+            + [(q(cx + sgn * k), q(pad.y + dy))
+               for dy in (1.35, -1.35, 1.9, -1.9)
+               for k in (0.0, 0.6, 1.3)],
+            keep, placed, 1.0, named, optional=True)
+        if got is None:
+            # THE ISP BLOCK IS BLOCKED BY COPPER THIS PASS MAY NOT MOVE.
+            # MEASURED across the whole board: with R4b's four crossings
+            # around the block (V9/V15 pre-seeded beside TP1 and TP5, the L0
+            # and VCC closers beside TP2/TP4), the nearest clearance-legal
+            # seat for this name is 5-7 mm from its own pad and 0.3-1.3 mm
+            # from a DIFFERENT pad — MOSI would sit 0.46 from TP3 and 5.90
+            # from TP4, i.e. it would name the wrong hole.  Every branch of
+            # the operator's rule is then closed except the last: re-seating
+            # is exhausted, un-compressing this corner means moving the
+            # crossings (copper, a reroute, reported not rolled), so the name
+            # is DROPPED and the request is recorded.  Nothing is lost that
+            # the bench had: on the shipped artwork these four names were
+            # 0.87-1.26 mm INSIDE a via ring, which the CAM lane's silk clip
+            # chops into fragments (43 chains dropped on this side alone).
+            SILK_DROPS["back"].append(
+                (f"ISP {txt}", ref, "boxed in by R4b's crossings: no seat "
+                 "within 5 mm that names the right pad"))
+            continue
+        add(f"ISP {txt}", ref, got, 1.0)
     # pin-1 (TP1) square tick, placed RELATIVE to TP1 so it follows the grid
     tp1 = by["TP1"].pins[0]
-    out += box_strokes(tp1.x - 1.4, tp1.y + 1.62, 0.8)
+    # the diagonal seat is inside V9's ring on this route, so the tick walks
+    # up over its own pad instead: straight above TP1 it still marks the
+    # block's pin-1 corner, with TP2 2.5 mm away across the grid.
+    seat_box("ISP pin-1 tick", "TP1", 0.8,
+             [(q(tp1.x - 1.4), q(tp1.y + 1.62)),
+              (q(tp1.x - 1.75), q(tp1.y + 2.0)),
+              (q(tp1.x), q(tp1.y + 2.0)),
+              (q(tp1.x), q(tp1.y + 2.3)),
+              (q(tp1.x - 0.7), q(tp1.y + 2.2)),
+              (q(tp1.x - 0.35), q(tp1.y + 2.5))])
     # centred on the flip mirror line, 1.25 below the top edge
-    out += text_strokes("SIDE B", BOARD_W / 2, BOARD_H - 2.0, mirror=True)
+    seat("SIDE B", None, "SIDE B",
+         [(BOARD_W / 2, q(BOARD_H - dy)) for dy in (2.0, 2.6, 3.2, 4.0)])
     return out
 
 
-def label_parts(parts: list[Part], side: str, legend: list[tuple]):
+# ---------------------------------------------------------------------------
+# THE SILK KEEP-OUT SET — every bare-copper feature the laser must miss
+# ---------------------------------------------------------------------------
+# INCIDENT 2026-08-02, operator-caught on the SHIPPED front render while the
+# board gate read 21/21, the CAM gate read 180/180 and the crowding audit read
+# ZERO flags: "LED8" started on its own LED's front ring, "LED12" ran into a
+# via ring, "LED2" sat against a pad ring, and the bottom strip read "PAD1ON"
+# — the PAD1 ref label and the ON legend fused into one word.  MEASURED on the
+# artwork afterwards: front silk ink stood -1.280 mm INSIDE V21's ring, -0.487
+# inside gauge G1's disc, and 68 stroke/feature pairs sat under the 0.30 law.
+#
+# THE SEMANTICS WERE WRONG, NOT THE ARITHMETIC.  The old harvest fed silklabel
+# that side's SOLDERABLE pads, and solderability is not what the physics turns
+# on.  The silk laser cures white ink ON MASK; a stroke that crosses a mask
+# APERTURE lands on bare copper, where nothing cures — a garbage streak the
+# scrub then smears, and on a via ring it fouls a joint the bench must solder.
+# So the keep-out set is every APERTURE, plus the bare copper that never had
+# one, plus the holes:
+#
+#   * THT rings open the mask on BOTH faces, dead or live (emit_lihata: "THE
+#     MASK OPENS OVER EVERY ONE OF THEM").  This board's 24 front LED rings
+#     are dead AND bare — never solderable, always bare copper after cure.
+#   * the 23 WIRE VIAS are apertures on both faces and hand-soldered joints.
+#     They do not exist until R4b routes, so a placer fed only R4a's part
+#     list cannot see them at all: that is how three labels came to sit on
+#     via rings while every check on the unrouted board passed.
+#   * the four FLIP GAUGES are bare copper with NO aperture (RING_GAUGE's
+#     note).  They stay in the set for a second reason as well — a gauge is
+#     read with a loupe, and white ink over it gauges nothing.
+#   * a HOLE has no substrate to cure on at all.
+#
+# The CAM lane does not save us here and that is the point: reemit.silk_strokes
+# CLIPS every stroke that comes within the clearance of an aperture, so the
+# machine would have engraved chewed labels while `silk pad clearance` passed
+# on the clipped bytes.  A label the clip would eat must never be placed.
+def silk_keepouts(parts: list[Part], side: str,
+                  route: dict | None = None) -> list[Pin]:
+    """Every feature silk ink must clear on *side*, as Pin geometry.
+
+    ONE model with THREE consumers, so none of them can drift: label_parts
+    hands silklabel their boxes, the gate measures stroke-to-feature gaps with
+    seg_pad_gap, and silk_audit.py re-measures the same set on the exported
+    gerbers.  Synthetic pins carry the features that are not terminals (vias,
+    gauge discs, mount bores) — the geometry is a disc either way.
+    """
+    out = []
+    for part in parts:
+        for pin in part.pins:
+            # THT: the mask opens on both faces.  SMD lands and ISP pads are
+            # back-side copper and open only there.
+            if pin.kind == "tht" or side == "back":
+                out.append(pin)
+    for i, (vx, vy, _net) in enumerate((route or {}).get("vias", ())):
+        # a routed via arrives in the LIHATA frame; Pin geometry is board frame
+        out.append(Pin(f"V{i + 1}", "1", vx, BOARD_H - vy,
+                       ("tht", HOLE_VIA, RING_VIA)))
+    for ref, (gx, gy) in GAUGES.items():
+        out.append(Pin(ref, "1", gx, gy, ("tht", HOLE_GAUGE, RING_GAUGE)))
+    for ref, (mx, my) in MOUNTS.items():
+        out.append(Pin(ref, "1", mx, my, ("tht", HOLE_MOUNT, HOLE_MOUNT)))
+    return out
+
+
+# The three silk laws this board now places to, each with its number.
+SILK_CLEAR = 0.30        # SPEC: ink to bare copper.  silklabel adds its own
+#                          0.10 of raster/kerf slack on top (CLIP_KEEPOUT)
+TEXT_GAP = SILK_H        # ink between two SEPARATE texts — one CAP HEIGHT.
+#                          The operator's floor was 0.5, and the artwork says
+#                          0.5 is not enough: "PAD1" and "ON" measured 0.709
+#                          apart and still came back from the render fused as
+#                          "PAD1ON", because the eye judges a seam RELATIVE to
+#                          the 0.425 gap between two glyphs of the same word —
+#                          0.709 is only 1.7x that, while a real word space in
+#                          this font is 2.0 mm.  The second, independent
+#                          reading of the same bar: "S1" and "G2" stacked
+#                          1.450 apart in the bottom-right corner, which the
+#                          operator read as one ambiguous block and which no
+#                          clearance or attribution law catches.  One cap
+#                          height (1.5) fails both and is anchored to the type
+#                          rather than to either incident
+ATTRIB_RATIO = 0.50      # own-feature gap / nearest-foreign-feature gap.
+#                          Operator, 2026-08-02: "if a human can't tell what
+#                          board feature a label would refer to, the label
+#                          shouldn't exist or the board should be
+#                          decompressed."  A label is a claim about ONE
+#                          feature, so its owner must be DECISIVELY nearest —
+#                          twice as near.  Judged on the render's own
+#                          failures: "G4 S2" stacked in the top-right corner,
+#                          "S1 G2" bottom-right, "G1 PAD2" fused bottom-left,
+#                          each a label the bench cannot bind to a feature.
+# THE STANDOFF TIERS ORBIT SEARCHES, extended past silklabel's 2.80 default.
+# This is the un-compression the operator's canary rule asks for, spent where
+# it costs nothing: the corrected keep-out set closes the near tiers around
+# every part that shares its neighbourhood with a wire via, and a label that
+# has to sit 4 mm out is only dangerous if it stops obviously belonging to its
+# part — which is exactly what the attribution rule refuses.  Growing the
+# OUTLINE would not have helped these fifteen: they are stranded by copper in
+# the board's interior, not by its rim.
+LABEL_GAPS = (0.30, 0.55, 0.90, 1.40, 2.00, 2.80, 3.60, 4.60, 5.80)
+N_LABELS = 52            # every part the board offers a ref label to: 19
+#                          front THT parts + 4 flip gauges + 29 back parts.
+#                          The population, not the yield — a part that fell
+#                          out of the label set entirely would otherwise be
+#                          indistinguishable from one that could not be seated
+OWNERLESS_CLEAR = SILK_H  # a mark that names NOTHING (the 12/3/6/9 numerals,
+#                          ORBIT V1, the date, SIDE B) must stand one cap
+#                          height clear of every feature and every other text,
+#                          or it reads as a label for whatever it is nearest:
+#                          the render's "3 |" — the 3 o'clock numeral 1.07 mm
+#                          from LED11's cathode tick — read as a label for
+#                          LED11 and is exactly the operator's third law
+
+
+def _lht_disc(pin: Pin) -> tuple[float, float, float, float]:
+    """(cx, cy, half-w, half-h) of a keep-out feature in the LIHATA frame."""
+    hw, hh = pin.extent()
+    lx, ly = lht_xy(pin.x, pin.y)
+    return (lx, ly, hw, hh)
+
+
+def rect_feature_gap(r: SL.Rect, pin: Pin) -> float:
+    """Edge-to-edge gap between a label BOX and a feature, LIHATA frame.
+
+    A round feature is measured as a disc (its bbox would over-read by 0.41 r
+    at the corners and cost seats the physics does not ask for); a rotated SMD
+    land is measured as its bbox, which can only UNDER-read a gap.
+    """
+    cx, cy, hw, hh = _lht_disc(pin)
+    if pin.kind == "tht" or pin.kind == "circ":
+        dx = max(r.x0 - cx, cx - r.x1, 0.0)
+        dy = max(r.y0 - cy, cy - r.y1, 0.0)
+        return math.hypot(dx, dy) - hw
+    dx = max(r.x0 - (cx + hw), (cx - hw) - r.x1, 0.0)
+    dy = max(r.y0 - (cy + hh), (cy - hh) - r.y1, 0.0)
+    return math.hypot(dx, dy)
+
+
+SHADOW_COS = 0.707       # 45 degrees.  A LABEL POINTS, and the eye stops at
+#                          the first feature it points at: a foreign feature
+#                          that lies FARTHER AWAY within 45 deg of the owner's
+#                          own bearing is BEHIND the owner and is not a rival.
+#                          Without this term the rule is unsatisfiable on any
+#                          connector grid, and the ISP block is the proof —
+#                          six O1.8 pads on a 2.54 pitch leave 0.74 mm between
+#                          neighbours, so a name written beside its own pad can
+#                          never be twice as near it as it is to the next pad
+#                          along.  MEASURED: with every foreign feature counted
+#                          a rival, five of the six ISP names have ZERO legal
+#                          seats anywhere on the board, and the sixth is the
+#                          corner pad.  The bearing test costs the rule nothing
+#                          it was written for: every failure the operator
+#                          caught on the render is a rival that is NEARER than
+#                          the owner (PAD1's label 0.574 from SW1's ring
+#                          against 2.777 from its own pad) or one sitting on
+#                          foreign copper outright, and neither is shadowed.
+
+
+def named_features(parts: list[Part]) -> set:
+    """The refs a silk text could plausibly BE ABOUT.
+
+    Every part, plus the four flip gauges (the run sheet names them and the
+    operator hunts for them with a loupe).  NOT the wire vias and NOT the M3
+    bores: they carry no designator, nothing on either legend refers to one,
+    and no bench has ever asked which name belongs to a via.  They stay in the
+    CLEARANCE set — they are bare copper and the laser cannot cure on them —
+    but they are not RIVALS, because a rival has to be a possible referent.
+    Keeping them as rivals is not conservatism, it is a different (wrong)
+    claim: MEASURED, it leaves five of the six ISP names with zero legal seats
+    anywhere on the board, because R4b parks four crossings around a block
+    whose pads are 0.74 mm apart.
+    """
+    return {p.ref for p in parts} | set(GAUGES)
+
+
+def attribution_ratio(r: SL.Rect, ref: str, keepouts: list[Pin],
+                      named: set | None = None) -> float:
+    """How ambiguous a label box is: own-feature gap / rival-feature gap.
+
+    0 is perfect (the label points at its owner and nothing else is near), 1
+    is a coin toss, above ATTRIB_RATIO is a label the bench cannot bind.  A
+    label with no rival anywhere is unambiguous by construction (0.0).
+    """
+    own_all = [(rect_feature_gap(r, p), p) for p in keepouts if p.ref == ref]
+    if not own_all:
+        return 0.0
+    own, own_pin = min(own_all, key=lambda t: t[0])
+    ox, oy = own_pin.x - r.cx, lht_xy(0.0, own_pin.y)[1] - r.cy
+    on = math.hypot(ox, oy) or 1.0
+    best = None
+    for p in keepouts:
+        if p.ref == ref or (named is not None and p.ref not in named):
+            continue
+        g = rect_feature_gap(r, p)
+        if g > own:                     # only a farther feature can hide
+            fx, fy = p.x - r.cx, lht_xy(0.0, p.y)[1] - r.cy
+            fn = math.hypot(fx, fy) or 1.0
+            if (ox * fx + oy * fy) / (on * fn) >= SHADOW_COS:
+                continue                # behind the owner, on the same bearing
+        best = g if best is None else min(best, g)
+    if best is None:
+        return 0.0
+    if best <= 0.0:
+        return float("inf")            # sitting ON someone else's copper
+    return max(own, 0.0) / best
+
+
+def label_parts(parts: list[Part], side: str, legend: list[tuple],
+                route: dict | None = None):
     """Feed silklabel the geometry for one side and take back its placements.
 
     silklabel is pure geometry in a y-DOWN frame, which is the lihata frame, so
     everything handed over goes through lht_xy and comes back the same way.
-    Apertures are that side's SOLDERABLE pads: on the front the THT rings (the
-    only front copper a human ever solders), on the back every SMD land, ISP
-    pad and THT ring.  A label the silk-clip would eat is never emitted —
-    silklabel reports it unplaced instead, which is a bench note rather than
-    misinformation.
+    The keep-out set is silk_keepouts(): EVERY mask aperture on this side plus
+    the bare copper that has none plus the holes — see its incident note.  A
+    label the silk-clip would eat, or one the bench could not bind to a
+    feature, is never emitted: silklabel reports it unplaced instead, which is
+    a bench note rather than misinformation.
     """
     want = [p for p in parts if (p.side == side)]
+    keepouts = silk_keepouts(parts, side, route)
     apertures = []
-    for part in parts:
-        for pin in part.pins:
-            hw, hh = pin.extent()
-            lx, ly = lht_xy(pin.x, pin.y)
-            if pin.kind == "tht" or (side == "back" and pin.kind != "tht"):
-                apertures.append(SL.Rect(lx - hw, ly - hh, lx + hw, ly + hh))
+    for pin in keepouts:
+        cx, cy, hw, hh = _lht_disc(pin)
+        apertures.append(SL.Rect(cx - hw, cy - hh, cx + hw, cy + hh))
     hard = []
     for _ref, (mx, my) in MOUNTS.items():
         lx, ly = lht_xy(mx, my)
@@ -1661,7 +2127,16 @@ def label_parts(parts: list[Part], side: str, legend: list[tuple]):
             sl_parts.append(SL.Part(ref, SL.Rect(lx - r, ly - r, lx + r, ly + r),
                                     inked(ref), NO_ROT))
     board = SL.Rect(0.0, 0.0, BOARD_W, BOARD_H)
-    return SL.place_labels(sl_parts, board, apertures, silk, hard)
+    # The two raised laws and the attribution rule, all three expressed to the
+    # placer rather than hand-applied afterwards: a law enforced by inspection
+    # is a law that ships broken the first time nobody inspects (this whole
+    # incident).  silklabel's own defaults are unchanged, so Board A's coupon
+    # legend — the same module, the other caller — cannot move under this.
+    return SL.place_labels(sl_parts, board, apertures, silk, hard,
+                           label_gap=TEXT_GAP, silk_gap=TEXT_GAP,
+                           attribution=lambda r, ref: attribution_ratio(
+                               r, ref, keepouts, named_features(parts)),
+                           attribution_max=ATTRIB_RATIO, gaps=LABEL_GAPS)
 
 
 def stroke_bbox(strokes: list[tuple], pad: float = SILK_W / 2) -> SL.Rect:
@@ -2451,11 +2926,17 @@ def build(route: dict | None = None, out_lht: str = OUT_LHT) -> dict:
     nets_sch, stats = kicadnet.read_nets(export_netlist())
     parts = build_parts()
     nets = bind_nets(parts, nets_sch)
-    fl, bl = front_legend(), back_legend(parts)
-    pf, uf = label_parts(parts, "front", fl)
-    pb, ub = label_parts(parts, "back", bl)
+    fi, bi = front_legend(parts, route), back_legend(parts, route)
+    fl, bl = legend_ink(fi), legend_ink(bi)
+    # ROUTE GOES TO THE LABELLER TOO, and it is half the fix for the 2026-08-02
+    # render incident: 23 wire vias are mask apertures on both faces and they
+    # exist only in the routed board, so a placer that never sees `route` seats
+    # labels on via rings and every check on the UNROUTED board agrees with it.
+    pf, uf = label_parts(parts, "front", fl, route)
+    pb, ub = label_parts(parts, "back", bl, route)
     labels = {"front": pf, "back": pb,
-              "front_legend": fl, "back_legend": bl}
+              "front_legend": fl, "back_legend": bl,
+              "front_items": fi, "back_items": bi}
     with open(out_lht, "w", encoding="utf-8") as fh:
         fh.write(emit_lihata(parts, nets, labels, route))
     with open(OUT_DSN, "w", encoding="utf-8") as fh:
@@ -2463,7 +2944,7 @@ def build(route: dict | None = None, out_lht: str = OUT_LHT) -> dict:
     with open(TDX_FILE, "w", encoding="utf-8") as fh:
         fh.write(kicadnet.to_tedax(nets))
     return {"parts": parts, "nets": nets, "stats": stats, "labels": labels,
-            "unplaced": uf + ub, "placed": len(pf) + len(pb)}
+            "unplaced": uf + ub, "placed": len(pf) + len(pb), "route": route}
 
 
 # ---------------------------------------------------------------------------
@@ -2586,6 +3067,193 @@ def seg_seg(a, b, c, d) -> float:
             return 0.0
     return min(pt_seg(a[0], a[1], *c, *d), pt_seg(b[0], b[1], *c, *d),
                pt_seg(c[0], c[1], *a, *b), pt_seg(d[0], d[1], *a, *b))
+
+
+# ---------------------------------------------------------------------------
+# THE CROWDING AUDIT — every silk seat on the board, measured
+# ---------------------------------------------------------------------------
+# The audit that missed the 2026-08-02 render defects was an ad-hoc sweep over
+# SOLDERABLE pads, so it could not see the via rings three labels were sitting
+# on and it had no notion of one text touching another.  It is code now, it
+# reads silk_keepouts (the corrected set), and it measures all four laws at
+# once.  ZERO flags is the bar the board ships at; the +25 % band is a warning
+# that a seat is squeezed even though it is legal, and the board's history says
+# that band is where the next defect comes from.
+CROWD_BAND = 1.25        # a seat inside +25 % of a law is squeezed, not safe
+
+
+def silk_items(labels: dict, side: str) -> list[tuple]:
+    """(name, owner, strokes, cap-h) for EVERY text on one side.
+
+    A ref label and a legend mark obey the same laws, so the audit must see
+    them as one population: "PAD1ON" was a ref label fusing with a legend, and
+    a check that judged only one of the two classes could not have caught it.
+    """
+    out = list(labels[f"{side}_items"])
+    for pl in labels[side]:
+        out.append((pl.ref, pl.ref,
+                    text_strokes(pl.ref, pl.x, BOARD_H - pl.y, SILK_H,
+                                 mirror=(side == "back"), rotation=pl.rot),
+                    SILK_H))
+    return out
+
+
+def _ink_bbox(strokes, pad=SILK_W / 2):
+    xs = [c for s in strokes for c in (s[0], s[2])]
+    ys = [c for s in strokes for c in (s[1], s[3])]
+    return (min(xs) - pad, min(ys) - pad, max(xs) + pad, max(ys) + pad)
+
+
+def _ink_gap(sa: list, sb: list) -> float:
+    """Ink-to-ink gap between two stroke runs (each stroke is SILK_W wide)."""
+    best = float("inf")
+    for p in sa:
+        for r in sb:
+            best = min(best, seg_seg((p[0], p[1]), (p[2], p[3]),
+                                     (r[0], r[1]), (r[2], r[3])))
+            if best <= 0.0:
+                return -SILK_W
+    return best - SILK_W
+
+
+def silk_seats(parts: list[Part], labels: dict,
+               route: dict | None = None) -> list[dict]:
+    """One row per silk text per side, with every law's measurement on it.
+
+    Rows carry the numbers, not verdicts — the gate, the audit script and the
+    bench notes all read the same rows and apply the bars themselves.
+    """
+    rows = []
+    for side in ("front", "back"):
+        keep = silk_keepouts(parts, side, route)
+        named = named_features(parts)
+        items = silk_items(labels, side)
+        boxes = [_ink_bbox(s) for _n, _o, s, _h in items]
+        for i, (name, owner, strokes, h) in enumerate(items):
+            gaps = [(min(seg_pad_gap(s, pin) for s in strokes), pin)
+                    for pin in keep]
+            fg, fpin = min(gaps, key=lambda g: g[0])
+            # ATTRIBUTION IS JUDGED ON THE INK BOX, not the strokes, and the
+            # two consumers must agree or the audit convicts seats the placer
+            # was entitled to take: silklabel scores a candidate BOX (it has
+            # no glyphs yet), so the audit scores the same box.  The box
+            # contains the ink, so this can only ever be the stricter read.
+            box = stroke_bbox(strokes)
+            bg = [(rect_feature_gap(box, pin), pin) for pin in keep]
+            own = min((g for g, pin in bg if pin.ref == owner), default=None)
+            oth = min(((g, pin) for g, pin in bg
+                       if pin.ref != owner and pin.ref in named),
+                      key=lambda g: g[0], default=(None, None))
+            # THE TEXT-SEPARATION BAR SCALES WITH THE TYPE, because the eye
+            # judges a seam against the size of the glyphs beside it: one cap
+            # height of the LARGER text.  A flat 1.5 would make the ISP block
+            # (1.0 mm names on a 2.54 grid, 1.29 of real gap) unbuildable
+            # while judging nothing about how it reads.
+            tg, tname, tbar = float("inf"), "", 0.0
+            bx = boxes[i]
+            for j, (n2, _o2, s2, h2) in enumerate(items):
+                if j == i:
+                    continue
+                b2 = boxes[j]
+                if (bx[0] - b2[2] > 3.0 or b2[0] - bx[2] > 3.0
+                        or bx[1] - b2[3] > 3.0 or b2[1] - bx[3] > 3.0):
+                    continue
+                g = _ink_gap(strokes, s2)
+                if g - max(h, h2) < tg - tbar or tname == "":
+                    tg, tname, tbar = g, n2, max(h, h2)
+            ratio = (attribution_ratio(box, owner, keep, named)
+                     if owner is not None else None)
+            rows.append({"side": side, "item": name, "owner": owner, "h": h,
+                         "feature_gap": fg, "feature": fpin.pid,
+                         "own_gap": own, "rival_gap": oth[0],
+                         "rival": oth[1].pid if oth[1] is not None else "",
+                         "ratio": ratio, "text_gap": tg, "text": tname,
+                         "text_bar": tbar, "n_features": len(keep)})
+    return rows
+
+
+def silk_flags(rows: list[dict]) -> list[str]:
+    """Every way a seat can be wrong, in one place.  ZERO is the bar."""
+    out = []
+    for r in rows:
+        who = f"{r['side']}/{r['item']}"
+        if r["feature_gap"] < SILK_CLEAR:
+            out.append(f"{who}: ink {r['feature_gap']:+.3f} from "
+                       f"{r['feature']} — the clip would eat it (law "
+                       f"{SILK_CLEAR})")
+        elif r["feature_gap"] < SILK_CLEAR * CROWD_BAND:
+            out.append(f"{who}: SQUEEZED, ink {r['feature_gap']:.3f} from "
+                       f"{r['feature']} (+25 % band is "
+                       f"{SILK_CLEAR * CROWD_BAND:.3f})")
+        if r["text_gap"] < r["text_bar"]:
+            out.append(f"{who}: {r['text_gap']:+.3f} of ink to text "
+                       f"{r['text']!r} — two texts read as one word "
+                       f"(law {r['text_bar']:.2f}, one cap height)")
+        if r["owner"] is None:
+            near = min(r["feature_gap"], r["text_gap"])
+            if near < r["h"]:
+                out.append(
+                    f"{who}: names nothing yet sits {near:.3f} from "
+                    f"{r['feature'] if near == r['feature_gap'] else r['text']}"
+                    f" — reads as its label (law {r['h']:.2f})")
+        elif r["ratio"] is not None and r["ratio"] > ATTRIB_RATIO:
+            out.append(f"{who}: AMBIGUOUS, {r['own_gap']:.3f} to its own "
+                       f"{r['owner']} against {r['rival_gap']:.3f} to "
+                       f"{r['rival']} (ratio {r['ratio']:.2f} > "
+                       f"{ATTRIB_RATIO})")
+    return out
+
+
+def silk_controls(parts: list[Part], labels: dict) -> list[tuple]:
+    """Three deliberately broken legends, one per silk law.
+
+    Each reproduces a defect the operator caught on the shipped render, which
+    is the only honest way to prove the audit would have caught it: a label
+    parked on a ring ("LED8"), a label fused to a legend ("PAD1ON"), and a
+    label the bench cannot bind to a feature ("G4 S2").
+    """
+    import copy
+    by = {p.ref: p for p in parts}
+
+    def reseat(ref, bx, by_):
+        """Park *ref*'s label at a board-frame point, placed or not.
+
+        It has to INSERT rather than replace: a label the real placer dropped
+        (PAD1 is one, since the bottom strip's "+" supersedes it) would
+        otherwise make its own control vacuous — the control would perturb
+        nothing and the audit would rightly stay silent, which reads exactly
+        like an audit that cannot fail.
+        """
+        hurt = copy.deepcopy(labels)
+        hurt["front"] = [pl for pl in labels["front"] if pl.ref != ref]
+        hurt["front"].append(SL.Placement(ref, bx, BOARD_H - by_, 0, "N"))
+        return hurt
+
+    out = []
+    pin = by["LED1"].pins[0]
+    out.append(("a label parked on a ring|the clip would eat it",
+                reseat("LED1", pin.x, pin.y)))
+    on = [it for it in labels["front_items"] if it[0] == "ON"][0]
+    bb = _ink_bbox(on[2])
+    out.append(("a label fused to a legend|read as one word",
+                reseat("PAD1", (bb[0] + bb[2]) / 2,
+                       bb[3] + 0.15 + SILK_W / 2 + SILK_H / 2)))
+    # The third control is the operator's own case ("G4 S2", "S1 G2"): a label
+    # that is CLEAR of every aperture and still unbindable, because it sits
+    # beside somebody else's part.  It is parked just outboard of LED1's
+    # nearest neighbour, so its own LED is the FARTHER of the two — legal ink,
+    # unreadable claim, and the only law that can catch it is attribution.
+    own = by["LED1"].pins[1]
+    rival = min((p for part in parts if part.ref != "LED1"
+                 for p in part.pins if part.side == "front"),
+                key=lambda p: math.hypot(p.x - own.x, p.y - own.y))
+    ux, uy = rival.x - own.x, rival.y - own.y
+    un = math.hypot(ux, uy) or 1.0
+    reach = rival.extent()[0] + 0.5 + text_size("LED1")[0] / 2 + SILK_W / 2
+    out.append(("a label the bench cannot bind|AMBIGUOUS",
+                reseat("LED1", rival.x + ux / un * reach,
+                       rival.y + uy / un * reach)))
+    return out
 
 
 def _edges(pts):
@@ -2934,20 +3602,39 @@ def gate(b: dict) -> int:
           f"deliberate sub-law exception, judged on the raster by WS5")
     chk("gauge annulus matches its declaration", round(ann, 2), 0.35)
 
-    print("### 4. silk stays off the pads it would otherwise ruin ###")
+    print("### 4. silk: every seat against the CORRECTED keep-out law ###")
+    rows = silk_seats(parts, b["labels"], b.get("route"))
     for side in ("front", "back"):
-        pads = [p for part in parts for p in part.pins
-                if (p.kind == "tht" if side == "front" else True)]
-        strokes = list(b["labels"][f"{side}_legend"])
-        for pl in b["labels"][side]:
-            strokes += text_strokes(pl.ref, pl.x, BOARD_H - pl.y, SILK_H,
-                                    mirror=(side == "back"), rotation=pl.rot)
-        worst = min(seg_pad_gap(s, p) for s in strokes for p in pads)
-        print(f"    {side}: {len(strokes)} strokes, closest pad {worst:.3f} mm")
-        chk(f"{side} silk >= 0.30 from that side's solderable pads",
-            round(worst, 3) >= 0.30, True)
-    chk("ref labels placed", b["placed"] + len(b["unplaced"]), 52)
-    print(f"    {b['placed']}/52 refs placed; unplaced {b['unplaced']}")
+        sub = [r for r in rows if r["side"] == side]
+        wf = min(sub, key=lambda r: r["feature_gap"])
+        wt = min(sub, key=lambda r: r["text_gap"])
+        wa = max((r for r in sub if r["ratio"] is not None),
+                 key=lambda r: r["ratio"])
+        print(f"    {side}: {len(sub)} texts vs {sub[0]['n_features']} "
+              f"features (apertures + bare copper + bores)")
+        print(f"      closest ink-to-copper {wf['feature_gap']:.3f} "
+              f"({wf['item']} -> {wf['feature']}), law {SILK_CLEAR}")
+        print(f"      closest text-to-text  {wt['text_gap']:.3f} "
+              f"({wt['item']} -> {wt['text']}), law {TEXT_GAP}")
+        print(f"      worst attribution     {wa['ratio']:.2f} "
+              f"({wa['item']}: {wa['own_gap']:.3f} own vs "
+              f"{wa['rival_gap']:.3f} to {wa['rival']}), law {ATTRIB_RATIO}")
+    flags = silk_flags(rows)
+    for f in flags[:16]:
+        print(f"      FLAG {f}")
+    chk("crowding audit: zero flags on the corrected semantics", len(flags), 0)
+    print("    NEGATIVE CONTROLS — an audit that cannot flag is not an audit:")
+    import copy as _copy
+    for name, hurt in silk_controls(parts, b["labels"]):
+        got = silk_flags(silk_seats(parts, hurt, b.get("route")))
+        hit = [g for g in got if name.split("|")[1] in g]
+        print(f"      {name.split('|')[0]}: {len(got)} flags"
+              + (f" — e.g. {hit[0][:96]}" if hit else " — NOTHING CAUGHT"))
+        chk(f"the audit convicts {name.split('|')[0]}", bool(hit), True)
+    del _copy
+    chk("ref labels placed", b["placed"] + len(b["unplaced"]), N_LABELS)
+    print(f"    {b['placed']}/{N_LABELS} refs placed; "
+          f"unplaced {b['unplaced']}")
 
     print("### 5. determinism: we own every byte ###")
     sums = []

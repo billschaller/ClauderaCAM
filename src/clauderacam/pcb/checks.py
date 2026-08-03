@@ -1758,6 +1758,61 @@ def mask_blind_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
                   not blind, note)]
 
 
+def silk_artwork_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
+    """The ARTWORK's silk law: no silk ink within the silk clearance of a
+    mask APERTURE, measured on the gerbers — silk raster against the mask
+    layer's distance field, in the same window every other raster check uses.
+
+    ARTICLE II REVISION, 2026-08-02, and the incident is the reason it is a
+    SECOND check rather than a tightening of `silk pad clearance`.
+
+    The operator caught silk labels overlapping pads on Board B's shipped
+    front render: a ref label starting on an LED's front ring, one running
+    into a via ring, two texts fused into one word. Every gate had passed.
+    `silk pad clearance` had passed too — and it could not have failed,
+    because it judges the EMITTED PROGRAM, and reemit.silk_strokes CLIPS
+    every stroke that comes within the clearance of an aperture before the
+    program is written. The clip is a safety feature working exactly as
+    designed (nothing fires over bare copper), and it is also a shredder:
+    on that artwork it removed 18.28 mm of front ink and dropped 8 whole
+    stroke chains, then 47.22 mm and 43 chains on the back. What reached
+    the gate was the SURVIVING ink, which of course cleared the apertures.
+    A check on the clipped bytes can never see the legend that was asked
+    for, so the law has to be measured one step earlier, on the artwork.
+
+    Why the mask layer and not the copper: the laser cures white ink on
+    MASK. A stroke crossing an aperture lands on bare copper, where nothing
+    cures — garbage streaks, and on a hand-soldered ring a fouled joint.
+    Solderability has nothing to do with it: an aperture over a DEAD ring
+    is bare copper too, which is precisely the semantic the board-side
+    keep-out set had wrong.
+    """
+    clearance = float(job.phases["silk"]["clearance"])
+    silk = maps.layers.get("silk")
+    if silk is None:
+        silk = boardmaps.rasterize(job.files["silk"], maps.win)
+    if not silk.any():
+        return [Check("silk artwork clearance", 0.0, "n/a", True,
+                      "no silk ink on this side")]
+    if not maps.layers["mask"].any():
+        return [Check("silk artwork clearance", 0.0, "n/a", True,
+                      "no mask apertures on this side")]
+    d = maps.dist("mask")
+    # both readings are pixel CENTRES: the silk edge can be half a pixel
+    # further out and the aperture edge half a pixel further in, so the
+    # honest ink-to-aperture gap is the field minus one pixel (the same
+    # calibration `eps` states for one boundary, applied to both)
+    worst = float(d[silk].min()) - 2 * maps.eps
+    i, j = np.unravel_index(int(np.where(silk, d, np.inf).argmin()), d.shape)
+    wx, wy = maps.win.px_to_world(i, j)
+    return [Check("silk artwork clearance", worst, f">= {clearance:g}",
+                  worst >= clearance,
+                  f"closest silk ink to a mask aperture is at "
+                  f"({wx:.3f},{wy:.3f}) in the gerber frame; the CAM lane "
+                  f"would clip anything under {clearance:g} out of the "
+                  f"legend rather than fail")]
+
+
 def silk_metric_checks(job: PcbJob, maps: BoardMaps) -> list[Check]:
     """Legend metrics on the silk ink (dfm-notes §9, JLCPCB floors): text
     height >= 1.0, stroke:height inside the 1:7.5..1:3.5 band around
@@ -2024,7 +2079,8 @@ def verify_pcb(job: PcbJob, programs: dict[str, str | Path],
                              + mask_blind_checks(job, maps),
                              rep.carve, program=rep.program)
             elif name == "silk":
-                rep = Report(rep.checks + silk_metric_checks(job, maps),
+                rep = Report(rep.checks + silk_metric_checks(job, maps)
+                             + silk_artwork_checks(job, maps),
                              rep.carve, program=rep.program)
         # `rep.program` is set exactly when the bytes parsed — a fatal report
         # has nothing to simulate and simulating it would judge moves the

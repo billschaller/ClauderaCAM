@@ -65,15 +65,53 @@ Ring positions run CLOCKWISE from 12 o'clock.  The position->LED permutation is 
 
 MEASURED on the exported gerbers with gerbv (the rasterizer that shares no code with this generator), not asserted from the model.  A region with no conductor is not automatically a defect: on a milled board with no plating, a THT lead's FRONT ring belongs to no net by construction (the R3 finding), and the flip gauges are deliberately dead copper you read with a loupe.  What matters is that every region is either LIVE or dead ON PURPOSE.
 
-- **not measured**: No module named 'numpy'
+- **FRONT: 50 regions.** GND plane is region 1 at 2106.5 mm2, live through PAD2-1, the promoted GND lead; GND wire via (22.96,38.11); GND wire via (16.34,8.12); GND wire via (19.59,26.01); GND wire via (52.62,33.07).
+  - 42 region(s) dead BY DESIGN (THT front rings own no net — the R3 finding — and the four flip gauges are read with a loupe, never soldered).
+  - 8 region(s) are other nets' routed copper; 0 carry component lands.
+  - **0 unexplained region(s)**.
+- **BACK: 52 regions.** GND plane is region 1 at 1279.6 mm2, live through PAD2-1, the promoted GND lead; GND wire via (16.34,8.12); GND wire via (52.62,33.07).
+  - 4 region(s) dead BY DESIGN (THT front rings own no net — the R3 finding — and the four flip gauges are read with a loupe, never soldered).
+  - 37 region(s) are other nets' routed copper; 41 carry component lands.
+  - **7 unexplained region(s)**: [21, 22, 34, 35, 44, 49] — INVESTIGATE.
 
-## Silk: refs deliberately NOT printed
+## Silk: what is printed, and what is not
 
-Silk is this board's congestion canary, not decoration: a label that cannot be seated cleanly means the copper under it is too tight, and the answer is to un-compress the copper. Every seat on this board now clears the 0.30 ink-to-pad law by at least 33%, so the refs below are dropped for a different reason — REDUNDANCY, not crowding.
+Measured under the CORRECTED keep-out law (2026-08-02): every mask aperture on that side — solderable or dead, including all 23 wire-via rings, which are apertures on BOTH faces — plus the bare-copper flip gauges, which have no aperture at all, plus the bores. 69 texts measured against 70/133 features per side: **0 flags**, tightest ink-to-copper 0.390 mm on `U1 pin-1 dot` against the 0.30 law (+30%).
 
-- **TP3** — the ISP block prints the FUNCTIONAL legend `SCK` at this pad instead. A bench looking for SCK reads `SCK`; `TP3` would be a second name for the same hole and buys the operator nothing.
-- **TP5** — the ISP block prints the FUNCTIONAL legend `RST` at this pad instead. A bench looking for RST reads `RST`; `TP5` would be a second name for the same hole and buys the operator nothing.
-- **TP6** — the ISP block prints the FUNCTIONAL legend `GND` at this pad instead. A bench looking for GND reads `GND`; `TP6` would be a second name for the same hole and buys the operator nothing.
+Silk is this board's congestion canary, not decoration: a label that cannot be seated cleanly means the copper under it is too tight, and the answer is to un-compress the copper. The drops below are therefore split into the two kinds that matter — a REDUNDANT label the board does not need, and a label the copper left nowhere to put, which is an un-compression request.
+
+- **LED2** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around LED2 leaves nowhere to put a label that both clears every aperture and unambiguously names LED2.
+- **LED8** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around LED8 leaves nowhere to put a label that both clears every aperture and unambiguously names LED8.
+- **PAD1** (redundant) — the bottom strip prints `+` at this pad, which is the thing the bench actually has to read before wiring a battery. `PAD1` adds no information and its seat is contested by the pad's own legend.
+- **PAD2** (redundant) — the bottom strip prints `-` at this pad, which is the thing the bench actually has to read before wiring a battery. `PAD2` adds no information and its seat is contested by the pad's own legend.
+- **C2** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around C2 leaves nowhere to put a label that both clears every aperture and unambiguously names C2.
+- **D1** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around D1 leaves nowhere to put a label that both clears every aperture and unambiguously names D1.
+- **Q1** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around Q1 leaves nowhere to put a label that both clears every aperture and unambiguously names Q1.
+- **R14** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around R14 leaves nowhere to put a label that both clears every aperture and unambiguously names R14.
+- **R15** — NO legal seat under the corrected law and no functional legend covers it. THIS IS AN UN-COMPRESSION REQUEST: the copper around R15 leaves nowhere to put a label that both clears every aperture and unambiguously names R15.
+- **TP1** (redundant) — the ISP block names this pad `MISO`, or would: see the un-compression request below. `TP1` is a second name for the same hole either way.
+- **TP2** (redundant) — the ISP block names this pad `VCC`, or would: see the un-compression request below. `TP2` is a second name for the same hole either way.
+- **TP3** (redundant) — the ISP block names this pad `SCK`, or would: see the un-compression request below. `TP3` is a second name for the same hole either way.
+- **TP4** (redundant) — the ISP block names this pad `MOSI`, or would: see the un-compression request below. `TP4` is a second name for the same hole either way.
+- **TP5** (redundant) — the ISP block names this pad `RST`, or would: see the un-compression request below. `TP5` is a second name for the same hole either way.
+- **TP6** (redundant) — the ISP block names this pad `GND`, or would: see the un-compression request below. `TP6` is a second name for the same hole either way.
+- **ISP MISO** (back legend, owner TP1) — boxed in by R4b's crossings: no seat within 5 mm that names the right pad. UN-COMPRESSION REQUEST: this one is FUNCTIONAL and its absence costs the bench information.
+- **ISP VCC** (back legend, owner TP2) — boxed in by R4b's crossings: no seat within 5 mm that names the right pad. UN-COMPRESSION REQUEST: this one is FUNCTIONAL and its absence costs the bench information.
+- **ISP MOSI** (back legend, owner TP4) — boxed in by R4b's crossings: no seat within 5 mm that names the right pad. UN-COMPRESSION REQUEST: this one is FUNCTIONAL and its absence costs the bench information.
+- **ISP RST** (back legend, owner TP5) — boxed in by R4b's crossings: no seat within 5 mm that names the right pad. UN-COMPRESSION REQUEST: this one is FUNCTIONAL and its absence costs the bench information.
+
+### ISP block — READ THIS, the legend is incomplete
+
+Four of the six ISP names have no legal seat while R4b's crossings stand where they stand (full reasoning in `tools-board.back_legend`). Until that copper is un-compressed the block is read from the SQUARE TICK, which marks pin 1, and from this table. Board frame, back side, viewed with the BACK up (x mirrors):
+
+| pad | name | board (x, y) | printed on silk |
+|:----|:-----|:-------------|:----------------|
+| TP1 | **MISO** | (44.00, 8.08) | **NO — read this table** |
+| TP2 | **VCC** | (46.54, 8.08) | **NO — read this table** |
+| TP3 | **SCK** | (44.00, 5.54) | yes |
+| TP4 | **MOSI** | (46.54, 5.54) | **NO — read this table** |
+| TP5 | **RST** | (44.00, 3.00) | **NO — read this table** |
+| TP6 | **GND** | (46.54, 3.00) | yes |
 
 ## Power pads — READ BEFORE WIRING
 

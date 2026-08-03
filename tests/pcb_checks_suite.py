@@ -833,6 +833,38 @@ check("and the clipped program PASSES silk pad clearance",
       mid_chk["silk pad clearance"].ok,
       f"{mid_chk['silk pad clearance'].value:.4f} "
       f"(>= {midjob.phases['silk']['clearance']})")
+
+# --- the ARTWORK leg of the same law (Article II revision, 2026-08-02).
+# The two checks above are exactly the blind spot: the ARTWORK drove a
+# stroke through both pads, the clip removed the offending middle, and the
+# program that reached the gate passed. On Board B that shredder silently
+# took 8 front stroke-chains and 43 back ones out of a legend the operator
+# then found broken on the render. `silk artwork clearance` reads the
+# gerbers instead, so the question is what was ASKED for, not what survived.
+print("\nthe artwork leg: silk gerber vs mask gerber, before the clip:")
+art = by_name(checks.silk_artwork_checks(midjob, maps))
+check("the UNCLIPPED artwork is convicted by silk artwork clearance",
+      not art["silk artwork clearance"].ok,
+      f"{art['silk artwork clearance'].value:.4f} "
+      f"(bar {art['silk artwork clearance'].limit})")
+check("...while the clipped PROGRAM check still passes on the same board — "
+      "which is why the artwork needs its own leg",
+      mid_chk["silk pad clearance"].ok)
+# and the POSITIVE control: a stroke that clears the aperture by more than
+# the law must not be flagged. PAD_A's mask aperture is O2.0, so its rim is
+# 1.0 from the centre; a 0.2-wide stroke centred 1.5 above it holds
+# 1.5 - 1.0 - 0.1 = 0.40 of ink-to-aperture, a tenth over the 0.30 bar.
+CLR = (HDR + "%ADD10C,0.200000*%\nG01*\nD10*\n"
+       f"X{gnum(2.0)}Y{gnum(PAD_A[1] + 1.5)}D02*\n"
+       f"X{gnum(6.0)}Y{gnum(PAD_A[1] + 1.5)}D01*\nM02*\n")
+(G / "clr-B_Silkscreen.gbr").write_text(CLR)
+clrjob = pcbjob.load(JOBP)
+clrjob.files["silk"] = G / "clr-B_Silkscreen.gbr"
+clr = by_name(checks.silk_artwork_checks(clrjob, maps))
+check("a stroke 0.40 clear of the aperture PASSES the artwork leg",
+      clr["silk artwork clearance"].ok
+      and 0.35 < clr["silk artwork clearance"].value < 0.45,
+      f"{clr['silk artwork clearance'].value:.4f}")
 maps.release()
 
 # the castellation-chewing incident needs a narrow copper channel: its own
@@ -1202,11 +1234,21 @@ if all((ZPH / f).is_file() for f in ZNC.values()) and \
     print("\n  the field silk program (was a FINDING; the clip closed it):")
     zsilk = by_name(zreps["silk"].checks)
     check("silk pad clearance PASSES on the clipped field legend",
-          zreps["silk"].ok,
+          zsilk["silk pad clearance"].ok,
           f"{zsilk['silk pad clearance'].value:.4f} >= "
           f"{zjob.phases['silk']['clearance']} "
           f"(was 0.0850 = FAIL when whole chains were kept or dropped on a "
           f"VERTEX test)")
+    # ...and the ARTWORK leg convicts the very same legend. This board is the
+    # second witness for the 2026-08-02 revision, and the older one: 49.4 mm
+    # of its legend was never legal AS DRAWN, the clip removed 52.38 mm of it,
+    # and until now every check on this board passed. A legend that only
+    # clears the law after the shredder has been through it is not a legend
+    # that was designed to clear the law.
+    check("the ARTWORK leg convicts the same legend, before the clip",
+          not zsilk["silk artwork clearance"].ok,
+          f"{zsilk['silk artwork clearance'].value:.4f} vs bar "
+          f"{zsilk['silk artwork clearance'].limit}")
     check("the clip reports what it took off the legend",
           zclip.chains == 99 and zclip.clipped == 11 and zclip.dropped == 0
           and 52.0 < zclip.removed_mm < 53.0, zclip.note)

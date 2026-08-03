@@ -42,7 +42,7 @@ rows marked **NEW** exist only because this board flips.
 | paste **Δ** | **B.Paste only** — one stencil, back side. Vias, THT pads and ISP pads carry NO aperture | vias are soldered after reflow; a pasted via hole wicks solder and blocks the wire |
 | solder mask **Δ** | BOTH sides masked, cured and scrubbed — two squeegee/cure/scrub cycles, one per setup | there is no second way to reach the down-facing side |
 | scrub **Δ NEW** | side 1: disc laps, pads deflated −0.10 (Board A's rule). side 2: same for SMD pads, but **annular laps** on every hole-centered pad — tool edge ≥0.15 inside copper AND ≥0.20 outside the hole rim | on side 2 the holes are already drilled; a 0.3 mm spring tip spiralling across a Ø1.0 hole drops in and levers the pad off. Ø2.4 pad + Ø1.0 hole leaves one legal 0.3-wide lap at r≈0.9 |
-| silkscreen **Δ** | **F.Silkscreen AND B.Silkscreen**, each lasered onto that side's own cured white mask, in that side's own setup; strokes ≥0.3 mm from that side's solderable pads | the laser only reaches the up-facing side. On this board the front legend is FUNCTIONAL, not decoration: it is the only thing that tells the operator which way 12 LEDs go in |
+| silkscreen **Δ** | **F.Silkscreen AND B.Silkscreen**, each lasered onto that side's own cured white mask, in that side's own setup; strokes ≥0.3 mm from EVERY MASK APERTURE on that side (solderable or dead — after cure both are bare copper), from bare copper that has no aperture (the flip gauges), and from the bores; separate texts ≥1 cap height apart; every label decisively nearer its own feature than any other **Δ 2026-08-02** | the laser only reaches the up-facing side. On this board the front legend is FUNCTIONAL, not decoration: it is the only thing that tells the operator which way 12 LEDs go in |
 | levelling **Δ NEW** | auto-level per side; on side 2 the probe grid must not land in a drilled hole | a probe point that drops into a Ø1.0 hole writes a false low into the height map and every side-2 depth after it is fiction |
 | pours | GND pour on BOTH sides; ≥0.5 mm fill channels; **1 `filled_polygon` block per side** | Board A's rule, twice. A fragmented pour costs a via, which is the thing this board is trying not to spend |
 | clearing | no clearing region narrower than 1.2 mm anywhere | the morphological opening drops features below 0.9; 1.2 keeps real margin over the 0.8 corn (the castellation-chewing incident) |
@@ -635,9 +635,17 @@ own honesty:
 - **No THT lead under a body is a layer bridge** (operator,
   2026-08-01): LEDs seat FLUSH, back-solder only; the dual-solder
   list is PAD2-1 alone. The "seat LEDs proud" idea is dead.
-- **Silk**: 49/52 ref labels; TP3/TP5/TP6 dropped where the
-  functional SCK/RST/GND legend supersedes them (each drop reasoned
-  in MATRIX.md); crowding audit 438 seats, zero flags.
+- **Silk**: 37/52 ref labels, and the yield is the POINT — see
+  MATRIX.md, which splits the 15 drops into redundant (TP1–TP6,
+  PAD1/PAD2: a functional legend already names those pads) and
+  un-compression requests (LED2, LED8, C2, D1, Q1, R14, R15, plus
+  four ISP names). The 2026-08-02 keep-out revision put all 23 wire
+  via rings and the four bare gauge discs into the set the legend
+  must clear, which is what the old 49/52 was ignoring: the shipped
+  artwork had silk 1.28 mm inside a via ring and the CAM lane's clip
+  was quietly shredding 51 stroke chains out of the legend. Crowding
+  audit (`silk_audit.py`, run by both gates): 69 texts, zero flags,
+  tightest ink-to-copper 0.390 mm.
 - **Cutout tabs**: gaps = "2lr" (left/right edges) — the bottom-edge
   rail is legal copper no bottom tab can coexist with; the grammar
   grew placement styles + silent-sever refusals for this.

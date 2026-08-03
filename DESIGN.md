@@ -2268,6 +2268,73 @@ from **17.1s to 3.2s**.
   panelization (the 3-up Tcl trick is documented in the zigbee README);
   MakeraCAM interop as the documented quick-path alternative.
 
+## 2026-08-02 (night): the silk keep-out was a SOLDERABILITY test, and the clip was hiding it
+
+The operator read the shipped front render of Board B and found what
+every gate had passed: `LED8` starting on its LED's front ring, `LED12`
+running into a via ring, `LED2` against a pad ring, and the bottom strip
+reading `PAD1ON` — a ref label and the ON legend fused into one word.
+Board gate 21/21. CAM gate 180/180. Crowding audit: ZERO flags.
+
+**Why every check agreed with a broken board.** Three independent
+blind spots, all of them semantic:
+
+1. *The keep-out set was "that side's SOLDERABLE pads".* The physics is
+   not about solder: the laser cures white ink on MASK, so a stroke that
+   crosses a mask APERTURE lands on bare copper where nothing cures. On
+   this board the front THT rings are DEAD (never soldered) and open the
+   mask anyway — 24 discs of bare copper the placer did not know about —
+   while the 23 wire vias, which ARE soldered on both faces, did not
+   exist yet when the labels were placed, because labels were placed on
+   the UNROUTED board. The four flip gauges are bare copper with NO
+   aperture at all and must stay loupe-readable. Corrected set: every
+   aperture + bare copper without one + the bores. 34 features → 70 on
+   the front, 133 on the back.
+2. *Nothing measured text against text.* 0.709 mm of ink separated
+   `PAD1` from `ON` and the eye read one word, because the gap between
+   two glyphs of the same word is 0.425. The bar is one CAP HEIGHT of
+   the larger text — the same reading that catches `S1`/`G2` stacked
+   1.450 apart, which no clearance law can see.
+3. *Nothing asked what a label REFERS to* (operator: "if a human can't
+   tell what board feature a label would refer to, the label shouldn't
+   exist or the board should be decompressed"). Now a ratio: the gap to
+   its own feature must be at most half the gap to the nearest other
+   NAMED feature, with a bearing test (a feature farther away on the
+   owner's own bearing is behind it, not a rival) and vias/bores
+   excluded as referents — they carry no designator. Both terms are
+   load-bearing: without them five of six ISP names have zero legal
+   seats anywhere on a 2.54 grid.
+
+**ARTICLE II REVISION — `silk artwork clearance` (checks.py).** The CAM
+lane's `silk pad clearance` could not have caught any of this, and the
+reason is worth stating plainly: `reemit.silk_strokes` CLIPS every
+stroke that comes within the clearance of an aperture *before* the
+program is written, so the gate always judges the surviving ink. On
+orbit's shipped artwork that shredder removed 18.28 mm and 8 whole
+stroke chains from the front legend and 47.22 mm and 43 chains from the
+back — then the clipped remains passed. The new check measures the
+ARTWORK: the silk gerber against the mask gerber, on the raster, once
+per side. Negative controls in `pcb_checks_suite.py`: the unclipped
+mid-segment artwork is convicted while the clipped program still
+passes (the blind spot, demonstrated), a stroke 0.40 clear passes,
+Board A's golden legend passes at 0.54 — and the 2026-07-19 field
+board is convicted too, which makes it the older witness: 49.4 mm of
+that legend was never legal as drawn and the clip had been covering
+for it since.
+
+**What it cost, honestly.** Ref-label yield 49/52 → 37/52 on the routed
+board. Eight drops are REDUNDANT (TP1–TP6 duplicate the ISP names;
+PAD1/PAD2 duplicate the `+`/`−` the bench actually reads); seven are
+UN-COMPRESSION REQUESTS in MATRIX.md, which is the canary doing its
+job. Four ISP names are dropped for the same reason and hurt: R4b parks
+four crossings around a block whose pads are 0.74 mm apart, and no seat
+within 5 mm names the right pad. That is a copper fix (a reroute with
+the legend lanes reserved), reported rather than rolled — the board's
+zero-jumper state is not something to spend on a guess. Silk-only
+changes moved NO copper: the route seal, the 23 vias and the 22/22
+route gate are untouched, and the CAM lane's clip now removes 0.00 mm
+on both sides, which is the real proof the legend is as drawn.
+
 ## 2026-08-02 (evening): orbit ships native — the migration arc, closed
 
 Board B "orbit" is DONE: 66×56, every net closed in copper, 180/180

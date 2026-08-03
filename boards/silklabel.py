@@ -35,6 +35,23 @@ SILK_GAP = 0.20       # between a label and any existing silk ink
 EDGE_MARGIN = 1.00    # cutout rides the outline; legend near the rim chips
 LABEL_GAP = 0.30      # between two placed labels
 
+# --- the two laws a CALLER may raise, 2026-08-02 -------------------------
+# Both defaults are the numbers this module shipped with, so a caller that
+# passes neither gets byte-identical placements (Board A's coupon legend is
+# exactly that caller). Orbit raises both, and the incident is in its
+# tools-board.label_parts: the front render came back reading "PAD1ON" —
+# a ref label and the ON legend fused into one word by a 0.30/0.20 gap that
+# is smaller than the 0.425 gap between two glyphs of the SAME word, so the
+# eye groups them wrongly. Text separation must beat intra-word spacing.
+#
+# ATTRIBUTION (operator, 2026-08-02): "if a human can't tell what board
+# feature a label would refer to, the label shouldn't exist or the board
+# should be decompressed." A label is a claim about ONE feature; a seat
+# equidistant between its own part and a neighbour makes that claim
+# unreadable, and an unreadable label is misinformation, not decoration.
+# Expressed as a ratio because it is a RELATIVE judgement — the eye binds a
+# label to the nearest thing, so the owner must be decisively nearest.
+
 # candidate slots around a part's courtyard, in preference order: reading
 # convention first (above, then below), then the sides, then corners
 _SLOTS = ("N", "S", "E", "W", "NE", "NW", "SE", "SW")
@@ -95,7 +112,7 @@ _SLIDES = (0.0, -0.5, 0.5, -1.0, 1.0)   # slide along the slot edge, in
                                         # body-half-extents; centred first
 
 
-def _candidates(p: Part, board: Rect):
+def _candidates(p: Part, board: Rect, gaps=_GAPS):
     """Every slot x gap x rotation x slide as (rect, rot, slot, rank).
     Slides shift the label ALONG its side (N/S: in x, E/W: in y) — in a
     dense field the open silk is usually off-centre of the part, between
@@ -103,7 +120,7 @@ def _candidates(p: Part, board: Rect):
     out = []
     rank = 0
     b = p.body
-    for gap in _GAPS:
+    for gap in gaps:
         for slot in _SLOTS:
             for rot, (w, h) in (((0, p.wh)), (90, p.wh90)):
                 if slot == "N":
@@ -159,20 +176,45 @@ def _valid(rect: Rect, apertures, silk, hard):
 def place_labels(parts: list[Part], board: Rect,
                  apertures: list[Rect], silk: list[Rect],
                  bodies_extra: list[Rect] = (),
+                 label_gap: float = LABEL_GAP,
+                 silk_gap: float = SILK_GAP,
+                 attribution=None,
+                 attribution_max: float = 0.5,
+                 gaps=_GAPS,
                  ) -> tuple[list[Placement], list[str]]:
     """-> (placements, unplaced refs). Deterministic for identical input.
 
     Inflation happens HERE, one place, so every caller gets the same law:
-    apertures grow CLIP_KEEPOUT, silk grows SILK_GAP. Hard rejections:
+    apertures grow CLIP_KEEPOUT, silk grows `silk_gap`. Hard rejections:
     apertures, silk, `bodies_extra` (declared keep-clear zones — gauge
     fields, washer shadows), the board-edge margin, and already-placed
     labels. Part courtyards are a SOFT penalty (BODY_PENALTY per mm²):
     in a 2.54-pitch field a hard courtyard rule strands most labels
     (measured 12/48 on Board A), while a corner-brush over a neighbour
     is still legible — the score prefers clear slots whenever one exists.
+
+    `label_gap` / `silk_gap` are the ink-to-ink separations between this
+    label and, respectively, another label and pre-existing legend ink.
+    Their defaults are what this module has always used; a caller whose
+    legend must never fuse two texts into one word raises them (orbit
+    passes 0.50 for both — see the module header).
+
+    `gaps` are the courtyard-to-label standoff tiers to try, nearest
+    first. A caller that ALSO passes `attribution` may safely offer far
+    tiers: what makes a distant label dangerous is that it stops obviously
+    belonging to its part, and that is precisely what the attribution rule
+    now refuses. Without `attribution`, keep the default.
+
+    `attribution` is the operator's readability law, off unless supplied:
+    a callable (rect, ref) -> ratio, where the ratio is the candidate's
+    gap to its OWN part's copper over its gap to the nearest OTHER
+    feature. A candidate scoring above `attribution_max` is REJECTED
+    outright — it is a label the bench cannot bind to a feature, and the
+    resolution order is re-seat (here), un-compress the board, or drop
+    the label with written reasoning. Never ship the ambiguous seat.
     """
     apert = [a.inflate(CLIP_KEEPOUT) for a in apertures]
-    silk_i = [s.inflate(SILK_GAP) for s in silk]
+    silk_i = [s.inflate(silk_gap) for s in silk]
     hard = list(bodies_extra)
     bodies = {p.ref: p.body for p in parts}
 
@@ -181,9 +223,9 @@ def place_labels(parts: list[Part], board: Rect,
     cands: dict[str, list] = {}
     for p in parts:
         ok = []
-        why = {"aperture": 0, "silk": 0, "zone": 0, "edge": 0}
+        why = {"aperture": 0, "silk": 0, "zone": 0, "edge": 0, "ambiguous": 0}
         n_all = 0
-        for rect, rot, slot, rank in _candidates(p, board):
+        for rect, rot, slot, rank in _candidates(p, board, gaps):
             n_all += 1
             if any(rect.overlaps(a) for a in apert):
                 why["aperture"] += 1
@@ -193,6 +235,10 @@ def place_labels(parts: list[Part], board: Rect,
                 continue
             if any(rect.overlaps(h) for h in hard):
                 why["zone"] += 1
+                continue
+            if (attribution is not None
+                    and attribution(rect, p.ref) > attribution_max):
+                why["ambiguous"] += 1
                 continue
             crowd = sum(rect.overlap_area(b)
                         for ref, b in bodies.items() if ref != p.ref)
@@ -207,7 +253,7 @@ def place_labels(parts: list[Part], board: Rect,
 
     def best_free(ref):
         for score, rect, rot, slot in cands[ref]:
-            if all(not rect.overlaps(c[1].inflate(LABEL_GAP))
+            if all(not rect.overlaps(c[1].inflate(label_gap))
                    for r2, c in claims.items() if r2 != ref):
                 return (score, rect, rot, slot)
         return None
@@ -249,7 +295,7 @@ def place_labels(parts: list[Part], board: Rect,
             if done:
                 break
             blockers = [r2 for r2, c in claims.items()
-                        if rect.overlaps(c[1].inflate(LABEL_GAP))]
+                        if rect.overlaps(c[1].inflate(label_gap))]
             if len(blockers) != 1:
                 continue
             victim = blockers[0]
@@ -290,4 +336,16 @@ if __name__ == "__main__":
     assert not lr1.overlaps(lr2), (r1, r2)
     # determinism: same input, same answer
     assert place_labels([a, b, c], board, apertures=ring, silk=[]) == (pl, un)
+    # the caller-raised laws, with their negative controls. A rule that can
+    # never reject is not a rule (Article III), so each is proved to bite:
+    #   * attribution: a scorer that calls every seat ambiguous houses nobody
+    #   * attribution: a scorer that calls every seat decisive changes nothing
+    #   * a text gap wider than the board strands every label
+    assert place_labels([a, b, c], board, apertures=ring, silk=[],
+                        attribution=lambda r, ref: 1.0) == ([], ["R1", "R2",
+                                                                "U9"])
+    assert place_labels([a, b, c], board, apertures=ring, silk=[],
+                        attribution=lambda r, ref: 0.0) == (pl, un)
+    assert place_labels([a, b], board, apertures=[], silk=[Rect(0, 0, 30, 20)],
+                        silk_gap=0.0)[1] == ["R1", "R2"]
     print("silklabel self-test OK:", pl, "unplaced:", un)

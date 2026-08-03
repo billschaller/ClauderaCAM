@@ -1061,9 +1061,19 @@ def build_routed(force_route: bool = False) -> dict:
         m["stitch_set"] = sorted(
             [[x, y] for x, y, _n in m["vias"]] +
             [list(TB.lht_xy(by_pid[p].x, by_pid[p].y)) for p in m["promoted"]])
-    TB.build(route={"tracks": m["tracks"], "vias": m["vias"],
-                    "track_nets": m["track_nets"],
-                    "promoted": set(m["promoted"])}, out_lht=FINAL_LHT)
+    final = {"tracks": m["tracks"], "vias": m["vias"],
+             "track_nets": m["track_nets"], "promoted": set(m["promoted"])}
+    rb = TB.build(route=final, out_lht=FINAL_LHT)
+    # THE SHIPPED SILK IS THE ROUTED BOARD'S SILK, and taking it from the
+    # unrouted build is how three labels came to sit on via rings while every
+    # check agreed they did not (2026-08-02).  A via is a mask aperture on
+    # both faces and it does not exist until this function has run, so the
+    # labels, the legend, the MATRIX census and the gate below all read the
+    # placement made against THIS board rather than the one R4a emitted.
+    b["labels"], b["unplaced"], b["placed"] = (rb["labels"], rb["unplaced"],
+                                               rb["placed"])
+    b["route"], b["silk_drops"] = final, {k: list(v) for k, v
+                                          in TB.SILK_DROPS.items()}
     with open(MERGE_JSON, "w", encoding="utf-8") as fh:
         json.dump({k: v for k, v in m.items() if k != "track_nets"},
                   fh, indent=1, sort_keys=True)
@@ -1476,24 +1486,67 @@ def write_matrix(b: dict) -> None:
     for line in pour_census(parts, m):
         L += [line]
 
-    if b["unplaced"]:
-        L += ["", "## Silk: refs deliberately NOT printed", "",
-              "Silk is this board's congestion canary, not decoration: a "
-              "label that cannot be seated cleanly means the copper under it "
-              "is too tight, and the answer is to un-compress the copper. "
-              "Every seat on this board now clears the 0.30 ink-to-pad law by "
-              "at least 33%, so the refs below are dropped for a different "
-              "reason — REDUNDANCY, not crowding.", ""]
-        for ref in b["unplaced"]:
-            fn = TB.ISP_LABEL.get(ref)
-            if fn:
-                L += [f"- **{ref}** — the ISP block prints the FUNCTIONAL "
-                      f"legend `{fn}` at this pad instead. A bench looking for "
-                      f"{fn} reads `{fn}`; `{ref}` would be a second name for "
-                      f"the same hole and buys the operator nothing."]
-            else:
-                L += [f"- **{ref}** — no legal seat, and no functional legend "
-                      f"covers it. THIS IS A DEFECT: un-compress the area."]
+    rows = TB.silk_seats(parts, b["labels"], b.get("route"))
+    flags = TB.silk_flags(rows)
+    worst = min(rows, key=lambda r: r["feature_gap"])
+    drops = b.get("silk_drops", {"front": [], "back": []})
+    L += ["", "## Silk: what is printed, and what is not", "",
+          f"Measured under the CORRECTED keep-out law (2026-08-02): every "
+          f"mask aperture on that side — solderable or dead, including all "
+          f"{len(m['vias'])} wire-via rings, which are apertures on BOTH "
+          f"faces — plus the bare-copper flip gauges, which have no aperture "
+          f"at all, plus the bores. {len(rows)} texts measured against "
+          f"{rows[0]['n_features']}/{rows[-1]['n_features']} features per "
+          f"side: **{len(flags)} flags**, tightest ink-to-copper "
+          f"{worst['feature_gap']:.3f} mm on `{worst['item']}` against the "
+          f"0.30 law (+{100 * (worst['feature_gap'] / 0.30 - 1):.0f}%).", "",
+          "Silk is this board's congestion canary, not decoration: a label "
+          "that cannot be seated cleanly means the copper under it is too "
+          "tight, and the answer is to un-compress the copper. The drops "
+          "below are therefore split into the two kinds that matter — a "
+          "REDUNDANT label the board does not need, and a label the copper "
+          "left nowhere to put, which is an un-compression request.", ""]
+    for ref in b["unplaced"]:
+        fn = TB.ISP_LABEL.get(ref)
+        alt = {"PAD1": "+", "PAD2": "-"}.get(ref)
+        if fn:
+            L += [f"- **{ref}** (redundant) — the ISP block names this pad "
+                  f"`{fn}`, or would: see the un-compression request below. "
+                  f"`{ref}` is a second name for the same hole either way."]
+        elif alt:
+            L += [f"- **{ref}** (redundant) — the bottom strip prints `{alt}` "
+                  f"at this pad, which is the thing the bench actually has to "
+                  f"read before wiring a battery. `{ref}` adds no information "
+                  f"and its seat is contested by the pad's own legend."]
+        else:
+            L += [f"- **{ref}** — NO legal seat under the corrected law and "
+                  f"no functional legend covers it. THIS IS AN "
+                  f"UN-COMPRESSION REQUEST: the copper around {ref} leaves "
+                  f"nowhere to put a label that both clears every aperture "
+                  f"and unambiguously names {ref}."]
+    for side in ("front", "back"):
+        for name, owner, why in drops[side]:
+            L += [f"- **{name}** ({side} legend, owner {owner}) — {why}. "
+                  f"UN-COMPRESSION REQUEST: this one is FUNCTIONAL and its "
+                  f"absence costs the bench information."]
+    if any(drops[s] for s in drops):
+        by_ref = {p.ref: p for p in parts}
+        L += ["", "### ISP block — READ THIS, the legend is incomplete", "",
+              "Four of the six ISP names have no legal seat while R4b's "
+              "crossings stand where they stand (full reasoning in "
+              "`tools-board.back_legend`). Until that copper is "
+              "un-compressed the block is read from the SQUARE TICK, which "
+              "marks pin 1, and from this table. Board frame, back side, "
+              "viewed with the BACK up (x mirrors):", "",
+              "| pad | name | board (x, y) | printed on silk |",
+              "|:----|:-----|:-------------|:----------------|"]
+        printed = {nm.replace("ISP ", "")
+                   for nm, _o, _s, _h in b["labels"]["back_items"]
+                   if nm.startswith("ISP ")}
+        for ref, txt in TB.ISP_LABEL.items():
+            pin = by_ref[ref].pins[0]
+            L += [f"| {ref} | **{txt}** | ({pin.x:.2f}, {pin.y:.2f}) | "
+                  f"{'yes' if txt in printed else '**NO — read this table**'} |"]
 
     L += ["", "## Power pads — READ BEFORE WIRING", "",
           f"**PAD1 is `+` and is the RIGHT-HAND pad (x {p1.x}); PAD2 is `-` "
@@ -1756,6 +1809,37 @@ def gate(b: dict) -> int:
         print(f"    NOTE: {len(m['vias'])} vias vs SPEC's planning budget of "
               f"{VIA_BUDGET}; each is one threaded-wire bench joint pair, "
               f"cost-class of a jumper wire (ruling 2026-08-01).")
+
+    print("### G2. SILK ON THE BOARD THAT SHIPS ###")
+    # R4a's gate measures the UNROUTED board's legend, which is the board
+    # nobody machines.  23 wire vias later the apertures are different, and
+    # 2026-08-02 is the day that difference put three labels on via rings with
+    # every check passing.  The audit runs HERE, on the final placement.
+    srows = TB.silk_seats(parts, b["labels"], route)
+    sflags = TB.silk_flags(srows)
+    for side in ("front", "back"):
+        sub = [r for r in srows if r["side"] == side]
+        wf = min(sub, key=lambda r: r["feature_gap"])
+        wt = min(sub, key=lambda r: r["text_gap"] - r["text_bar"])
+        wa = max((r for r in sub if r["ratio"] is not None),
+                 key=lambda r: r["ratio"])
+        print(f"    {side}: {len(sub)} texts vs {sub[0]['n_features']} "
+              f"features — ink {wf['feature_gap']:.3f} ({wf['item']} -> "
+              f"{wf['feature']}), text {wt['text_gap']:.3f}/"
+              f"{wt['text_bar']:.2f} ({wt['item']} -> {wt['text']}), "
+              f"attribution {wa['ratio']:.2f} ({wa['item']})")
+    for f in sflags[:12]:
+        print(f"      FLAG {f}")
+    chk("crowding audit on the ROUTED board: zero flags", len(sflags), 0)
+    for name, hurt in TB.silk_controls(parts, b["labels"]):
+        got = TB.silk_flags(TB.silk_seats(parts, hurt, route))
+        chk(f"the audit convicts {name.split('|')[0]}",
+            any(name.split("|")[1] in g for g in got), True)
+    print(f"    {b['placed']}/{TB.N_LABELS} ref labels placed; dropped "
+          f"{b['unplaced']}")
+    for side in ("front", "back"):
+        for nm, owner, why in b.get("silk_drops", {}).get(side, ()):
+            print(f"    LEGEND DROP {side}/{nm} (owner {owner}): {why}")
 
     print("### G. POURS ###")
     gnd_prom = sorted(p for p in m["promoted"]
