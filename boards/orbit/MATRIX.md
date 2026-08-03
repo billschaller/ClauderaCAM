@@ -68,11 +68,13 @@ MEASURED on the exported gerbers with gerbv (the rasterizer that shares no code 
 - **FRONT: 50 regions.** GND plane is region 1 at 2106.5 mm2, live through PAD2-1, the promoted GND lead; GND wire via (22.96,38.11); GND wire via (16.34,8.12); GND wire via (19.59,26.01); GND wire via (52.62,33.07).
   - 42 region(s) dead BY DESIGN (THT front rings own no net — the R3 finding — and the four flip gauges are read with a loupe, never soldered).
   - 8 region(s) are other nets' routed copper; 0 carry component lands.
+  - 0 raster artifact(s) (<= 1 px = 0.000100 mm2, below any copper this process can leave).
   - **0 unexplained region(s)**.
-- **BACK: 52 regions.** GND plane is region 1 at 1279.6 mm2, live through PAD2-1, the promoted GND lead; GND wire via (16.34,8.12); GND wire via (52.62,33.07).
+- **BACK: 45 regions.** GND plane is region 1 at 1279.6 mm2, live through PAD2-1, the promoted GND lead; GND wire via (16.34,8.12); GND wire via (52.62,33.07).
   - 4 region(s) dead BY DESIGN (THT front rings own no net — the R3 finding — and the four flip gauges are read with a loupe, never soldered).
   - 37 region(s) are other nets' routed copper; 41 carry component lands.
-  - **7 unexplained region(s)**: [21, 22, 34, 35, 44, 49] — INVESTIGATE.
+  - 0 raster artifact(s) (<= 1 px = 0.000100 mm2, below any copper this process can leave).
+  - **0 unexplained region(s)**.
 
 ## Silk: what is printed, and what is not
 

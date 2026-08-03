@@ -1322,7 +1322,20 @@ def pour_census(parts: list, m: dict) -> list[str]:
     for face, gbr in (("FRONT", "orbit-F_Cu.gbr"), ("BACK", "orbit-B_Cu.gbr")):
         A = bm.rasterize(os.path.join(GERBERS, gbr), win).astype(bool)
         h, w = A.shape
-        lab, n = ndimage.label(A)
+        # EIGHT-CONNECTED, and it is the fix for the census's own contradiction
+        # (2026-08-02): this labeller was 4-connected while the rest of the
+        # lane has been 8-connected since checks._EIGHT — "copper touching at a
+        # corner is one piece of metal; a rasterised diagonal edge is an
+        # artifact of the grid, not a gap".  Two laws for what counts as ONE
+        # piece of metal is one law too many, and the census had the wrong one:
+        # MEASURED on this artwork, 4-connectivity split SEVEN single-pixel
+        # specks off the back GND plane's own diagonal edges — regions 21, 22,
+        # 34, 35, 44, 49 and 50, each exactly 1 px = 0.000100 mm2, each
+        # touching the plane at a corner, two of them (34/35, 49/50) diagonal
+        # PAIRS of each other — and reported them as unexplained copper.  They
+        # are the plane.  Under this structure the back census reads 45 regions
+        # instead of 52 and NOTHING is unexplained; no copper changed.
+        lab, n = ndimage.label(A, structure=np.ones((3, 3), int))
         area = ndimage.sum(A, lab, range(1, n + 1))
         pxmm2 = (w - 1) * (h - 1) / (win.w_mm * win.h_mm)
 
@@ -1354,9 +1367,25 @@ def pour_census(parts: list, m: dict) -> list[str]:
             for p in part.pins:
                 if face == "BACK":
                     pads.setdefault(at(p.x, p.y), []).append(p.pid)
-        unex = [k for k in range(1, n + 1)
+        rest = [k for k in range(1, n + 1)
                 if k not in live and k not in dead and k not in sig
                 and k not in pads]
+        # THE ARTIFACT BAR, and it is a guard rather than an excuse.  One
+        # raster pixel at the census resolution is 1/pxmm2 = 0.000100 mm2 at
+        # 100 px/mm; the smallest copper this PROCESS can leave behind is
+        # bounded from below by the isolation bit that cuts around it (0.30 mm
+        # wide, so ~0.09 mm2 = 900 px for anything the mill could actually
+        # produce, and the sliver rule in checks.residual_checks refuses
+        # fragments far bigger than that).  A region at or under one pixel is
+        # therefore not copper at all — it is the rasteriser's report of a
+        # polygon boundary, four orders of magnitude below the smallest real
+        # feature.  It is counted and named as an ARTIFACT, never folded into a
+        # class it is not and never called unexplained.  With the connectivity
+        # fixed this bar catches nothing on this artwork (both faces read 0),
+        # which is the honest state: the specks it was written for were the
+        # plane all along.
+        art = [k for k in rest if area[k - 1] / pxmm2 <= 1.0 / pxmm2]
+        unex = [k for k in rest if k not in art]
         out.append(f"- **{face}: {n} regions.** GND plane is region {plane} at "
                    f"{area[plane - 1] / pxmm2:.1f} mm2, live through "
                    f"{'; '.join(live[plane])}.")
@@ -1365,8 +1394,18 @@ def pour_census(parts: list, m: dict) -> list[str]:
                    f"four flip gauges are read with a loupe, never soldered).")
         out.append(f"  - {len(sig)} region(s) are other nets' routed copper; "
                    f"{len(pads)} carry component lands.")
+        # THE COUNT AND THE LIST ARE THE SAME OBJECT.  They were not: the count
+        # was len(unex) and the list was unex[:6], so the back census published
+        # "7 unexplained region(s): [21, 22, 34, 35, 44, 49]" — six names for
+        # seven regions, and the seventh (region 50) was invisible to anyone
+        # trying to investigate it.  A census that truncates its own evidence
+        # is a census nobody can check.
+        out.append(f"  - {len(art)} raster artifact(s) "
+                   f"(<= 1 px = {1 / pxmm2:.6f} mm2, below any copper this "
+                   f"process can leave)"
+                   + (f": {art}." if art else "."))
         out.append(f"  - **{len(unex)} unexplained region(s)**"
-                   + (f": {unex[:6]} — INVESTIGATE." if unex else "."))
+                   + (f": {unex} — INVESTIGATE." if unex else "."))
     return out
 
 
