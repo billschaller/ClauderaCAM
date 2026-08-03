@@ -1,8 +1,9 @@
 # Board B — "orbit": the PCB lane's first DOUBLE-SIDED job ([pcb] + [twosided]).
 #
 # Artwork: boards/orbit/gerbers-rnd/, exported by tools-fab.py from the SEALED
-# board orbit.lht (commit 8a0bb75 — no-LED-bridge, 28 wire vias, stitch 29,
-# both gates green) through pcb-rnd -x cam and gerber_filter.py.
+# board orbit.lht (final 66x56 board: ZERO bench jumpers, 23 wire vias + the
+# PAD2-1 promotion = the 24-hole stitch list, board gate 23/23 + route gate
+# 22/22 green) through pcb-rnd -x cam and gerber_filter.py.
 #
 # PROVENANCE. Nothing here is a preference. Every machine number is either (a)
 # a blessed value from Board A's cut job (tests/golden_pcb/coupon.toml, itself

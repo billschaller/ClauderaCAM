@@ -30,9 +30,10 @@ delta NEW" — a 0.3 spring tip spiralling across a hole drops in and levers the
 pad off). That is why the board's O1.0 hole-centred pads are O2.50: the lap
 band only exists when the ring clears 2*(tool_r) + the gate's inside/rim bars.
 
-The board also ships ONE DECLARED BENCH JUMPER (MATRIX.md "BENCH JUMPERS").
-It is an assembly step, not machine copper: nothing here emits a toolpath for
-it and the raster gate correctly judges the artwork as drawn.
+The board ships ZERO bench jumpers (MATRIX.md "JUMPER RETIREMENT" — the
+2026-08-02 growth to 66x56 closed every net in copper; the declaration law
+survives in tools-route.py with an empty table, so a future jumper is a
+declared artifact, never an accident).
 """
 from __future__ import annotations
 

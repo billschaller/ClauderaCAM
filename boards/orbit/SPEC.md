@@ -498,7 +498,7 @@ board exists to exercise.
    if clamping, auto-level over the board area, Z0 on front copper.
 2. **Side A (FRONT) phases 1–5**: iso (vee) → clear (0.8 corn) →
    mask squeegee + UV cure *[operator]* → silk laser → scrub.
-3. **Drills**: all 53 board through-holes with the 0.8 corn (helical),
+3. **Drills**: all 70 board through-holes with the 0.8 corn (helical),
    then burr-skim + peck the two Ø2.0 pin holes into the spoilboard.
 4. Set the pins, flip about Y, re-tape, re-level (Z0 on back copper;
    **confirm no probe point sits in a hole**).
@@ -546,7 +546,7 @@ self-test first, always — it is the board's own continuity check.
 | 3 | mask, twice | two squeegee/cure cycles in two setups; whether cured mask + white legend survive being taped face-down (Decision Q4: risk accepted — if the tape lifts the legend, that is an Article II incident) |
 | 4 | silk, twice | first board where the legend is load-bearing: 12 cathode ticks decide whether the ring works at all |
 | 5 | scrub, twice | disc laps on side A (no holes yet) and the new **annular** laps on side B (holes everywhere) |
-| — | drill-once-from-side-A | 53 bores in five diameter classes with one 0.8 corn, plus the hole schedule check |
+| — | drill-once-from-side-A | 70 bores in four diameter classes (61×Ø1.0, 2×Ø1.5, 3×Ø1.8, 4×Ø3.4 — the as-built board, not the pre-growth 53) with one 0.8 corn, plus the hole schedule check |
 | — | pins + flip | pins law on a 1.5 mm sheet: symmetry, keep-out, spotface + peck into the spoilboard, flush seat |
 | — | **flip gauges** | turns pin-slop from an estimate into a measured number — the open item DESIGN.md names |
 | 6 | cutout | tabs on side 2, tab census, hand snap, 1.0 mm tab-zone copper keep-out |

@@ -43,6 +43,21 @@ import subprocess
 import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+
+# The MATRIX pour census reads the raster stack (numpy/gerbv), which lives in
+# the repo venv — and pour_census DEGRADES to "not measured" rather than
+# crashing when the import fails, so a system-python run silently publishes a
+# censusless MATRIX.md (it did, 2026-08-02). Re-exec into the venv the way
+# tools-fab.py and tools-cam.py already do: one command, one answer.
+# (compare sys.prefix, not the interpreter path: .venv/bin/python is a SYMLINK
+# to the system python, so resolve() makes the two indistinguishable and the
+# guard silently never fires.)
+_VENV = os.path.join(os.path.dirname(os.path.dirname(HERE)), ".venv")
+if (os.path.isfile(os.path.join(_VENV, "bin", "python"))
+        and sys.prefix != _VENV):
+    _py = os.path.join(_VENV, "bin", "python")
+    os.execv(_py, [_py, os.path.abspath(__file__), *sys.argv[1:]])
+
 sys.path.insert(0, HERE)
 
 import pathfind                                        # noqa: E402
