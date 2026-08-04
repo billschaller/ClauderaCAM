@@ -146,9 +146,10 @@ COPPER_CLEAR = CLEAR + DRC_MARGIN
 #
 # DOWNSTREAM CONSEQUENCES OF THESE TWO NUMBERS, stated here because they live in
 # other files: the flip mirror line is BOARD_W/2 (now x = 33.0) and the
-# registration pins sit ON it at (BOARD_W/2, -8.0) and (BOARD_W/2, BOARD_H+8.0)
-# = (33, -8) and (33, 64); the blank must cover BOARD_W x (BOARD_H+16) = 66 x
-# 72, which the operator's 150 x 100 stock clears comfortably.  Pins and job
+# registration pins sit ON it at (BOARD_W/2, -3.6) and (BOARD_W/2, BOARD_H+3.6)
+# = (33, -3.6) and (33, 59.6) — just clear of the edge cut, operator ruling
+# 2026-08-03; the blank must cover BOARD_W x (BOARD_H+7.2) = 66 x 63.2, which
+# the operator's 150 x 100 stock clears easily.  Pins and job
 # frames are declared in the JOB TOML, not here — and tools-fab.py MEASURES the
 # exported Edge_Cuts extents against them rather than trusting either file.
 # W grew a second time (60 -> 64) for the RIGHT STRIP, measured the same way:

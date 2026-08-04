@@ -46,9 +46,10 @@ out = "out"
 
 [blank]
 # Same 150x100x1.5 copper-clad stock as Board A, long side along X. The board
-# is 66 x 56 and the pins sit 8mm off each short edge, so the blank must cover
-# 66 x 72 plus pin clearance — this stock clears that comfortably (pcbjob.load
-# measures the span: 76.0 in y against the blank's 100).
+# is 66 x 56 and the pins sit 3.6mm off each short edge (operator ruling
+# 2026-08-03: just clear of the edge cut, not 8mm of comfort), so the blank
+# must cover 66 x 63.2 plus pin clearance — this stock clears that easily
+# (pcbjob.load measures the span: 67.2 in y against the blank's 100).
 width = 150.0
 height = 100.0
 thickness = 1.5
@@ -85,20 +86,25 @@ flip_axis = "y"
 first = "back"
 
 [pins]
-# Registration pins in the blank's WASTE, on the mirror line, 8mm clear of the
-# board's short edges — tools-board.py's own comment fixes them at
-# (BOARD_W/2, -8) and (BOARD_W/2, BOARD_H+8). These are MACHINE-frame
-# coordinates (a pin is not on the board); the gauge positions in [rules] are
-# GERBER-frame. The pin program rides SETUP 1 (back up, mirrored frame) —
-# but both pins sit ON the mirror line, so the mirror maps each onto itself
-# and the emitted coordinates are frame-independent — verified against the grammar's
-# own symmetry test (flip about x=33.000 maps the pair onto itself) and its
-# keep-out test (machined envelope -3.4..69.4 x -3.4..59.4 after growing by the
-# 1.4 clear margin and pin_r + PIN_CLEAR; both pins fall outside — y -8.0 and
-# y 64.0 against a band that ends at -3.4 and 59.4).
+# Registration pins in the blank's WASTE, on the mirror line, 3.6mm clear of
+# the board's short edges — JUST clear of everything that machines off-board
+# (operator ruling 2026-08-03: as close as safe, not 8mm of comfort). The
+# derivation, worst reach first: the clearing tool's EDGE sweeps 1.475
+# off-board (margin 1.4 offset contour + Ø0.8 corn), the cutout's edge 1.075
+# (ride 0.575 + Ø1.0); pin edge = centre - 1.0. At 3.6 the steel sits
+# 3.6-1.0-1.475 = 1.125 from the worst cut — over the PIN_CLEAR 1.0 law with
+# 0.125 to spare, and clear of the grammar's envelope bar (3.4: board grown
+# by clear margin 1.4 + pin_r + PIN_CLEAR) by 0.2. Not AT either bar — a job
+# that asks for exactly a bar is a coin flip (the margin lesson, 3 strikes).
+# These are MACHINE-frame coordinates (a pin is not on the board); the gauge
+# positions in [rules] are GERBER-frame. The pin program rides SETUP 1 (back
+# up, mirrored frame) — but both pins sit ON the mirror line, so the mirror
+# maps each onto itself and the emitted coordinates are frame-independent —
+# verified against the grammar's own symmetry test (flip about x=33.000 maps
+# the pair onto itself) and its keep-out test.
 diameter = 2.0
 length = 12.0
-positions = [[33.0, -8.0], [33.0, 64.0]]
+positions = [[33.0, -3.6], [33.0, 59.6]]
 # Decision Q11: BOTH allowances declared 0. seat_extra 0 because the pin is cut
 # to the blank+spoilboard stack and seating proud is caught at the bench, not
 # bought with depth; tip_allowance 0 because the pin is accepted seating on the
