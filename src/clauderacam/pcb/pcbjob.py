@@ -116,6 +116,23 @@ ROLE_CHAIN = {
 EXCISE_PIN_MEAT = 2.0    # mm of laminate the rect must keep beyond each
 #                          pin HOLE rim — the annulus that locates the flip
 
+# The PROUD-PIN model ([pins] bore_depth, 2026-08-03 — a 2mm-spoilboard run
+# cannot swallow a 12mm dowel): the bore is declared, the pin stands proud,
+# the flipped blank drops over it.
+PIN_BED_CLEAR_MIN = 0.5  # bed clearance floor for a DECLARED bore: the peck
+#                          full-retracts every step and the gate re-measures
+#                          the floor to HOLE_DEPTH_TOL; the swallowed model
+#                          keeps its 2.0 because its depth is derived from
+#                          pin hardware, not chosen (DESIGN.md 2026-08-03)
+PIN_PROUD_MAX = 13.0     # the Z15 park traverse must clear proud steel by
+#                          >= 2.0mm
+PHASE_BED_CLEAR_MIN = 1.0  # bed clearance for through-CUTS (was a flat 2.0
+#                          that silently required a 2.5mm+ spoilboard): the
+#                          breakthrough clause above it caps excursion at
+#                          0.5 into the spoilboard, every floor is
+#                          gate-verified exact, and the 2026-08-03 bench
+#                          runs a 2.0mm sheet (DESIGN.md)
+
 # The registration-pin pseudo-phases: spot-face then peck, exactly the coin
 # lane's two ops (ops/drill.py). They are DERIVED from [pins] — a config that
 # writes [phases.front.pinspot] by hand is refused, the same way
@@ -651,7 +668,7 @@ def _validate_phases(j: PcbJob) -> None:
             f"{SCRUB_Z_MAX}] — the spring preload band is law: -0.25 "
             f"peeled traces off a bowed blank, shallower than -0.18 "
             f"leaves film (field record 2026-07-19)")
-    for ph in ("drills", "cutout"):
+    for ph in ("drills", "cutout", "bores", "excise"):
         if not j.has_phase(ph):
             continue
         z = j.phases[ph]["depth"]
@@ -659,10 +676,11 @@ def _validate_phases(j: PcbJob) -> None:
             raise ValueError(
                 f"phases.{ph} depth {z} does not break through the "
                 f"{t} blank")
-        if z < -(t + j.spoil_thickness - 2.0):
+        if z < -(t + j.spoil_thickness - PHASE_BED_CLEAR_MIN):
             raise ValueError(
-                f"phases.{ph} depth {z} runs within 2mm of the machine "
-                f"bed under a {j.spoil_thickness} spoilboard")
+                f"phases.{ph} depth {z} leaves less than "
+                f"{PHASE_BED_CLEAR_MIN}mm of the {j.spoil_thickness} "
+                f"spoilboard over the machine bed")
         if z < -(t + 0.5):
             raise ValueError(
                 f"phases.{ph} depth {z} more than 0.5 into the "
@@ -833,14 +851,37 @@ def _validate_twosided(j: PcbJob) -> None:
                 f"and accept the pin seating on the drill cone instead "
                 f"(orbit decision Q11)")
     depth = pin_depth(j)
+    proud = "bore_depth" in pins
     if depth <= j.thickness:
         raise ValueError(
             f"pin depth {depth} does not pass through the {j.thickness} "
             f"blank — a blind hole cannot register a flip")
-    if depth > j.thickness + j.spoil_thickness - 2.0:
+    bed_clear = PIN_BED_CLEAR_MIN if proud else 2.0
+    if depth > j.thickness + j.spoil_thickness - bed_clear:
         raise ValueError(
-            f"pin depth {depth} comes within 2mm of the machine bed (blank "
-            f"{j.thickness} + spoilboard {j.spoil_thickness})")
+            f"pin depth {depth} comes within {bed_clear}mm of the machine "
+            f"bed (blank {j.thickness} + spoilboard {j.spoil_thickness})"
+            + ("" if proud else " — on a thin spoilboard, declare "
+               "[pins] bore_depth and let the pin stand PROUD instead"))
+    if proud:
+        protrusion = float(pins["length"]) - depth
+        if protrusion <= 0:
+            raise ValueError(
+                f"[pins] bore_depth {depth} swallows the {pins['length']} "
+                f"pin — a proud declaration that is not proud is the "
+                f"swallowed model with its own laws; drop bore_depth")
+        if protrusion > PIN_PROUD_MAX:
+            raise ValueError(
+                f"the pin stands {protrusion:.1f}mm proud of the blank — "
+                f"the Z15 park traverse clears proud steel by "
+                f"{15.0 - protrusion:.1f}, under the "
+                f"{15.0 - PIN_PROUD_MAX:g}mm bar. Shorter pins or a deeper "
+                f"bore")
+        if depth - j.thickness < 1.0:
+            raise ValueError(
+                f"a proud pin engages only {depth - j.thickness:.2f}mm of "
+                f"spoilboard — under 1.0 the dowel wobbles in MDF and the "
+                f"registration is fiction")
     spot_depth = float(pins.get("spot_depth", 0.1))
     if depth > drill.flute_length + spot_depth:
         raise ValueError(
@@ -935,6 +976,15 @@ def pin_depth(j: PcbJob) -> float:
     refused by the same bed check as before — the knob buys honesty, not
     reach."""
     p = j.pins
+    if "bore_depth" in p:
+        # PROUD-PIN MODEL (operator incident 2026-08-03: a 2mm spoilboard
+        # run — the swallowed-pin formula below derives 12.0 for a Ø2x12
+        # dowel and would drill 8.5mm into the machine BED). `bore_depth`
+        # declares the hole explicitly; the pin stands proud of the blank
+        # by (length - bore_depth) and the flipped blank drops OVER it.
+        # The validator owns the proud laws: through the blank, off the
+        # bed (PIN_BED_CLEAR_MIN), protrusion under the park height.
+        return float(p["bore_depth"])
     return float(p["length"]) + float(p.get("seat_extra", 0.2)) \
         + float(p.get("tip_allowance", 0.6))
 

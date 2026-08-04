@@ -599,7 +599,7 @@ caught("pins that do not fit the blank refuse",
 caught("a pin hole that reaches for the machine bed refuses",
        lambda: pcbjob.load(variant("v-deep.toml",
                                    ("length = 8.0", "length = 12.0"))),
-       "within 2mm of the machine bed")
+       "of the machine bed")
 # orbit decision Q11: the Ø2x12 dowel IS usable when the job declares the
 # seat and tip allowance instead of taking the coin defaults — 12 + 0 + 0
 # = 12.0 clears the 12.2 the bed allows (and the drill's 12.0 flute + 0.1
@@ -623,7 +623,7 @@ caught("a declared depth that still reaches the bed refuses",
            "v-q11deep.toml", ("length = 8.0",
                               "length = 12.5\nseat_extra = 0.0\n"
                               "tip_allowance = 0.0"))),
-       "within 2mm of the machine bed")
+       "of the machine bed")
 caught("a pin hole deeper than the drill's reach + counterbore refuses",
        lambda: pcbjob.load(variant("v-reach.toml",
                                    ("length = 8.0", "length = 11.9"),

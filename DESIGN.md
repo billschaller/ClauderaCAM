@@ -2461,3 +2461,37 @@ DIFFER — the filtered gerbers carry board-frame coordinates while the
 Excellon is y-flipped — discovered when the first inert list matched
 zero flashes. Each export now states its frame and is refused loudly on
 drift; nothing guesses.
+
+## The proud-pin model and the thin-spoilboard bench save (2026-08-03)
+
+The operator caught it at the machine: this run's spoilboard is a 2mm
+sheet, not the 12.7 MDF every pin number assumed, and the committed pins
+program pecks to -12.0 — 8.5mm into the machine BED. Two law changes and
+one one-off came out of it:
+
+**[pins] bore_depth — the proud-pin model.** The swallowed formula
+(length + allowances) derives depth from HARDWARE, so a thin spoilboard
+makes it impossible: a 12mm dowel cannot be swallowed by a 3.5mm stack.
+A declared bore_depth makes the hole explicit and the pin stands proud;
+its laws: through the blank, >= 1.0mm of spoilboard engagement (a dowel
+located by MDF alone wobbles), protrusion <= PIN_PROUD_MAX 13.0 (the Z15
+park must clear proud steel by 2.0), and bed clearance >=
+PIN_BED_CLEAR_MIN 0.5 — lower than the swallowed model's 2.0 because a
+DECLARED floor is chosen and gate-verified exact, while the swallowed
+depth inherits pin-hardware tolerance.
+
+**PHASE_BED_CLEAR_MIN 1.0 for through-cuts** (was a flat 2.0 that
+silently required a 2.5mm+ spoilboard): the adjacent clause already caps
+excursion at 0.5 into the spoilboard, floors are gate-verified, and the
+bench really does run thin sheets. The loop also gained `bores` and
+`excise` — both cut -1.7 and had silently escaped the bed law.
+
+**The salvage one-off** (boards/orbit/tools-salvage.py): spot + peck the
+two pin holes to -1.7 only — the blank's O2.0 holes are the registration
+DATUM and need no spoilboard engagement, because the deep holes go into a
+hand-cut thick spoilboard drilled THROUGH the snapped-out sub-blank as
+its own template. The script overrides [pins] after load (stated bypass
+of the engagement refusal, whose premise — spoilboard-located pins —
+does not apply) and re-verifies the emitted bytes through the real gate.
+orbit.toml keeps the durable 12.7/swallowed config: after the salvage
+the shop owns a thick spoilboard again.
