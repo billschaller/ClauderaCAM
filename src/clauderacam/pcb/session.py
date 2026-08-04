@@ -214,7 +214,13 @@ def cutting_polylines(sj: SheetJob, nc_path) -> tuple[list, float, float]:
 # that quietly omits pads is the same class of lie as a preview of the
 # target model.
 _AD = re.compile(r"%ADD(\d+)([A-Za-z_.$][A-Za-z0-9_.$]*),([-0-9.X]+)\*%")
-_DN = re.compile(r"^D(\d+)\*")
+_DN = re.compile(r"^(?:G54)?D(\d+)\*")   # KiCad writes `D38*`, pcb-rnd the
+#                                          RS-274D-style `G54D38*`; missing
+#                                          the G54 form made every pcb-rnd
+#                                          flash resolve to kind "?" and the
+#                                          aperture overlay silently emptied
+#                                          (found on orbit's scrub session,
+#                                          2026-08-03)
 _GN = re.compile(r"\bG0?([123])(?=[XYIJD*])|\bG(7[45])\*")
 _IJ = re.compile(r"([IJ])([-+]?\d+)")
 _ARC_STEP = 0.05        # mm along a G75 arc — a reference layer, not a path
@@ -424,7 +430,10 @@ def overlay_for(job: PcbJob, name: str, text: str, nc_path,
         boardmaps.extents(job.files["edge"], cross_check=False), job.anchor,
         job.mirror)
     mask = _gerber_layer(offset, job.files["mask"], "mask_ap",
-                         "B.Mask apertures (gerber)", "#6fdc8c",
+                         f"{job.files['mask'].stem.split('-')[-1]} "
+                         f"apertures (gerber)", "#6fdc8c",
+                         on=(name == "scrub"),   # scrub laps are unreadable
+                         #                         without the pads they lap
                          mirror=job.mirror)
     if mask:
         mask["note"] += " — the solderable openings: silk strokes must " \
@@ -444,7 +453,8 @@ def overlay_for(job: PcbJob, name: str, text: str, nc_path,
                      f"frame and is not drawn here")
         return {"layers": layers, "notes": notes}
     paste = _gerber_layer(offset, paste_p, "paste_ap",
-                          "B.Paste apertures (gerber)", "#7aa2ff",
+                          f"{paste_p.stem.split('-')[-1]} apertures "
+                          f"(gerber)", "#7aa2ff",
                           mirror=job.mirror)
     if paste:
         paste["note"] += " — the stencil source for the run sheet's " \
