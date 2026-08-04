@@ -512,7 +512,9 @@ check("each setup CUTS its own partition of that one schedule",
       and front.files["bores_drl"] == back.files["bores_drl"],
       f"{front.files['drl_cut'].name} / {back.files['drl_cut'].name}")
 check("the program split is per SETUP, and the pin block is setup 1's fifth",
-      pcbjob.programs_of(front) == pcbjob.ROLE_PROGRAMS["first"]
+      pcbjob.programs_of(front) == {k: v for k, v in
+                                    pcbjob.ROLE_PROGRAMS["first"].items()
+                                    if k != "excise"}   # optional, unconfigured
       and pcbjob.programs_of(back) == pcbjob.ROLE_PROGRAMS["second"]
       and list(pcbjob.programs_of(front)) == ["mill", "silk", "scrub",
                                               "holes", "pins"]
@@ -1861,6 +1863,89 @@ rep = checks.verify_program(front, "pins", badpin, ctx.maps("front"),
 catches("a pin bore 0.4 off the configured position",
         rep.checks, "pindrill only at pin positions",
         must_pass=("pinspot only at pin positions", "pindrill floor Z"))
+
+# ============================== the excise sub-blank cut (2026-08-03 request)
+# Setup 1's optional LAST program: a tabbed rectangle around board + pins so
+# the operator snaps a registered sub-blank out of stock that will not fit
+# the workholding once flipped. Grammar refusals first, then the honest
+# program through the gate, then the tampered ones — a check that cannot
+# fail is not a check.
+print("\nthe excise sub-blank cut:")
+EX_BLOCK = """[phases.front.excise]
+tool = 7
+depth = -1.7
+dpp = 0.3
+gaps = "2lr"
+gapsize = 1.5
+feed = 500
+plunge = 200
+margin_x = 4.0
+margin_y = 8.5
+
+"""
+
+
+def ex_variant(name, block):
+    return variant(name, ("[phases.front.bores]",
+                          block + "[phases.front.bores]"))
+
+
+exjob = pcbjob.load(ex_variant("job-excise.toml", EX_BLOCK))
+exf = pcbjob.side_view(exjob, "front")
+check("excise: setup 1's split gains program F",
+      list(pcbjob.programs_of(exf)) == ["mill", "silk", "scrub", "holes",
+                                        "pins", "excise"]
+      and pcbjob.programs_of(exf)["excise"] == ("excise",),
+      str(list(pcbjob.programs_of(exf))))
+check("excise: the plain job still has no excise program",
+      "excise" not in pcbjob.programs_of(front), "optional means optional")
+check("excise: rect derives from the margins",
+      pcbjob.excise_rect(exjob) == (-4.0, -8.5, 24.0, 23.5),
+      str(pcbjob.excise_rect(exjob)))
+caught("excise: a rect starving the pin annulus refuses (pin meat)",
+       lambda: pcbjob.load(ex_variant(
+           "job-exmeat.toml",
+           EX_BLOCK.replace("margin_y = 8.5", "margin_y = 6.2"))),
+       "laminate beyond the pin hole")
+caught("excise: a rect eating the clearing rim refuses (envelope)",
+       lambda: pcbjob.load(ex_variant(
+           "job-exenv.toml",
+           EX_BLOCK.replace("margin_x = 4.0", "margin_x = 1.6"))),
+       "machined envelope")
+caught("excise: the silent-sever tab family refuses here too",
+       lambda: pcbjob.load(ex_variant(
+           "job-exgap.toml",
+           EX_BLOCK.replace('gaps = "2lr"', 'gaps = "corners"'))),
+       "tab placement")
+
+ex_path = write_program(exf, "excise",
+                        [reemit.excise_ops(exf, win=win)])
+ex_maps = checks.board_maps(exf)
+ex_rep = checks.verify_program(exf, "excise", ex_path, ex_maps)
+check("excise: the honest program PASSES its whole report",
+      ex_rep.ok, "; ".join(c.name for c in ex_rep.checks if not c.ok))
+check("excise: the report carries all five excise laws",
+      {"excise ride", "excise floor", "excise tab census",
+       "excise pin meat", "excise clear of the board"}
+      <= {c.name for c in ex_rep.checks},
+      str(sorted(c.name for c in ex_rep.checks)))
+
+bad = mutate(ex_path, "excise-shifted",
+             lambda t: t.replace("X-4.5000", "X-5.2000"))
+catches("a shifted excise path (X-4.5 -> X-5.2)",
+        checks.verify_program(exf, "excise", bad, ex_maps).checks,
+        must_fail="excise ride", must_pass=("excise floor",))
+
+exthin = pcbjob.load(ex_variant(
+    "job-exthin.toml", EX_BLOCK.replace("gapsize = 1.5", "gapsize = 0.2")))
+exthinf = pcbjob.side_view(exthin, "front")
+thin_path = write_program(exthinf, "excise",
+                          [reemit.excise_ops(exthinf, win=win)])
+catches("tabs below the 1.0 material bar",
+        checks.verify_program(exthinf, "excise", thin_path,
+                              ex_maps).checks,
+        must_fail="excise tab census", must_pass=("excise ride",))
+
 
 # ======================================== local bonus: the REAL engine, twice
 # CI never runs FlatCAM (PCB-PLAN WS5). On a box that has the pinned checkout,

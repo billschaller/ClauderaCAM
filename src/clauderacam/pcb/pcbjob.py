@@ -102,9 +102,19 @@ SIDE_ORDER = ("front", "back")
 # ordering law in the module docstring. Faces map onto these through
 # [twosided] `first`.
 ROLE_CHAIN = {
-    "first": ("iso", "clear", "mask", "silk", "scrub", "bores"),
+    "first": ("iso", "clear", "mask", "silk", "scrub", "bores", "excise"),
     "second": ("iso", "clear", "mask", "silk", "scrub", "drills", "cutout"),
 }
+# `excise` (OPTIONAL, setup 1, last — after even the pin block): a tabbed
+# edge cut around board + pin footprint, so the operator snaps a registered
+# SUB-BLANK out of stock that will not fit the workholding once flipped
+# (operator request 2026-08-03: L-brackets hold the full blank in setup 1;
+# setup 2 runs on the sub-blank, located by the pins, held by tape). The
+# rectangle is DERIVED from margin_x/margin_y via excise_rect() and
+# validated: it must contain both pin holes with real meat around them and
+# stay clear of everything that machines off-board.
+EXCISE_PIN_MEAT = 2.0    # mm of laminate the rect must keep beyond each
+#                          pin HOLE rim — the annulus that locates the flip
 
 # The registration-pin pseudo-phases: spot-face then peck, exactly the coin
 # lane's two ops (ops/drill.py). They are DERIVED from [pins] — a config that
@@ -131,7 +141,7 @@ PROGRAM_PHASES = {"mill": ("iso", "clear"), "silk": ("silk",),
 ROLE_PROGRAMS = {
     "first": {"mill": ("iso", "clear"), "silk": ("silk",),
               "scrub": ("scrub",), "holes": ("bores",),
-              "pins": PIN_PHASES},
+              "pins": PIN_PHASES, "excise": ("excise",)},
     "second": {"mill": ("iso", "clear"), "silk": ("silk",),
                "scrub": ("scrub",), "holes": ("drills", "cutout")},
 }
@@ -307,9 +317,13 @@ def role_of(job: PcbJob, side: str | None = None) -> str:
 def programs_of(job: PcbJob) -> dict[str, tuple[str, ...]]:
     """The program split THIS job (or side view) is made of. One function so
     the gate, the re-emitter and the viewer never disagree about how many
-    programs a document has or what is in them."""
+    programs a document has or what is in them. `excise` is the one
+    optional program: present exactly when the job configures the phase."""
     if job.side:
-        return ROLE_PROGRAMS[role_of(job)]
+        split = ROLE_PROGRAMS[role_of(job)]
+        if "excise" in split and not job.has_phase("excise"):
+            split = {k: v for k, v in split.items() if k != "excise"}
+        return split
     return PROGRAM_PHASES
 
 
@@ -525,6 +539,7 @@ def load(path: str | Path) -> PcbJob:
         pins=dict(d.get("pins") or {}), rules=dict(d.get("rules") or {}))
     if twoside:
         _validate_twosided(job)
+        _validate_excise(job)
         for side in SIDE_ORDER:
             _validate_phases(side_view(job, side))
     else:
@@ -566,8 +581,11 @@ def _side_table(phases_d: dict, side: str | None,
         raise ValueError(f"unknown phases {sorted(extra)} — the chain is "
                          f"{chain} and its order is law")
     missing = [ph for ph in chain if ph not in phases_d
-               and ph != "mask"]        # mask is an operator step; params
-    #                                     optional (notes only)
+               and ph not in ("mask", "excise")]   # mask is an operator
+    #                                     step (params optional, notes
+    #                                     only); excise is the one OPTIONAL
+    #                                     machine phase — a blank that fits
+    #                                     the workholding needs no sub-blank
     if missing:
         raise ValueError(f"[{where}] missing {missing} — a partial chain is "
                          f"a different process; every machine phase must "
@@ -588,6 +606,11 @@ def _validate_phases(j: PcbJob) -> None:
     need("silk", ("clearance",))
     if j.has_phase("bores"):
         need("bores", ("tool", "depth", "dpp", "feed", "plunge"))
+    if j.has_phase("excise"):
+        need("excise", ("tool", "depth", "dpp", "gaps", "gapsize",
+                        "feed", "plunge", "margin_x", "margin_y"))
+        _tab_spec(j.phases["excise"]["gaps"])   # same silent-sever refusal
+        #                                         family as the cutout's
     cp = j.phases["silk"].get("copper_passes", 1)
     if cp not in (1, 2):
         raise ValueError(
@@ -604,7 +627,8 @@ def _validate_phases(j: PcbJob) -> None:
                         "feed", "plunge"))
 
     kinds = {"iso": "vee", "clear": "flat", "scrub": "scrub",
-             "bores": "flat", "drills": "flat", "cutout": "flat"}
+             "bores": "flat", "drills": "flat", "cutout": "flat",
+             "excise": "flat"}
     for ph, kind in kinds.items():
         if not j.has_phase(ph):
             continue
@@ -665,6 +689,63 @@ def _validate_phases(j: PcbJob) -> None:
 
 
 # ------------------------------------------------------ the flip and its pins
+def excise_rect(j: PcbJob) -> tuple[float, float, float, float]:
+    """The sub-blank rectangle (x0, y0, x1, y1), GERBER frame — the
+    Edge.Cuts extents grown by the excise phase's margin_x/margin_y. One
+    derivation for the generator, the grammar and the gate (Article IV's
+    spirit: never re-derive a frame twice). Machine coordinates come from
+    the same mirror+offset transform every layer gets."""
+    p = (j.side_phases.get(j.sides[0], {}) if j.sides and not j.side
+         else j.phases).get("excise") or {}
+    if not p:
+        raise ValueError(f"{j.name}: no excise phase to derive a rect from")
+    win = boardmaps.extents(j.files["edge"], cross_check=False)
+    mx, my = float(p["margin_x"]), float(p["margin_y"])
+    return (win.x0 - mx, win.y0 - my, win.x1 + mx, win.y1 + my)
+
+
+def _validate_excise(j: PcbJob) -> None:
+    """The sub-blank laws (operator request 2026-08-03): the rect must
+    CONTAIN both pin holes with EXCISE_PIN_MEAT of laminate beyond each
+    rim (the annulus that locates the flip), must stay clear of everything
+    that machines off-board (clear margin, cutout ride) by more than the
+    excise tool itself, and must fit the declared blank."""
+    first = j.sides[0]
+    p = j.side_phases[first].get("excise")
+    if not p:
+        return
+    x0, y0, x1, y1 = excise_rect(j)
+    pin_r = float(j.pins["diameter"]) / 2
+    tool_d = j.tool(p["tool"]).diameter
+    ax, ay = j.anchor      # pins are MACHINE frame; the rect is gerber
+    for px, py in ((float(a) - ax, float(b) - ay)
+                   for a, b in j.pins["positions"]):
+        meat = min(px - x0, x1 - px, py - y0, y1 - py) - pin_r
+        if meat < EXCISE_PIN_MEAT:
+            raise ValueError(
+                f"excise rect ({x0:g},{y0:g})..({x1:g},{y1:g}) leaves only "
+                f"{meat:.2f}mm of laminate beyond the pin hole at "
+                f"({px:g},{py:g}) — the flip locates on that annulus; it "
+                f"needs >= {EXCISE_PIN_MEAT}. Grow margin_x/margin_y")
+    reach = 0.0
+    for phases in j.side_phases.values():
+        reach = max(reach, float(phases["clear"]["margin"]))
+        if phases.get("cutout"):
+            reach = max(reach, j.tool(phases["cutout"]["tool"]).diameter)
+    gap = min(float(p["margin_x"]), float(p["margin_y"])) - reach - tool_d
+    if gap < 0.5:
+        raise ValueError(
+            f"the excise cut (tool Ø{tool_d:g} riding the rect) comes "
+            f"within {gap + 0.5:.2f}mm of the board's machined envelope "
+            f"(reach {reach:g}) — the sub-blank edge must not eat the "
+            f"clearing rim or the cutout ride; grow the margins")
+    if (x1 - x0) + 2 * tool_d > j.blank_w or \
+            (y1 - y0) + 2 * tool_d > j.blank_h:
+        raise ValueError(
+            f"excise rect {(x1 - x0):g} x {(y1 - y0):g} plus the cut does "
+            f"not fit the {j.blank_w:g} x {j.blank_h:g} blank")
+
+
 def _validate_twosided(j: PcbJob) -> None:
     """The pins law, PCB numbers filled in (DESIGN.md 2026-07-28/29,
     boards/orbit/SPEC.md "Pin-and-flip registration") — plus the hole

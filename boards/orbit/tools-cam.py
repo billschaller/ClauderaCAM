@@ -80,6 +80,9 @@ def generate(job, ctx, work: Path) -> dict[str, dict[str, Path]]:
                 text = reemit.silk_program(sj, ctx.tight, mt)[0]
             elif name == "pins":
                 text = reemit.assemble_program(sj, name, reemit.pin_ops(sj))
+            elif name == "excise":
+                text = reemit.assemble_program(
+                    sj, name, [reemit.excise_ops(sj, win=ctx.tight)])
             else:
                 text = reemit.assemble_program(
                     sj, name, [ops[ph] for ph in want])

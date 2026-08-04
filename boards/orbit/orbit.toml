@@ -415,6 +415,27 @@ offset = 0.20
 feed = 400
 plunge = 200
 
+[phases.back.excise]
+# The sub-blank perimeter (operator request 2026-08-03): the 150x100 blank
+# fits the L-brackets for setup 1, but a flipped full blank does not — so
+# setup 1's LAST cut is a tabbed rectangle around board + pin footprint.
+# At the flip the operator snaps the sub-blank free and setup 2 runs on it:
+# located by the pins, held by full-coverage tape. Margins: margin_y 7.0
+# covers the pins at 3.6 + Ø2.0 hole with 2.4mm of locating annulus
+# (law: >= 2.0); margin_x 4.0 keeps the cut 4.0-1.4-1.0 = 1.6 clear of
+# the clearing rim (law: >= 0.5). Sub-blank comes out 74 x 70. Same tool,
+# depth and tab law as the board cutout; tabs "2lr" so the snap force is
+# a clean twist about the long axis.
+tool = 7
+depth = -1.7
+dpp = 0.3
+gaps = "2lr"
+gapsize = 1.5
+feed = 500
+plunge = 200
+margin_x = 4.0
+margin_y = 7.0
+
 [phases.back.bores]
 # The 8 NON-pad holes (4 flip-gauge Ø1.0 + 4 mount Ø3.4), cut at the end
 # of setup 1 from orbit-bores.drl — the fab step's partition of the one

@@ -202,6 +202,17 @@ _SIDE_STEPS = {
          "it is bare copper and machines next",
          "re-level and re-touch Z0 on the {second} copper; NEVER re-zero "
          "XY - it is the registration the pins bought")),
+    ("first", "excise"): (
+        "same setup, still; the sub-blank perimeter with tabs - the full "
+        "blank stays put, nothing comes free yet",
+        ("SNAP the sub-blank out of the stock, then FLIP: set the {pins} "
+         "dowels, turn the SUB-BLANK about {axis} onto them",
+         "deburr the bores' exits on the still-raw {second} face first - "
+         "it is bare copper and machines next",
+         "tape the sub-blank FULL coverage - it is the only workholding "
+         "setup 2 has besides the pins",
+         "re-level and re-touch Z0 on the {second} copper; NEVER re-zero "
+         "XY - it is the registration the pins bought")),
     ("second", "mill"): (
         ("blank FLIPPED onto the pins, re-taped, re-leveled, Z0 = {second} "
          "copper, XY untouched",
@@ -261,6 +272,12 @@ def program_header(job: PcbJob, name: str,
     if job.side:
         sb, sa = _SIDE_STEPS.get((pcbjob.role_of(job), name), (None, None))
         before, after = sb or before, sa or after
+        if (name == "pins" and pcbjob.role_of(job) == "first"
+                and job.has_phase("excise")):
+            # the flip rides the LAST setup-1 program; with an excise cut
+            # configured that is program F, not the pins
+            after = "program F excise - the sub-blank perimeter, no " \
+                    "operator step between"
         fmt.update(first=job.sides[0].upper(), second=job.sides[1].upper())
     if job.has_phase("cutout"):
         c = job.phases["cutout"]
@@ -325,6 +342,71 @@ def assemble_program(job: PcbJob, name: str, ops: list[OpResult]) -> str:
             f"program {name!r} must carry phases {want}, got {got} — the "
             f"split is the job (pcbjob.PROGRAM_PHASES / ROLE_PROGRAMS)")
     return assemble(job, ops, header=program_header(job, name, ops))
+
+
+def excise_ops(job: PcbJob,
+               win: boardmaps.BoardWindow | None = None) -> OpResult:
+    """The sub-blank excise cut (operator request 2026-08-03): a tabbed
+    rectangle around board + pin footprint, cut LAST in setup 1 so the
+    operator snaps a registered sub-blank out of stock that will not fit
+    the workholding once flipped. Native emission, like the pin block — a
+    rectangle with tab gaps is four polyline chains and needs no external
+    engine; every line goes through emit.assemble's parser (Article V).
+
+    Geometry: the derived pcbjob.excise_rect, path riding tool-radius
+    OUTSIDE it so the sub-blank keeps its declared size; corners are sharp
+    polyline corners (the overcut lands in waste). Tabs follow the
+    cutout's law and precedent: the "2lr" placement puts two on each of
+    the LEFT and RIGHT edges at the quarter points, the gaps exist at
+    EVERY depth pass (full-height tabs, more conservative than the bar),
+    and the gap in path length is gapsize + one tool diameter so the
+    MATERIAL left is exactly gapsize."""
+    p = job.phases["excise"]
+    tool = job.phase_tool("excise")
+    r = tool.diameter / 2
+    win = win or boardmaps.extents(job.files["edge"], cross_check=False)
+    x0, y0, x1, y1 = pcbjob.excise_rect(job)
+    px0, py0, px1, py1 = x0 - r, y0 - r, x1 + r, y1 + r
+    depth, dpp = float(p["depth"]), float(p["dpp"])
+    feed, plunge = float(p["feed"]), float(p["plunge"])
+    gh = (float(p["gapsize"]) + tool.diameter) / 2   # half a PATH gap
+    if pcbjob.tab_count(p["gaps"]) != 4 or "lr" not in str(p["gaps"]).lower():
+        raise ValueError(
+            f"excise gaps {p['gaps']!r}: this generator implements the "
+            f"'2lr' placement (two tabs per left/right edge, the cutout's "
+            f"own steering precedent) — another placement is new work, "
+            f"not a silent variation")
+    yq1 = py0 + (py1 - py0) * 0.25
+    yq3 = py0 + (py1 - py0) * 0.75
+    chains = [
+        [(px1, yq1 + gh), (px1, yq3 - gh)],                    # right mid
+        [(px1, yq3 + gh), (px1, py1), (px0, py1),
+         (px0, yq3 + gh)],                                     # top U
+        [(px0, yq3 - gh), (px0, yq1 + gh)],                    # left mid
+        [(px0, yq1 - gh), (px0, py0), (px1, py0),
+         (px1, yq1 - gh)],                                     # bottom U
+    ]
+    off = boardmaps.machine_offset(win, job.anchor, job.mirror)
+    zs = [round(-dpp * k, 4) for k in range(1, int(abs(depth) / dpp) + 1)]
+    if not zs or abs(zs[-1] - depth) > 1e-9:
+        zs.append(depth)
+    lines: list[str] = []
+    for z in zs:
+        for ch in chains:
+            mx, my = boardmaps.machine_xy(off, job.mirror,
+                                          [q[0] for q in ch],
+                                          [q[1] for q in ch])
+            lines += [f"G0 Z2.0000",
+                      f"G0 X{mx[0]:.4f} Y{my[0]:.4f}",
+                      f"G1 Z{z:.4f} F{plunge:g}",
+                      f"G1 X{mx[1]:.4f} Y{my[1]:.4f} F{feed:g}"]
+            lines += [f"G1 X{a:.4f} Y{b:.4f}"
+                      for a, b in zip(mx[2:], my[2:])]
+    lines.append("G0 Z2.0000")
+    plen = path_length(lines)
+    return OpResult(label="pcb-excise", kind="excise", tool=tool.num,
+                    lines=lines, path_len_mm=plen,
+                    est_min=plen / max(feed, 1.0))
 
 
 def pin_ops(job: PcbJob) -> list[OpResult]:

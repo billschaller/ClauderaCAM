@@ -754,23 +754,47 @@ def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
              f"{n_pins}x Ø{job.pins['diameter']:g} spot-faced to "
              f"Z{sides[first].phases['pinspot']['depth']:g} then pecked to "
              f"Z{sides[first].phases['pindrill']['depth']:g}, into the "
-             f"spoilboard — the LAST thing cut in setup 1, in the same "
-             f"setup, so the pins inherit this side's zero and the flip "
-             f"inherits the pins"),
+             f"spoilboard — in the same setup, so the pins inherit this "
+             f"side's zero and the flip inherits the pins"),
+    ]
+    has_excise = bool(sides[first].phases.get("excise"))
+    if has_excise:
+        ex = sides[first].phases["excise"]
+        rx0, ry0, rx1, ry1 = pcbjob.excise_rect(job)
+        steps.append(prog(
+            first, "excise", "the sub-blank perimeter, with tabs",
+            f"a {rx1 - rx0:g} x {ry1 - ry0:g} rectangle around board + "
+            f"pins at Z{ex['depth']:g}, {pcbjob.tab_count(ex['gaps'])} "
+            f"tabs of {ex['gapsize']:g}mm — the full blank never fits the "
+            f"workholding once flipped, so setup 2 runs on this snapped-"
+            f"out sub-blank instead, located by the pins, held by tape"))
+    steps += [
         {"kind": "operator",
-         "title": f"set the pins, FLIP about {job.flip_axis.upper()}, "
-                  f"deburr, re-level",
-         "detail": f"set the {n_pins} dowels in the bores just cut, lift "
-                   f"the blank, deburr the {len(boardmaps.excellon(sides[first].files['drl_cut']))} "
-                   f"bores' exits on the still-raw {second.upper()} face "
-                   f"(scotchbrite is fine — that face is bare copper and "
-                   f"machines next; a burr under tape bows the blank), turn "
-                   f"it about the {job.flip_axis.upper()} axis onto the "
-                   f"pins, re-tape FULL coverage. Re-level and re-touch Z0 "
-                   f"on the {second.upper()} copper — and confirm no probe "
-                   f"point sits in a bore, which would write a false low "
-                   f"into the height map. NEVER re-zero XY: it is the "
-                   f"registration the pins bought."},
+         "title": (f"snap the sub-blank out, set the pins, FLIP about "
+                   f"{job.flip_axis.upper()}, deburr, re-level"
+                   if has_excise else
+                   f"set the pins, FLIP about {job.flip_axis.upper()}, "
+                   f"deburr, re-level"),
+         "detail": (f"lift the blank"
+                    + (", snap the sub-blank free of the stock (file the "
+                       "tab stubs)" if has_excise else "")
+                    + f", set the {n_pins} dowels in the spoilboard bores, "
+                    f"deburr the "
+                    f"{len(boardmaps.excellon(sides[first].files['drl_cut']))} "
+                    f"bores' exits on the still-raw {second.upper()} face "
+                    f"(scotchbrite is fine — that face is bare copper and "
+                    f"machines next; a burr under tape bows the blank), "
+                    f"turn the "
+                    + ("sub-blank" if has_excise else "blank")
+                    + f" about the {job.flip_axis.upper()} axis onto the "
+                    f"pins, tape FULL coverage"
+                    + (" — tape and pins are ALL of setup 2's workholding"
+                       if has_excise else "")
+                    + f". Re-level and re-touch Z0 on the {second.upper()} "
+                    f"copper — and confirm no probe point sits in a bore, "
+                    f"which would write a false low into the height map. "
+                    f"NEVER re-zero XY: it is the registration the pins "
+                    f"bought.")},
     ]
     steps += cycle(second)
     steps += [

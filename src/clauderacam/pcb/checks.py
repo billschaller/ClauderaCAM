@@ -125,7 +125,7 @@ from ..physics import physics_checks
 from ..simulate import OP_MARK, GcodeError, MoveMetrics, parse_line
 from ..twosided import PIN_CLEAR
 from ..verify import Check, Report, contact_limit
-from . import boardmaps
+from . import boardmaps, pcbjob
 from .pcbjob import (GAUGE_MATCH_TOL, PIN_PHASES,  # noqa: F401 (re-exported:
                      PROGRAM_PHASES,
                      PcbJob, programs_of)         # the split moved to the
@@ -1068,10 +1068,106 @@ def pin_keepout_checks(job: PcbJob,
                   f"{PIN_CLEAR} clear)")]
 
 
+def excise_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
+    """The sub-blank excise cut against its DERIVED rectangle (operator
+    request 2026-08-03; pcbjob.excise_rect is the one source of the
+    geometry, so this check can be fully analytic — no raster involved).
+
+    Laws: the path rides tool-radius OUTSIDE the rect (the sub-blank keeps
+    its declared size); floor exactly the phase depth in >= |depth|/dpp
+    passes; the tab census (the cutout's own bar: >= 2 tabs of >= 1.0mm,
+    and exactly what the config declares); both pin holes inside the rect
+    with EXCISE_PIN_MEAT of laminate beyond each rim; and nothing anywhere
+    near the board box (the ride law implies it, but the board is the one
+    thing this cut must never touch, so it is convicted separately)."""
+    p = job.phases["excise"]
+    tool = job.phase_tool("excise")
+    r = tool.radius
+    x0, y0, x1, y1 = pcbjob.excise_rect(job)
+    depth, dpp = float(p["depth"]), float(p["dpp"])
+
+    # every sample must sit ON the offset rectangle's boundary — the path
+    # is the rect grown by the tool radius PER SIDE with sharp polyline
+    # corners (the corner overcut lands in waste), so the reference is that
+    # offset rect's own boundary, not a radial "rect + r" (a corner point
+    # is legitimately r*sqrt(2) from the inner rect)
+    px0, py0, px1, py1 = x0 - r, y0 - r, x1 + r, y1 + r
+    ox = np.maximum(px0 - s.bx, s.bx - px1)
+    oy = np.maximum(py0 - s.by, s.by - py1)
+    outside = np.hypot(np.maximum(ox, 0), np.maximum(oy, 0))
+    ride = np.where(outside > 0, outside, -np.maximum(ox, oy))
+    k = int(np.abs(ride).argmax())
+    out = [Check("excise ride", float(np.abs(ride).max()),
+                 "<= 0.15 off the offset-rect boundary",
+                 float(np.abs(ride).max()) <= 0.15,
+                 f"rect ({x0:g},{y0:g})..({x1:g},{y1:g}) + tool r "
+                 f"{r:g}/side; worst at {s.at(k)}")]
+
+    zs = np.unique(np.round(s.z, 3))
+    need_passes = int(np.ceil(abs(depth) / dpp))
+    out.append(Check("excise floor", float(zs.min()),
+                     f"== {depth:g} in >= {need_passes} passes",
+                     abs(float(zs.min()) - depth) <= 1e-6
+                     and zs.size >= need_passes,
+                     f"{zs.size} depth levels"))
+
+    # tab census on the final-depth samples, by perimeter arc length
+    per = [(x1 - x0), (y1 - y0)] * 2
+    total = 2 * ((x1 - x0) + (y1 - y0))
+
+    def arclen(bx, by):
+        # perimeter parameter, CCW from (x0,y0): bottom, right, top, left
+        t = np.where(np.abs(by - (y0 - r)) <= r + 0.2, bx - x0,
+             np.where(np.abs(bx - (x1 + r)) <= r + 0.2, per[0] + by - y0,
+              np.where(np.abs(by - (y1 + r)) <= r + 0.2,
+                       per[0] + per[1] + (x1 - bx),
+                       2 * per[0] + per[1] + (y1 - by))))
+        return np.mod(t, total)
+
+    fin = np.abs(s.z - depth) <= 1e-6
+    t = np.sort(arclen(s.bx[fin], s.by[fin]))
+    gaps_mm = np.diff(np.concatenate([t, [t[0] + total]])) if t.size \
+        else np.array([total])
+    tabs = gaps_mm[gaps_mm > tool.diameter + 0.3]
+    material = tabs - tool.diameter
+    want_n = pcbjob.tab_count(p["gaps"])
+    ok_tabs = (tabs.size == want_n and material.min() >= 1.0
+               if tabs.size else False)
+    out.append(Check("excise tab census", float(tabs.size),
+                     f"== {want_n} of >= 1.0mm", ok_tabs,
+                     f"material {sorted(round(float(m), 3) for m in material)}"
+                     if tabs.size else "no gaps at final depth — a freed "
+                                       "sub-blank grabs the cutter"))
+
+    ax, ay = job.anchor
+    meat = min(min(float(px) - ax - x0, x1 - (float(px) - ax),
+                   float(py) - ay - y0, y1 - (float(py) - ay))
+               - float(job.pins["diameter"]) / 2
+               for px, py in job.pins["positions"])
+    out.append(Check("excise pin meat", float(meat),
+                     f">= {pcbjob.EXCISE_PIN_MEAT}",
+                     meat >= pcbjob.EXCISE_PIN_MEAT,
+                     "laminate beyond each pin hole rim — the annulus that "
+                     "locates the flip"))
+
+    bx0, by0, bx1, by1 = maps.tight.x0, maps.tight.y0, \
+        maps.tight.x1, maps.tight.y1
+    bdx = np.maximum(bx0 - s.bx, s.bx - bx1)
+    bdy = np.maximum(by0 - s.by, s.by - by1)
+    board_clear = np.hypot(np.maximum(bdx, 0), np.maximum(bdy, 0)) - r
+    on_board = (bdx < 0) & (bdy < 0)
+    out.append(Check("excise clear of the board", float(board_clear.min()),
+                     "tool edge outside the board box, > 0",
+                     not on_board.any() and float(board_clear.min()) > 0,
+                     f"nearest tool-edge approach "
+                     f"{float(board_clear.min()):.3f}mm"))
+    return out
+
+
 PHASE_CHECKS = {"iso": iso_checks, "clear": clear_checks,
                 "scrub": scrub_checks, "drills": hole_checks,
                 "bores": hole_checks,     # same laws, this setup's drl_cut
-                "cutout": cutout_checks,
+                "cutout": cutout_checks, "excise": excise_checks,
                 "pinspot": pin_checks, "pindrill": pin_checks}
 
 
