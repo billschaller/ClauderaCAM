@@ -190,7 +190,7 @@ SHEET_PPM = 12.5
 # Which programs of the split carve, and which are overlay/dialect-only. This
 # is not a preference: `silk` is a laser program (simulate.parse_line refuses
 # M321 by law) and `scrub` drives a tool whose kernel footprint is empty.
-CARVING = ("mill", "holes", "pins")
+CARVING = ("mill", "holes", "pins", "excise")
 OVERLAY_ONLY = ("silk", "scrub")
 
 PIN_POS_TOL = 0.2           # coin lane's own bar (verify.py "drill only at pin
@@ -323,6 +323,14 @@ def window_pad(job: PcbJob) -> float:
         reach = max(reach, float(phases["clear"]["margin"]))
         if phases.get("cutout"):
             reach = max(reach, job.tool(phases["cutout"]["tool"]).diameter)
+        if phases.get("excise"):
+            # the sub-blank cut is the farthest off-board work there is:
+            # its path edge reaches margin + one tool diameter past the
+            # board (2026-08-03; the sheet sim must contain it)
+            ex = phases["excise"]
+            reach = max(reach, max(float(ex["margin_x"]),
+                                   float(ex["margin_y"]))
+                        + job.tool(ex["tool"]).diameter)
     return CHECK_PAD_BASE + reach
 
 
