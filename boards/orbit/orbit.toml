@@ -30,10 +30,12 @@
 # than trusted here — the extents assert above, and the gauge-to-hole match in
 # pcbjob.load for the four [[rules.gauge]] blocks.
 #
-# AT THE MACHINE: blank fixtured on two steel pins through the waste, board
-# copper UP for side 1 (front), flipped about the pins for side 2 (back). The
-# blank never moves within a setup — mask and legend registration die if it
-# does. Auto-level over the board area before each setup's phase 1; Z0 = that
+# AT THE MACHINE: blank taped/clamped, BACK copper UP for setup 1 (the
+# ordering law, 2026-08-03: the solder-heavy face is processed hole-free so
+# its whole solder plan takes full disc scrub), then set the two steel pins
+# through the waste and flip about them for setup 2 (front up). The blank
+# never moves within a setup — mask and legend registration die if it does.
+# Auto-level over the board area before each setup's phase 1; Z0 = that
 # side's copper top. Confirm the blank against the anchor before every program.
 
 [pcb]
@@ -71,14 +73,25 @@ inventory = "../../jobs/inventory.toml"
 # centreline, which boardmaps.flip_line DERIVES from Edge_Cuts + anchor as
 # x = 33.000. The pins below sit ON that line so the flip is a pure involution.
 flip_axis = "y"
+# THE BACK MACHINES FIRST (operator ordering law, 2026-08-03): every pad is
+# scrubbed before any pad hole exists, and the scrub set is the solder plan.
+# The back is the solder-heavy face (all THT joints + reflow), so setup 1
+# disc-scrubs its whole plan on an unholed blank — bare copper to what later
+# becomes each drilled rim. The pad drills run at the END of setup 2 (front
+# up): entry through the clean front where the flush-seat LEDs live, exit
+# burr on the back's finished pads against the tape backing (small, helical,
+# and every one of those pads meets an iron — the run sheet carries the
+# deburr and an IPA wipe for tape residue before paste).
+first = "back"
 
 [pins]
 # Registration pins in the blank's WASTE, on the mirror line, 8mm clear of the
 # board's short edges — tools-board.py's own comment fixes them at
 # (BOARD_W/2, -8) and (BOARD_W/2, BOARD_H+8). These are MACHINE-frame
 # coordinates (a pin is not on the board); the gauge positions in [rules] are
-# GERBER-frame. With anchor [0,0] the two frames coincide for the front setup,
-# which is why these read as board coordinates — verified against the grammar's
+# GERBER-frame. The pin program rides SETUP 1 (back up, mirrored frame) —
+# but both pins sit ON the mirror line, so the mirror maps each onto itself
+# and the emitted coordinates are frame-independent — verified against the grammar's
 # own symmetry test (flip about x=33.000 maps the pair onto itself) and its
 # keep-out test (machined envelope -3.4..69.4 x -3.4..59.4 after growing by the
 # 1.4 clear margin and pin_r + PIN_CLEAR; both pins fall outside — y -8.0 and
@@ -222,10 +235,14 @@ flute_length = 12.0
 shank_diameter = 3.175
 
 # ===========================================================================
-# SIDE 1 — FRONT (setup A: copper up, no holes in the blank yet)
-# Chain: iso -> clear -> [mask squeegee + UV cure, OPERATOR] -> silk -> scrub
-#        -> drills. The drills come LAST in this setup: side 2's annular scrub
-#        needs the holes to exist, and side 1's disc scrub needs them not to.
+# FRONT — SETUP 2 (front up, after the flip; the bores already exist)
+# Chain: iso (cuts the gauge read-out discs — read the four gauges with a
+#        loupe BEFORE the mask squeegee) -> clear -> [mask squeegee + UV
+#        cure, OPERATOR] -> silk -> scrub (the front SOLDER PLAN only: the
+#        stitch vias + the promoted lead; dead rings stay under their coat,
+#        per the inert list) -> drills (EVERY pad hole — both faces are
+#        scrubbed by now, the ordering law's whole point) -> cutout, last
+#        of everything.
 # ===========================================================================
 
 [phases.front.iso]
@@ -281,35 +298,71 @@ feed = 100
 [phases.front.scrub]
 # Board A verbatim: -0.21 is spring PRELOAD, not cut depth, and it is
 # field-tuned — the grammar's band is [-0.25, -0.18] because -0.25 peeled
-# traces off a bowed blank and shallower than -0.18 leaves film. Side 1 has no
-# holes yet, so these are ordinary DISC laps (SPEC "scrub delta": side 1 disc
-# laps, pads deflated -0.10 — Board A's rule).
+# traces off a bowed blank and shallower than -0.18 leaves film. No pad
+# holes exist yet (the ordering law), so these are ordinary DISC laps.
+# `inert` is the board generator's list of dead front rings: mask-open in
+# the ARTWORK (the mask-blind gate's uniformity law) but never soldered,
+# so the scrub skips them and they keep their protective flood coat. What
+# remains in the front plan: the 23 stitch-via rings and the promoted
+# PAD2-1 lead — the joints the bench actually makes on this face.
 tool = 5
 depth = -0.21
 overlap = 45
 offset = 0.15
 feed = 400
 plunge = 200
+inert = "orbit-inert-front.txt"
 
 [phases.front.drills]
-# Board A verbatim, milled not drilled: every hole is helically bored with the
-# 0.8 corn. The PCB twist-drill set is deliberately ABSENT from the crib (its
-# reach was never measured), so milldrills is the only honest option here
-# (Article XI). -1.7 = 1.5 blank + 0.2 breakthrough into the spoilboard.
-# F250 / dpp 0.4 / plunge 150 is Board A's gentled stage: at the field numbers
-# the stage read 99.8% of the fr4 sustained chip-load limit, and this lands it
-# at 67.2% for about a minute and a half of extra machine time.
+# EVERY pad hole on the board, cut only now — after BOTH faces' scrubs
+# (the 2026-08-03 ordering law: a pad is never drilled before it is
+# scrubbed). Board A verbatim numbers, milled not drilled: every hole is
+# helically bored with the 0.8 corn. The PCB twist-drill set is
+# deliberately ABSENT from the crib (its reach was never measured), so
+# milldrills is the only honest option here (Article XI). -1.7 = 1.5 blank
+# + 0.2 breakthrough into the spoilboard. F250 / dpp 0.4 / plunge 150 is
+# Board A's gentled stage (67.2% of the fr4 sustained chip-load limit).
+# The Excellon this phase cuts is orbit-pads.drl — the partition file the
+# fab step splits out; the 8 gauge/mount bores were setup 1's.
 tool = 3
 depth = -1.7
 dpp = 0.4
 feed = 250
 plunge = 150
 
+[phases.front.cutout]
+# Board A verbatim: 1.0 corn, 4 tabs of 1.5mm, -1.7 through, dpp 0.3 ("the
+# tool's own cutting data set the stepdown — 1mm tools like conservative").
+# The tabs are law, not taste (SPEC: >= 2 of >= 1.0mm): a freed board grabs
+# the cutter. The cutout runs LAST of everything, in setup 2.
+#
+# gaps = "2lr", not 4.  A plain count lets FlatCAM spread the tabs around the
+# whole perimeter, and on this board that put one on the BOTTOM edge at
+# (30.75, 0.00) — 0.505 from the pre-placed VCC spine, which sits at
+# SPINE_Y 0.9 with a 0.8 rail and cannot move without lifting the entire
+# bottom-strip power stack.  flip.tab_zone_checks refuses any copper within
+# 1.0 of a tab (a tab that bridges copper tears it off the laminate when it is
+# snapped), so the tabs move instead of the copper: "2lr" puts two tabs on
+# each of the LEFT and RIGHT edges, where the only copper is the GND pour and
+# POUR_EDGE_SETBACK holds it 1.10 back.  Four tabs either way, so the tab
+# census and SPEC's ">= 2 of >= 1.0mm" are unchanged.
+tool = 7
+depth = -1.7
+dpp = 0.3
+gaps = "2lr"
+gapsize = 1.5
+feed = 500
+plunge = 200
+
 # ===========================================================================
-# SIDE 2 — BACK (setup B: blank flipped about the pins, holes already drilled)
-# Chain: iso -> clear -> [mask squeegee + UV cure, OPERATOR] -> silk -> scrub
-#        -> cutout. Read the four flip gauges after this side's iso and BEFORE
-#        the mask squeegee — that is the registration measurement.
+# BACK — SETUP 1 (back up on the virgin blank: the solder-heavy face,
+# processed FIRST per the ordering law so its whole solder plan is scrubbed
+# with zero holes in the board)
+# Chain: iso -> clear -> [mask squeegee + UV cure, OPERATOR] -> silk ->
+#        scrub (FULL disc laps on every solderable aperture — every THT
+#        joint and reflow land on the board is on this face) -> bores (the
+#        8 NON-pad holes: 4 flip gauges + 4 mounts) -> pins -> FLIP.
+#        Deburr the bores' exits on the still-raw front before setup 2.
 # ===========================================================================
 
 [phases.back.iso]
@@ -336,21 +389,19 @@ copper_passes = 2
 feed = 100
 
 [phases.back.scrub]
-# Same spring preload as side 1, but the LAPS are different by SPEC ("scrub
-# delta NEW"): the holes are already drilled, and a 0.3 spring tip spiralling
-# across a O1.0 hole drops in and levers the pad off. Every hole-centred pad
-# therefore gets an ANNULAR lap — tool edge >= 0.15 inside copper AND >= 0.20
-# outside the hole rim — which reemit.annular_laps generates from this table.
+# Same spring preload as the front. FULL disc laps on EVERY solderable
+# aperture — no holes exist yet, so paint covers each pad rim-to-edge and
+# the bench solders to bare copper right up to what setup 2's drills make
+# the rim (the annular-band-with-mask-collar this order retires was the
+# 2026-08-03 finding). No inert list on this face: every back aperture is
+# solder plan (all THT joints are back joints, plus the reflow lands).
 #
-# offset 0.20 on THIS side only (side 1 keeps Board A's 0.15, and passed at
-# it). Measured: at 0.15 a disc lap on the merged pad+track island at board
-# (35.67,36.94) rides 0.2968mm inside copper, i.e. tool edge 0.1468 against
-# the 0.15 `annular scrub inside copper` bar — short by 0.0032mm. That is a
-# job asking for exactly a bar again, and the fix is margin, not a smaller
-# bar. 0.20 is the largest value that keeps the annular band alive: the lap
-# radius is pinned at rc=0.900 (rc_min = hole_r + r + 0.25 = rc_max =
-# pad_r - r - 0.20 on the O2.50 pad), and rc_max's mask term
-# (mask_r - r - max(offset, 0.15)) only stops binding while offset <= 0.25.
+# offset 0.20 on THIS side only (the front keeps Board A's 0.15, and
+# passed at it). Measured 2026-08-02: at 0.15 a disc lap on the merged
+# pad+track island at board (35.67,36.94) rides 0.2968mm inside copper —
+# tool edge 0.1468 against the 0.15 plateau bar, short by 0.0032. The fix
+# is margin, not a smaller bar, and the measurement is about disc laps on
+# merged islands — it survives the ordering rework unchanged.
 tool = 5
 depth = -0.21
 overlap = 45
@@ -358,26 +409,15 @@ offset = 0.20
 feed = 400
 plunge = 200
 
-[phases.back.cutout]
-# Board A verbatim: 1.0 corn, 4 tabs of 1.5mm, -1.7 through, dpp 0.3 ("the
-# tool's own cutting data set the stepdown — 1mm tools like conservative").
-# The tabs are law, not taste (SPEC: >= 2 of >= 1.0mm): a freed board grabs
-# the cutter. The cutout runs LAST of everything, in the second setup.
-#
-# gaps = "2lr", not 4.  A plain count lets FlatCAM spread the tabs around the
-# whole perimeter, and on this board that put one on the BOTTOM edge at
-# (30.75, 0.00) — 0.505 from the pre-placed VCC spine, which sits at
-# SPINE_Y 0.9 with a 0.8 rail and cannot move without lifting the entire
-# bottom-strip power stack.  flip.tab_zone_checks refuses any copper within
-# 1.0 of a tab (a tab that bridges copper tears it off the laminate when it is
-# snapped), so the tabs move instead of the copper: "2lr" puts two tabs on
-# each of the LEFT and RIGHT edges, where the only copper is the GND pour and
-# POUR_EDGE_SETBACK holds it 1.10 back.  Four tabs either way, so the tab
-# census and SPEC's ">= 2 of >= 1.0mm" are unchanged.
-tool = 7
+[phases.back.bores]
+# The 8 NON-pad holes (4 flip-gauge Ø1.0 + 4 mount Ø3.4), cut at the end
+# of setup 1 from orbit-bores.drl — the fab step's partition of the one
+# schedule. Gauges must exist before setup 2's iso cuts their read-out
+# discs (the flip measurement's only window); mounts are never solderable.
+# Same milldrill numbers as the pad drills below-stairs: Board A's gentled
+# stage on the same 0.8 corn.
+tool = 3
 depth = -1.7
-dpp = 0.3
-gaps = "2lr"
-gapsize = 1.5
-feed = 500
-plunge = 200
+dpp = 0.4
+feed = 250
+plunge = 150

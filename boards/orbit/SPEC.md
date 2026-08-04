@@ -33,7 +33,7 @@ rows marked **NEW** exist only because this board flips.
 | clearance | ≥ 0.4 mm, both sides | one pass of the 0.2 mm-tip 30° vee at Z−0.15 (kerf ≈0.28) clears a 0.4 gap from both sides |
 | track | ≥ 0.5 mm min; 0.6 signal / 0.8 rails | conservative, hand-solderable, no mask needed to survive |
 | vias **Δ NEW** | **unplated WIRE vias only**: Ø1.0 hole, Ø2.4 pad BOTH sides, hand-soldered both faces, **planning budget 6, NO hard ceiling** (operator ruling 2026-08-01 — a via is cost-class of a jumper wire; minimize and ledger, never gate) | no plating exists; every via is two hand joints in a board that gets handled — see the via section |
-| THT annular **Δ** | ≥ **0.7 mm** (was 0.6) on every hole-centered pad, BOTH sides | must be solderable on both faces AND annularly scrubbable on side 2 (see the scrub delta) |
+| THT annular **Δ** | ≥ **0.7 mm** (was 0.6) on every hole-centered pad, BOTH sides | must be solderable on both faces. (Historically also sized for the side-2 annular scrub band; the 2026-08-03 ordering law retired that constraint — the generous ring stays, easier soldering is free) |
 | copper-to-edge | ≥ 0.4 mm, both sides | edge cut is a separate phase |
 | tab-zone copper **NEW** | ≥ 1.0 mm clear of every cutout tab, both sides | tabs are snapped by hand; a tab that bridges copper tears it off the laminate |
 | drills **Δ** | **ALL holes helical-bored with the 0.8 corn**; min hole Ø1.0 (tool + 0.2); classes 1.0 / 1.1 / 1.2 / 1.5 / **1.8** / 3.4 (1.8 = SW1's bench-measured 1.4-wide blades, crib derivation) | Article XI: the PCB drill set (0.3–1.2) is NOT in `jobs/inventory.toml` — reach unmeasured, so it does not exist. A 0.8 tool cannot bore its own diameter |
@@ -41,7 +41,7 @@ rows marked **NEW** exist only because this board flips.
 | footprints | hand-solder variants everywhere; SOIC-8 (1.27 pitch) is the finest pitch on the board | stenchill stencils are happiest at 0603+ and large-pitch ICs |
 | paste **Δ** | **B.Paste only** — one stencil, back side. Vias, THT pads and ISP pads carry NO aperture | vias are soldered after reflow; a pasted via hole wicks solder and blocks the wire |
 | solder mask **Δ** | BOTH sides masked, cured and scrubbed — two squeegee/cure/scrub cycles, one per setup | there is no second way to reach the down-facing side |
-| scrub **Δ NEW** | side 1: disc laps, pads deflated −0.10 (Board A's rule). side 2: same for SMD pads, but **annular laps** on every hole-centered pad — tool edge ≥0.15 inside copper AND ≥0.20 outside the hole rim | on side 2 the holes are already drilled; a 0.3 mm spring tip spiralling across a Ø1.0 hole drops in and levers the pad off. Ø2.4 pad + Ø1.0 hole leaves one legal 0.3-wide lap at r≈0.9 |
+| scrub **Δ 2026-08-03** | FULL disc laps on every solderable aperture, BOTH setups, always BEFORE any pad hole exists (the ordering law); the scrub set is the SOLDER PLAN — setup 2 (front) scrubs only the stitch vias + the promoted lead, the declared inert dead rings keep their flood coat | the retired side-2 annular laps left a 0.20 cured-mask collar at every hole rim — exactly where the joint wets (operator finding, 2026-08-03). A 0.3 tip over an open bore still levers pads off, so the CONVICTION lives on in the gate (`scrub clear of existing holes`, keyed to the 8 setup-1 bores) while the ordering makes the geometry impossible |
 | silkscreen **Δ** | **F.Silkscreen AND B.Silkscreen**, each lasered onto that side's own cured white mask, in that side's own setup; strokes ≥0.3 mm from EVERY MASK APERTURE on that side (solderable or dead — after cure both are bare copper), from bare copper that has no aperture (the flip gauges), and from the bores; separate texts ≥1 cap height apart; every label decisively nearer its own feature than any other **Δ 2026-08-02** | the laser only reaches the up-facing side. On this board the front legend is FUNCTIONAL, not decoration: it is the only thing that tells the operator which way 12 LEDs go in |
 | levelling **Δ NEW** | auto-level per side; on side 2 the probe grid must not land in a drilled hole | a probe point that drops into a Ø1.0 hole writes a false low into the height map and every side-2 depth after it is fiction |
 | pours | GND pour on BOTH sides; ≥0.5 mm fill channels; **1 `filled_polygon` block per side** | Board A's rule, twice. A fragmented pour costs a via, which is the thing this board is trying not to spend |
@@ -344,7 +344,7 @@ annulus where the concentric line arcs must swap radial order, and
 | hole | **Ø1.0** | the 0.8 corn cannot bore its own diameter and no PCB drill is in the crib (Article XI); 1.0 = tool + 0.2 radial. This is a stated deviation from PCB-PLAN's Ø0.8 — if the 0.3–1.2 drill set is ever measured into `inventory.toml`, 0.8 becomes legal and these pads shrink |
 | pad | **Ø2.4 both sides** (0.7 annular) | solderable on both faces AND wide enough for one legal annular scrub lap on side 2 |
 | clearance | ≥ 0.4 to any other copper, both sides | house rule, no exception |
-| mask | opening on both sides; in the scrub set on both sides (annular lap on side 2) | a via under mask cannot be soldered |
+| mask | opening on both sides; in the scrub set on both sides (full disc laps, always pre-drill — the 2026-08-03 ordering law) | a via under mask cannot be soldered |
 | paste | **none** | vias are stitched after reflow; paste in the hole wicks and blocks the wire |
 | keep-out | ≥1.5 mm clear of any SMD body, ≥2.0 mm clear of any THT body, ≥3.0 mm from the board edge, never inside another pad | both faces must be reachable by an iron; the front face must stay flat enough for a THT body to sit down |
 | wire | 22 AWG solid copper (0.64) or a clipped 0.5 mm component lead; soldered both faces, clipped ≤0.3 proud | flush enough that nothing rocks on it |
@@ -386,21 +386,27 @@ Straight reuse of the shipped pins law (DESIGN.md 2026-07-28 / 07-29,
 - **One WCS for both sides.** Z0 is re-touched per side (each face has
   its own bow); XY is NEVER re-zeroed — re-zeroing throws away the
   registration the holes bought.
-- **Drill once, from side A.** All through-holes are bored from the front
-  in side A's setup, so both artworks reference the same physical holes
-  and flip accuracy = pin-to-hole clearance (~0.02–0.04, under the
-  simulation pixel).
+- **Each hole cut exactly once.** Boring one hole from two frames is how
+  a via becomes a slot. The 2026-08-03 partition: the 8 non-pad bores
+  (gauges, mounts) from setup 1's frame, the 62 pad holes from setup 2's
+  — each hole still exists in exactly one program.
 
-**Side A = FRONT (F.Cu, THT side). Side 2 = BACK (B.Cu, SMD side),
-cutout last.** That assignment is a decision this spec makes, not a plan
-inheritance, and the reasons are physical:
+**SETUP 1 = BACK (B.Cu, the solder side). SETUP 2 = FRONT (F.Cu, the
+THT-insertion side), pad drills after its scrub, cutout last.** This
+REVERSES the original side-A-first decision (superseded 2026-08-03 by
+the ordering law), and the reasons are physical:
 
-- the drill's exit burr lands on the back, which is then deburred and
-  machined afterwards anyway — a burr on the reflow side would be baked
-  under paste;
-- the back is the LAST face machined and therefore never tape-mounted,
-  so the stencil/paste/hotplate side stays free of adhesive residue;
-- the front (hand-soldered, robust) is the face that takes the tape.
+- every solder area on both faces is scrubbed BEFORE any pad hole
+  exists, so each pad is bare copper to its future drilled rim — the
+  old order's annular scrub left a cured-mask collar at the rim of
+  every joint;
+- the pad drills enter through the clean front (where the flush-seat
+  LEDs live) and their exit burrs land on the back pads against the
+  tape backing — small, helically milled, each one met by an iron, and
+  chased gently at the bench;
+- the back rides the tape through setup 2, so it gets an IPA wipe
+  before paste (the old order's tape-residue argument, now a bench
+  step instead of an ordering constraint).
 
 ### The flip gauges — this board measures the number DESIGN.md is missing
 
@@ -410,8 +416,8 @@ Orbit is the board that measures it, two ways:
 
 1. **G1–G4**, one near each board corner: Ø1.0 hole, Ø1.7 pad on both
    sides (0.35 annulus declared at 0.3 — Decision Q13, the named DRU
-   exception). The hole is bored in side A's frame; side 2's pad is
-   placed in the mirrored frame. Loupe the annulus on each face after
+   exception). The bore is cut in setup 1's frame; setup 2's iso cuts
+   the readable ring in the flipped frame. Loupe the annulus on each face after
    side-2 iso and before the mask squeegee: an even ~0.35 ring means a
    perfect flip, and thick/thin reads the offset directly. Four corners
    give translation *and* rotation.
@@ -494,22 +500,40 @@ board exists to exercise.
 
 ## Assembly / run-sheet order
 
+**REORDERED 2026-08-03 (operator ruling — the ordering law): a pad is
+never drilled before it is scrubbed, and every area the bench expects to
+solder is always scrubbed.** The flood-coat mask is only ever opened by
+the scrub; the old order's side-2 annular laps left a 0.20mm cured-mask
+collar at every hole rim — exactly where the joint wets. The back (all
+THT joints + reflow) therefore machines FIRST, hole-free.
+
 1. Tape the blank (full coverage), clamp the waste outside the pin holes
-   if clamping, auto-level over the board area, Z0 on front copper.
-2. **Side A (FRONT) phases 1–5**: iso (vee) → clear (0.8 corn) →
-   mask squeegee + UV cure *[operator]* → silk laser → scrub.
-3. **Drills**: all 70 board through-holes with the 0.8 corn (helical),
-   then burr-skim + peck the two Ø2.0 pin holes into the spoilboard.
-4. Set the pins, flip about Y, re-tape, re-level (Z0 on back copper;
-   **confirm no probe point sits in a hole**).
-5. **Deburr side B by hand** (scotchbrite) before anything else touches
-   it — the drill's exit burr lives there.
-6. **Read the flip gauges** after side-B iso, before the mask squeegee.
-   Write the numbers on the run sheet.
-7. **Side B (BACK) phases 1–5**: iso → clear → mask + cure *[operator]* →
-   silk laser → scrub (disc laps on SMD pads, annular laps on every
-   hole-centered pad).
-8. **Cutout** with tabs (1.0 corn, ≥2 tabs ≥1.0), snap by hand, file.
+   if clamping, auto-level over the board area, Z0 on **back** copper.
+2. **Setup 1 (BACK) phases 1–5**: iso (vee) → clear (0.8 corn) →
+   mask squeegee + UV cure *[operator]* → silk laser → scrub — FULL disc
+   laps on every solderable aperture; zero holes exist, so each pad is
+   bare copper out to what later becomes its drilled rim.
+3. **Bores**: ONLY the 8 non-pad holes (4 flip gauges Ø1.0 + 4 mounts
+   Ø3.4, `orbit-bores.drl`), then spot + peck the two Ø2.0 pin holes
+   into the spoilboard. Every pad hole waits for setup 2.
+4. Set the pins, flip about Y, re-tape, re-level (Z0 on front copper;
+   **confirm no probe point sits in a bore**).
+5. **Deburr the bores' exits** on the still-raw front (scotchbrite is
+   fine — that face is bare copper and machines next).
+6. **Read the flip gauges** after setup-2 (front) iso, before the mask
+   squeegee. Write the numbers on the run sheet. (The gauge discs exist
+   on both faces; setup 2's iso cuts the readable ring around the
+   setup-1 bores.)
+7. **Setup 2 (FRONT) phases 1–5**: iso → clear → mask + cure *[operator]*
+   → silk laser → scrub — disc laps on the front SOLDER PLAN only (the
+   23 stitch-via rings + the promoted PAD2-1); the 38 dead front rings
+   are declared inert (`orbit-inert-front.txt`) and keep their coat.
+8. **Drills + cutout, one program**: every pad hole (`orbit-pads.drl`,
+   62 bores — both faces' solder plans are scrubbed by now; exit burrs
+   land on the back pads against the tape), then the outline with tabs
+   (1.0 corn, ≥2 tabs ≥1.0), snap by hand, file. Chase the pad-hole
+   exits on the back GENTLY and IPA the tape residue off the back
+   before paste.
 9. **Off machine**: stenchill stencil from B.Paste → paste → place →
    hotplate reflow the BACK.
 10. **Wire vias**: insert, solder both faces, clip flush. After reflow,
@@ -541,12 +565,12 @@ self-test first, always — it is the board's own continuity check.
 
 | # | phase / step | what orbit proves |
 |---|---|---|
-| 1 | iso, **twice** | side A unmirrored, side B mirrored, both frames derived from one Edge.Cuts — the side-frame mirror consistency check gets a real board instead of a synthetic one |
+| 1 | iso, **twice** | front unmirrored, back mirrored (face property, either order), both frames derived from one Edge.Cuts — the side-frame mirror consistency check gets a real board instead of a synthetic one |
 | 2 | clear, twice | two pours, two sets of Swiss-cheese clearance rings, 1.2 mm minimum clearing feature |
 | 3 | mask, twice | two squeegee/cure cycles in two setups; whether cured mask + white legend survive being taped face-down (Decision Q4: risk accepted — if the tape lifts the legend, that is an Article II incident) |
 | 4 | silk, twice | first board where the legend is load-bearing: 12 cathode ticks decide whether the ring works at all |
-| 5 | scrub, twice | disc laps on side A (no holes yet) and the new **annular** laps on side B (holes everywhere) |
-| — | drill-once-from-side-A | 70 bores in four diameter classes (61×Ø1.0, 2×Ø1.5, 3×Ø1.8, 4×Ø3.4 — the as-built board, not the pre-growth 53) with one 0.8 corn, plus the hole schedule check |
+| 5 | scrub, twice | FULL disc laps on both setups, always pre-drill (2026-08-03 ordering law); setup 2 scrubs the solder plan only, 38 declared-inert rings keep their coat |
+| — | hole partition (2026-08-03) | 8 setup-1 bores + 62 setup-2 pad holes = 70 in four diameter classes (61×Ø1.0, 2×Ø1.5, 3×Ø1.8, 4×Ø3.4 — the as-built board, not the pre-growth 53) with one 0.8 corn, plus the hole schedule check |
 | — | pins + flip | pins law on a 1.5 mm sheet: symmetry, keep-out, spotface + peck into the spoilboard, flush seat |
 | — | **flip gauges** | turns pin-slop from an estimate into a measured number — the open item DESIGN.md names |
 | 6 | cutout | tabs on side 2, tab census, hand snap, 1.0 mm tab-zone copper keep-out |

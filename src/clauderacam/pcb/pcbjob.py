@@ -28,25 +28,47 @@ the document grows a pin block:
   [phases.back.iso]  ... side B's own, independently
   [pins]             ... the shipped pins law, PCB numbers filled in
 
-  side A = FRONT  phases 1-5, then ALL through-holes, then the PIN BLOCK
-  ---- the operator sets the pins, flips the blank, re-tapes, re-levels ----
-  side B = BACK   phases 1-5, then the CUTOUT with tabs
+  SETUP 1 (`first` face up)   phases 1-5, then the BORES (non-pad holes:
+                              flip gauges, mounts), then the PIN BLOCK
+  ---- the operator sets the pins, flips the blank, re-tapes, re-levels,
+       deburrs the bores' exits on the still-raw second face ----
+  SETUP 2 (other face up)     phases 1-5, then ALL PAD HOLES, then the
+                              CUTOUT with tabs
 
-SIDE A = FRONT is orbit SPEC.md's decision, with physical reasons: the
-drill's exit burr lands on the back, which is deburred and machined
-afterwards anyway (a burr on the reflow side would be baked under paste);
-the back is the last face machined and therefore never tape-mounted, so the
-stencil/paste/hotplate side stays free of adhesive residue; and the front
-(hand-soldered, robust) is the face that takes the tape.
+THE ORDERING LAW (operator ruling, 2026-08-03): a pad is NEVER drilled
+before it is scrubbed, and every area the bench expects to solder is
+ALWAYS scrubbed. On this process the mask is a flood coat — the physical
+opening on a pad is made by the scrub and by nothing else — and a scrub
+that runs after drilling cannot clean a pad: the spring tip must orbit an
+open bore at a rim margin, which leaves a cured-mask collar exactly where
+the joint wets (orbit's back pads carried a 0.20mm collar under the
+previous side-A-drills-everything order; the operator caught it on the
+viewer). Scrub-before-any-pad-hole makes every solderable pad a full bare
+disc on BOTH faces of a via. The costs move where they are cheapest: the
+pad drills' exit burr lands on the FIRST face's finished pads (small,
+helically milled against the tape backing, and every one of those pads
+meets an iron; the run sheet carries the deburr), and the first face takes
+tape in setup 2, so it gets an IPA wipe before paste.
 
-Two consequences are grammar-level law, not conventions:
-  * `cutout` belongs to side 2 ONLY. On side 1 the board must stay attached
-    (the same law twosided.py enforces on the coin: "front side must not cut
-    out"), and the tabs only exist once.
-  * `drills` belongs to side 1 ONLY. Every through-hole is bored from the
-    front in side A's setup, so both artworks reference the same physical
-    holes and flip accuracy equals pin-to-hole clearance. Boring the same
-    hole twice from two frames is how a via becomes a slot.
+Which face runs first is the job's own decision ([twosided] `first`) —
+orbit runs the BACK (solder-heavy, reflow) face first so its whole solder
+plan is scrubbed hole-free and the pad drills enter through the front,
+where the flush-seat components live.
+
+Three consequences are grammar-level law, not conventions:
+  * `cutout` belongs to setup 2 ONLY, last. On setup 1 the board must stay
+    attached (the same law twosided.py enforces on the coin), and the tabs
+    only exist once.
+  * `drills` (every PAD hole) belongs to setup 2 ONLY, AFTER that side's
+    scrub — by then both faces' solder plans are scrubbed, so no pad hole
+    can predate a scrub. Boring the same hole twice from two frames is how
+    a via becomes a slot, so each hole is cut exactly once.
+  * `bores` (the NON-pad holes: flip gauges, mounts) belongs to setup 1
+    ONLY, after its scrub. The gauges must exist before setup 2's iso cuts
+    their read-out discs — that read is the flip measurement and it has no
+    other window. Bores are never solderable, so the pad law does not bind
+    them; the partition (bores ∪ drills == the full Excellon, disjoint) is
+    validated at load.
 
 The pin block itself is DERIVED from `[pins]` and never written by hand —
 the coin lane's rule, restated here for the same reason (twosided.py: "pin
@@ -65,20 +87,23 @@ from ..twosided import PIN_CLEAR, flip_xy
 from . import boardmaps
 
 # the operator's revised chain; grammar and generators iterate THIS, never
-# a config-supplied order
-PHASE_ORDER = ("iso", "clear", "mask", "silk", "scrub", "drills", "cutout")
+# a config-supplied order. `bores` (non-pad holes) exists only on flipped
+# boards; the single-sided chain never carries it.
+PHASE_ORDER = ("iso", "clear", "mask", "silk", "scrub", "bores", "drills",
+               "cutout")
 
-# The two setups of a pin-and-flip board, in run order. Named the way
-# twosided.py names the coin's two sides, so a viewer session, a program file
-# and a report all say "front"/"back" and mean the same setup.
+# The two FACES of a pin-and-flip board. Named the way twosided.py names the
+# coin's two sides, so a viewer session, a program file and a report all say
+# "front"/"back" and mean the same face. Which face machines FIRST is the
+# job's decision ([twosided] `first`) — job.sides carries the RUN ORDER.
 SIDE_ORDER = ("front", "back")
 
-# Which of the chain's phases each side carries. `drills` on side 1 only and
-# `cutout` on side 2 only are LAW (see the module docstring); the other five
-# run twice with independent parameters.
-SIDE_CHAIN = {
-    "front": ("iso", "clear", "mask", "silk", "scrub", "drills"),
-    "back": ("iso", "clear", "mask", "silk", "scrub", "cutout"),
+# Which of the chain's phases each SETUP carries, by run position — the
+# ordering law in the module docstring. Faces map onto these through
+# [twosided] `first`.
+ROLE_CHAIN = {
+    "first": ("iso", "clear", "mask", "silk", "scrub", "bores"),
+    "second": ("iso", "clear", "mask", "silk", "scrub", "drills", "cutout"),
 }
 
 # The registration-pin pseudo-phases: spot-face then peck, exactly the coin
@@ -95,18 +120,20 @@ PIN_PHASES = ("pinspot", "pindrill")
 PROGRAM_PHASES = {"mill": ("iso", "clear"), "silk": ("silk",),
                   "scrub": ("scrub",), "holes": ("drills", "cutout")}
 
-# The same split, per side of a flipped board. The names are the single-sided
-# names so every reader (header letters, session keys, run sheet) carries
-# across unchanged; only the phase CONTENT differs, plus side A's fifth
-# program. The pin block is its own program because it is its own tool, its
-# own depth law (12mm into the spoilboard, which no board phase may reach)
-# and the last thing that happens before the operator touches the blank.
-SIDE_PROGRAMS = {
-    "front": {"mill": ("iso", "clear"), "silk": ("silk",),
-              "scrub": ("scrub",), "holes": ("drills",),
+# The same split, per SETUP of a flipped board. The names are the
+# single-sided names so every reader (header letters, session keys, run
+# sheet) carries across unchanged; only the phase CONTENT differs, plus
+# setup 1's fifth program. The pin block is its own program because it is
+# its own tool, its own depth law (12mm into the spoilboard, which no board
+# phase may reach) and the last thing that happens before the operator
+# touches the blank. Consumers reach these through `programs_of(side_job)`,
+# never by face name — the face→role mapping belongs to the job.
+ROLE_PROGRAMS = {
+    "first": {"mill": ("iso", "clear"), "silk": ("silk",),
+              "scrub": ("scrub",), "holes": ("bores",),
               "pins": PIN_PHASES},
-    "back": {"mill": ("iso", "clear"), "silk": ("silk",),
-             "scrub": ("scrub",), "holes": ("cutout",)},
+    "second": {"mill": ("iso", "clear"), "silk": ("silk",),
+               "scrub": ("scrub",), "holes": ("drills", "cutout")},
 }
 
 # scrub preload band: Makera stock DOC -0.2; field-tuned -0.21 (2026-07-19,
@@ -128,6 +155,10 @@ SHARED_SUFFIXES = {"edge": "-Edge_Cuts.gbr"}
 GERBER_SUFFIXES = {**SIDE_SUFFIXES["back"], **SHARED_SUFFIXES}
 PASTE_SUFFIX = "-B_Paste.gbr"     # one stencil, back side (orbit SPEC paste Δ)
 DRILL_SUFFIX = ".drl"
+# the machining partition of the full schedule (the ordering law): non-pad
+# holes cut in setup 1, every pad hole cut in setup 2 after both scrubs
+BORES_SUFFIX = "-bores.drl"
+PADS_SUFFIX = "-pads.drl"
 
 # a [[rules.gauge]] position must land on a real hole this close (mm)
 GAUGE_MATCH_TOL = 0.05
@@ -263,12 +294,22 @@ class PcbJob:
         return bool(self.phases.get(phase))
 
 
+def role_of(job: PcbJob, side: str | None = None) -> str:
+    """Which SETUP a face machines in: 'first' or 'second'. The run order is
+    the job's own ([twosided] `first`); nothing may key machining order on a
+    face name — mirror is a face property, order is not."""
+    face = side or job.side
+    if not job.sides or face not in job.sides:
+        raise ValueError(f"{job.name}: no side {face!r} to take a role")
+    return "first" if face == job.sides[0] else "second"
+
+
 def programs_of(job: PcbJob) -> dict[str, tuple[str, ...]]:
     """The program split THIS job (or side view) is made of. One function so
     the gate, the re-emitter and the viewer never disagree about how many
     programs a document has or what is in them."""
     if job.side:
-        return SIDE_PROGRAMS[job.side]
+        return ROLE_PROGRAMS[role_of(job)]
     return PROGRAM_PHASES
 
 
@@ -323,12 +364,20 @@ def side_view(job: PcbJob, side: str) -> PcbJob:
     files = {k: job.files[f"{side}_{k}"] for k in SIDE_SUFFIXES[side]}
     files["edge"] = job.files["edge"]
     files["drl"] = job.files["drl"]
+    # what THIS setup cuts: setup 1 bores the non-pad holes, setup 2 drills
+    # every pad hole (the ordering law — job.files carries the partition).
+    # Both partition files ride along too: the scrub-order check needs to
+    # know which holes EXIST at this setup's scrub, whichever setup it is.
+    files["bores_drl"] = job.files["bores_drl"]
+    files["pads_drl"] = job.files["pads_drl"]
+    files["drl_cut"] = job.files[
+        "bores_drl" if side == job.sides[0] else "pads_drl"]
     if "paste" in job.files:
         files["paste"] = job.files["paste"]
     phases = dict(job.side_phases[side])
-    if side == SIDE_ORDER[0]:
-        # the pin block rides side A: derived from [pins], between the board
-        # holes and the flip (PCB-PLAN WS3 sequence, orbit SPEC step 3)
+    if side == job.sides[0]:
+        # the pin block rides setup 1: derived from [pins], after the bores,
+        # last thing before the flip (the ordering law above)
         phases.update(pin_phase_tables(job))
     return replace(
         job,
@@ -392,6 +441,18 @@ def load(path: str | Path) -> PcbJob:
                 "one stencil, back side (orbit SPEC.md paste rule) — the "
                 "paste layer is a first-class output and the gate checks it "
                 "against the hole schedule")
+        for key, suf in (("bores_drl", BORES_SUFFIX),
+                         ("pads_drl", PADS_SUFFIX)):
+            f = gdir / f"{p['stem']}{suf}"
+            if not f.is_file():
+                raise ValueError(
+                    f"missing excellon {f} — the ordering law (module "
+                    f"docstring, 2026-08-03) machines holes in TWO programs: "
+                    f"setup 1 bores the non-pad holes (gauges, mounts), "
+                    f"setup 2 drills every pad hole AFTER both scrubs. The "
+                    f"fab step exports the partition; without it the job "
+                    f"cannot say which hole is cut when")
+            files[key] = f
     else:
         for key, suf in GERBER_SUFFIXES.items():
             artwork(key, suf, "export all four layers (B.Cu, B.Mask, "
@@ -413,10 +474,24 @@ def load(path: str | Path) -> PcbJob:
     if not phases_d:
         raise ValueError("[phases] is required — the six-phase chain is "
                          "the job")
+    ts = dict(d.get("twosided") or {})
+    flip_axis = ts.get("flip_axis", "y")
+    if twoside and flip_axis not in ("x", "y"):
+        raise ValueError(f"flip_axis must be 'x' or 'y', got {flip_axis!r}")
+
     sides: tuple[str, ...] = ()
     side_phases: dict[str, dict] = {}
     if twoside:
-        sides = SIDE_ORDER
+        first = ts.get("first")
+        if first not in SIDE_ORDER:
+            raise ValueError(
+                f"[twosided] first = {first!r} — a flipped board must SAY "
+                f"which face machines first ('front' or 'back'). It is a "
+                f"real process decision: the first face's whole solder plan "
+                f"is scrubbed hole-free, and the pad drills' exit burr lands "
+                f"on it (the 2026-08-03 ordering law in this module's "
+                f"docstring). orbit runs 'back' first.")
+        sides = (first, [s for s in SIDE_ORDER if s != first][0])
         extra = set(phases_d) - set(SIDE_ORDER)
         if extra:
             raise ValueError(
@@ -431,15 +506,12 @@ def load(path: str | Path) -> PcbJob:
                     f"[phases.{side}] is missing — both setups of a flipped "
                     f"board are machine work and neither is inferred from "
                     f"the other")
-            side_phases[side] = _side_table(phases_d[side], side)
+            side_phases[side] = _side_table(
+                phases_d[side], side,
+                "first" if side == sides[0] else "second")
         phases = {}
     else:
-        phases = _side_table(phases_d, None)
-
-    ts = dict(d.get("twosided") or {})
-    flip_axis = ts.get("flip_axis", "y")
-    if twoside and flip_axis not in ("x", "y"):
-        raise ValueError(f"flip_axis must be 'x' or 'y', got {flip_axis!r}")
+        phases = _side_table(phases_d, None, None)
 
     job = PcbJob(
         path=path, name=p["name"], stem=p["stem"],
@@ -460,15 +532,17 @@ def load(path: str | Path) -> PcbJob:
     return job
 
 
-def _side_table(phases_d: dict, side: str | None) -> dict[str, dict]:
+def _side_table(phases_d: dict, side: str | None,
+                role: str | None) -> dict[str, dict]:
     """One side's (or a single-sided job's) phase table, order-checked.
 
-    `side=None` is the single-sided chain: all seven phases. A side of a
-    flipped board carries SIDE_CHAIN[side] — and naming a phase that belongs
-    to the other setup is refused by name, because a second cutout or a
-    second drilling pass is a different (and destructive) process, not a
-    configuration preference."""
-    chain = PHASE_ORDER if side is None else SIDE_CHAIN[side]
+    `side=None` is the single-sided chain (no `bores` — the partition is a
+    flip concept). A face of a flipped board carries ROLE_CHAIN[role] — and
+    naming a phase that belongs to the other setup is refused by name,
+    because a second cutout or a second drilling pass is a different (and
+    destructive) process, not a configuration preference."""
+    chain = (tuple(ph for ph in PHASE_ORDER if ph != "bores")
+             if role is None else ROLE_CHAIN[role])
     where = "phases" if side is None else f"phases.{side}"
     extra = set(phases_d) - set(chain)
     if extra:
@@ -479,14 +553,16 @@ def _side_table(phases_d: dict, side: str | None) -> dict[str, dict]:
                 f"[{where}] carries {pins} — the pin block is DERIVED from "
                 f"[pins] (spot-face then peck, the coin lane's law); do not "
                 f"write pin phases by hand")
-        if wrong and side is not None:
-            other = [s for s in SIDE_ORDER if s != side][0]
+        if wrong and role is not None:
             raise ValueError(
-                f"[{where}] carries {wrong}, which belongs to the {other} "
-                f"setup only: every through-hole is bored once from side A "
-                f"(so both artworks reference the same physical holes) and "
-                f"the cutout runs on side 2 (the board must stay attached "
-                f"until its tabs exist)")
+                f"[{where}] carries {wrong}, which belongs to the "
+                f"{'second' if role == 'first' else 'first'} setup only — "
+                f"the ordering law: setup 1 ends with the non-pad bores and "
+                f"the pin block, setup 2 drills every pad hole AFTER both "
+                f"scrubs and cuts out last. Each hole is cut exactly once "
+                f"(boring one hole from two frames is how a via becomes a "
+                f"slot), and a pad hole before a scrub is a mask collar on "
+                f"a solder joint")
         raise ValueError(f"unknown phases {sorted(extra)} — the chain is "
                          f"{chain} and its order is law")
     missing = [ph for ph in chain if ph not in phases_d
@@ -510,6 +586,8 @@ def _validate_phases(j: PcbJob) -> None:
     need("clear", ("tool", "depth", "margin", "offset", "overlap",
                    "feed", "plunge"))
     need("silk", ("clearance",))
+    if j.has_phase("bores"):
+        need("bores", ("tool", "depth", "dpp", "feed", "plunge"))
     cp = j.phases["silk"].get("copper_passes", 1)
     if cp not in (1, 2):
         raise ValueError(
@@ -526,7 +604,7 @@ def _validate_phases(j: PcbJob) -> None:
                         "feed", "plunge"))
 
     kinds = {"iso": "vee", "clear": "flat", "scrub": "scrub",
-             "drills": "flat", "cutout": "flat"}
+             "bores": "flat", "drills": "flat", "cutout": "flat"}
     for ph, kind in kinds.items():
         if not j.has_phase(ph):
             continue
@@ -589,7 +667,12 @@ def _validate_phases(j: PcbJob) -> None:
 # ------------------------------------------------------ the flip and its pins
 def _validate_twosided(j: PcbJob) -> None:
     """The pins law, PCB numbers filled in (DESIGN.md 2026-07-28/29,
-    boards/orbit/SPEC.md "Pin-and-flip registration").
+    boards/orbit/SPEC.md "Pin-and-flip registration") — plus the hole
+    PARTITION law (2026-08-03): the bores and pads Excellons must split the
+    full schedule EXACTLY. A hole in neither file is never cut; a hole in
+    both is cut twice from two frames (a slot); a hole with a moved centre
+    or a changed diameter is a different hole. Multiset equality, no
+    tolerance — all three files come from the same exporter.
 
     Every refusal below is the coin lane's, restated rather than called: the
     shipped `engine.check_job_plan` is welded to a Job's disc geometry (model
@@ -597,6 +680,31 @@ def _validate_twosided(j: PcbJob) -> None:
     RULES cross over and the shapes do not. Numbers are identical on purpose —
     2mm bed clearance, the counterbore reach credit, PIN_CLEAR.
     """
+    from collections import Counter
+
+    def _sched(key: str) -> Counter:
+        return Counter((round(x, 3), round(y, 3), round(d, 3))
+                       for x, y, d in boardmaps.excellon(j.files[key]))
+
+    full, bores, pads = _sched("drl"), _sched("bores_drl"), _sched("pads_drl")
+    if bores + pads != full:
+        never = full - (bores + pads)
+        twice = (bores + pads) - full
+        raise ValueError(
+            f"hole partition broken: bores({sum(bores.values())}) + "
+            f"pads({sum(pads.values())}) != schedule({sum(full.values())})"
+            + (f"; cut NEVER: {sorted(never.elements())[:4]}" if never
+               else "")
+            + (f"; cut TWICE or moved: {sorted(twice.elements())[:4]}"
+               if twice else "")
+            + " — a hole in neither file is never cut, a hole in both "
+              "becomes a slot")
+    if bores & pads:
+        raise ValueError(
+            f"holes in BOTH partition files: "
+            f"{sorted((bores & pads).elements())[:4]} — each hole is cut "
+            f"exactly once (the ordering law)")
+
     pins = j.pins
     if not pins:
         raise ValueError(

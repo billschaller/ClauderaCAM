@@ -18,17 +18,18 @@ artwork instead of the suite's synthetic stubs:
     flip.verify_twosided   the gate: one artwork report + one report per
                            program per side
 
-Nine programs come out — front {mill, silk, scrub, holes, pins} and back
-{mill, silk, scrub, holes} — and NONE of them is cuttable until this script
-prints PASS for it (Article I: the verdict is on the bytes, not the intent).
+Nine programs come out — setup 1 (back) {mill, silk, scrub, holes=bores,
+pins} and setup 2 (front) {mill, silk, scrub, holes=drills+cutout} — and
+NONE of them is cuttable until this script prints PASS for it (Article I:
+the verdict is on the bytes, not the intent).
 
-The scrub phase is the one place the two sides genuinely differ in KIND, and
-it is handled by reemit.scrub_op rather than read_phase: side 1 has no holes
-yet and takes Board A's disc laps unchanged, while side 2's holes are already
-drilled and every hole-centred pad takes an ANNULAR lap instead (SPEC "scrub
-delta NEW" — a 0.3 spring tip spiralling across a hole drops in and levers the
-pad off). That is why the board's O1.0 hole-centred pads are O2.50: the lap
-band only exists when the ring clears 2*(tool_r) + the gate's inside/rim bars.
+The 2026-08-03 ordering law shapes the split: no pad hole exists before
+both faces' scrubs, so EVERY scrub is Board A's full disc laps (the
+annular-lap era and its rim mask-collar are retired — see reemit.scrub_op),
+setup 1 ends with the 8 non-pad bores + the pin block, and setup 2 drills
+all pad holes after its scrub, then cuts out. The front scrub covers only
+the SOLDER PLAN (stitch vias + the promoted lead); the dead rings are
+declared inert and keep their flood coat.
 
 The board ships ZERO bench jumpers (MATRIX.md "JUMPER RETIREMENT" — the
 2026-08-02 growth to 66x56 closed every net in copper; the declaration law
@@ -73,7 +74,7 @@ def generate(job, ctx, work: Path) -> dict[str, dict[str, Path]]:
                for ph, p in nc[side].items()}
         print(f"  {side}: " + ", ".join(f"{k} {len(v.lines)} lines"
                                         for k, v in sorted(ops.items())))
-        for name, want in pcbjob.SIDE_PROGRAMS[side].items():
+        for name, want in pcbjob.programs_of(sj).items():
             if name == "silk":
                 mt = bm.rasterize(sj.files["mask"], ctx.tight)
                 text = reemit.silk_program(sj, ctx.tight, mt)[0]
@@ -95,7 +96,7 @@ def collect(job) -> dict[str, dict[str, Path]]:
     for side in job.sides:
         sj = pcbjob.side_view(job, side)
         progs[side] = {}
-        for name in pcbjob.SIDE_PROGRAMS[side]:
+        for name in pcbjob.programs_of(sj):
             p = job.out_dir / f"{pcbjob.program_stem(sj, name)}.nc"
             if p.is_file():
                 progs[side][name] = p

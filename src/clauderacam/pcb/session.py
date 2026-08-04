@@ -619,7 +619,8 @@ def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
     `est` and `tool_order` are keyed `<side>/<program>`, the same keys the
     sessions carry, so a step points at the session that machines it.
     """
-    first, second = pcbjob.SIDE_ORDER
+    first, second = job.sides           # RUN order ([twosided] first), not
+    #                                     face order — the 2026-08-03 law
     cut = sides[second].phases["cutout"]
     _where = pcbjob.tab_where(cut["gaps"])
     cut_where = f" ({_where})" if _where else ""
@@ -712,14 +713,13 @@ def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
             prog(side, "scrub", "scrub the mask off the pads",
                  f"Z{scrub['depth']:g} of spring PRELOAD (not cut depth), "
                  f"{scrub['overlap']:g}% overlap, regions deflated "
-                 f"{scrub['offset']:g}."
-                 + (f" The holes are all there by now, so every hole-centred "
-                    f"pad gets an ANNULAR lap, never a disc — a "
-                    f"Ø{j.phase_tool('scrub').diameter:g} tip spiralling "
-                    f"across a bore drops in and levers the pad off."
-                    if side == second else
-                    " No holes in the blank yet, so these are ordinary disc "
-                    "laps.")
+                 f"{scrub['offset']:g}. FULL disc laps — no pad hole exists "
+                 f"anywhere yet (the 2026-08-03 ordering law), so every "
+                 f"scrubbed pad is bare copper to what later becomes its "
+                 f"drilled rim."
+                 + (" Only the SOLDER PLAN is scrubbed on this face; the "
+                    "declared inert rings keep their coat."
+                    if scrub.get("inert") else "")
                  + (f" {note(side, 'scrub')}" if note(side, "scrub") else "")),
         ]
         return out
@@ -743,46 +743,64 @@ def run_sheet_twosided(job: PcbJob, sides: dict[str, PcbJob],
     ]
     steps += cycle(first)
     steps += [
-        prog(first, "holes", "every through-hole, bored from side 1",
-             f"every hole helically bored to "
-             f"Z{sides[first].phases['drills']['depth']:g} (through the "
-             f"{job.thickness:g} blank into the spoilboard). Side 1 bores "
-             f"them ALL: both artworks then reference the same physical "
-             f"holes, so flip accuracy equals pin-to-hole clearance and no "
-             f"via is ever bored twice from two frames"),
+        prog(first, "holes", "the non-pad bores (flip gauges + mounts)",
+             f"ONLY the non-pad holes, helically bored to "
+             f"Z{sides[first].phases['bores']['depth']:g} (through the "
+             f"{job.thickness:g} blank into the spoilboard). Every PAD hole "
+             f"waits for setup 2, AFTER both scrubs — the ordering law. The "
+             f"gauge bores must exist now: setup 2's iso cuts their "
+             f"read-out discs, and that read is the flip measurement"),
         prog(first, "pins", "the registration pin bores",
              f"{n_pins}x Ø{job.pins['diameter']:g} spot-faced to "
              f"Z{sides[first].phases['pinspot']['depth']:g} then pecked to "
              f"Z{sides[first].phases['pindrill']['depth']:g}, into the "
-             f"spoilboard — the LAST thing cut on side 1, in the same setup, "
-             f"so the pins inherit this side's zero and the flip inherits the "
-             f"pins"),
+             f"spoilboard — the LAST thing cut in setup 1, in the same "
+             f"setup, so the pins inherit this side's zero and the flip "
+             f"inherits the pins"),
         {"kind": "operator",
          "title": f"set the pins, FLIP about {job.flip_axis.upper()}, "
                   f"deburr, re-level",
-         "detail": f"set the {n_pins} dowels in the bores just cut, lift the "
-                   f"blank, DEBURR THE BACK by hand (scotchbrite — the "
-                   f"drill's exit burr lives there and a burr under tape "
-                   f"bows the blank), turn it about the "
-                   f"{job.flip_axis.upper()} axis onto the pins, re-tape FULL "
-                   f"coverage. Re-level and re-touch Z0 on the "
-                   f"{second.upper()} copper — and confirm no probe point "
-                   f"sits in a drilled hole, which would write a false low "
+         "detail": f"set the {n_pins} dowels in the bores just cut, lift "
+                   f"the blank, deburr the {len(boardmaps.excellon(sides[first].files['drl_cut']))} "
+                   f"bores' exits on the still-raw {second.upper()} face "
+                   f"(scotchbrite is fine — that face is bare copper and "
+                   f"machines next; a burr under tape bows the blank), turn "
+                   f"it about the {job.flip_axis.upper()} axis onto the "
+                   f"pins, re-tape FULL coverage. Re-level and re-touch Z0 "
+                   f"on the {second.upper()} copper — and confirm no probe "
+                   f"point sits in a bore, which would write a false low "
                    f"into the height map. NEVER re-zero XY: it is the "
-                   f"registration the holes bought."},
+                   f"registration the pins bought."},
     ]
     steps += cycle(second)
     steps += [
-        prog(second, "holes", "the outline cut with tabs",
-             f"the outline with {pcbjob.tab_count(cut['gaps'])} tabs"
-             f"{cut_where} of {cut['gapsize']:g}mm, at "
-             f"Z{cut['depth']:g} — side 2 only, and last of everything"),
+        prog(second, "holes", "every pad hole, then the outline cut",
+             f"ONE program, two tools: every pad hole helically bored to "
+             f"Z{sides[second].phases['drills']['depth']:g} — both faces' "
+             f"solder plans are scrubbed by now, so each hole opens through "
+             f"bare copper on both sides — then the outline with "
+             f"{pcbjob.tab_count(cut['gaps'])} tabs{cut_where} of "
+             f"{cut['gapsize']:g}mm at Z{cut['depth']:g}, last of "
+             f"everything. The drills' exit burrs land on the "
+             f"{first.upper()} pads against the tape backing; they get "
+             f"their own deburr step below"),
         {"kind": "operator", "title": "release the board, snap the tabs",
          "detail": f"{pcbjob.tab_count(cut['gaps'])} tabs{cut_where} of "
                    f"{cut['gapsize']:g}mm hold it; snap, file the stubs and "
-                   f"deburr. The cut rides a tool radius OUTSIDE the outline "
-                   f"ink, so the board comes out one Edge.Cuts line width "
-                   f"oversize per side (measured and accepted 2026-07-19)."},
+                   f"deburr the edge. The cut rides a tool radius OUTSIDE "
+                   f"the outline ink, so the board comes out one Edge.Cuts "
+                   f"line width oversize per side (measured and accepted "
+                   f"2026-07-19)."},
+        {"kind": "operator",
+         "title": f"deburr the pad-hole exits on the {first.upper()}, "
+                  f"IPA the tape residue off",
+         "detail": f"the pad drills exited through the {first.upper()} "
+                   f"face's finished pads: chase each hole GENTLY (a light "
+                   f"countersink twist by hand, or fine paper over a flat "
+                   f"block — scotchbrite would scuff the mask and legend), "
+                   f"then IPA-wipe the whole {first.upper()} face: it rode "
+                   f"the tape through setup 2 and paste wants a clean "
+                   f"surface."},
         {"kind": "offmachine", "title": "stencil, paste, reflow the BACK",
          "detail": ("send the B.Paste gerber to stenchill.com, print the "
                     "stencil at 0.3-0.4mm in PLA/PETG with a 0.2mm nozzle, "

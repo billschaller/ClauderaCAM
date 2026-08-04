@@ -57,8 +57,8 @@ SENTINEL_FILE = "ALL-PHASES-DONE.txt"   # written by the Tcl, polled by run()
 # (mask=3 and silk=4 are not FlatCAM's — mask is the operator, silk is
 # emit.assemble_laser from the silkscreen gerber)
 PHASE_NC = {"iso": "fc-1-iso.nc", "clear": "fc-2-clear.nc",
-            "scrub": "fc-5-scrub.nc", "drills": "fc-6a-drills.nc",
-            "cutout": "fc-6b-cutout.nc"}
+            "scrub": "fc-5-scrub.nc", "bores": "fc-6c-bores.nc",
+            "drills": "fc-6a-drills.nc", "cutout": "fc-6b-cutout.nc"}
 
 
 def engine_phases(job: PcbJob) -> tuple[str, ...]:
@@ -77,16 +77,18 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     A double-sided document runs this TWICE — once per side view, each with
     its own work dir. The two differ in exactly three derived ways: which
     copper/mask artwork is opened, whether the `mirror` line is emitted at
-    all (side A is machined front-up and needs none), and the offset the
-    transform derives from that mirror. The drills are bored in SIDE A's
-    setup only, so the Excellon is opened only where a `drills` phase exists.
+    all (the FRONT face is machined front-up and needs none — a face
+    property, not an order property), and the offset the transform derives
+    from that mirror. Each setup opens only ITS partition of the hole
+    schedule (files drl_cut — the 2026-08-03 ordering law: setup 1 the
+    non-pad bores, setup 2 every pad hole, both after their scrubs).
 
     `mask_path` overrides the mask artwork `paint` reads (the ONLY consumer
-    of the mask object in this script): on side 2 run() hands in
-    reemit.scrub_mask()'s filtered copy, in which every hole-centred flash
-    is a D02 move, so paint never drives the spring tip across a bore (the
-    2026-07-30 paint-across-bores finding; the hole-centred pads get
-    in-repo annular laps at assembly instead).
+    of the mask object in this script): run() hands in reemit.scrub_mask(),
+    which filters the DECLARED INERT apertures to D02 moves when the scrub
+    phase names an inert list — the scrub set is the solder plan. (The old
+    hole-centred filtering died with the ordering law: no hole exists at
+    scrub time, so paint covers every solderable pad fully.)
     """
     dx, dy = boardmaps.machine_offset(win, job.anchor, job.mirror)
     ph = job.phases
@@ -108,8 +110,12 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
     objs = ["cu", "mask", "edge"]
     for name in objs:
         L.append(f"open_gerber {sources[name]} -outname {name}")
-    if "drills" in gen:
-        L.append(f"open_excellon {job.files['drl']} -outname drl")
+    if "drills" in gen or "bores" in gen:
+        # a side view cuts only ITS partition of the schedule (drl_cut:
+        # setup 1 the non-pad bores, setup 2 every pad hole — the ordering
+        # law); a single-sided job cuts the whole schedule
+        drl_src = job.files.get("drl_cut") or job.files["drl"]
+        L.append(f"open_excellon {drl_src} -outname drl")
         objs.append("drl")
     if job.mirror == "x":
         # `mirror -axis X -origin 0,0` NEGATES X — the WS2 law, falsified and
@@ -196,14 +202,19 @@ def render_tcl(job: PcbJob, win: boardmaps.BoardWindow,
           cnc("scrub_geo", scrub_t, p["depth"], p["feed"], p["plunge"],
               "scrub_cnc"),
           f"write_gcode scrub_cnc $OUT/{PHASE_NC['scrub']}"]
-    if "drills" in gen:
-        drill_t = job.phase_tool("drills")
-        p = ph["drills"]
+    for hole_ph in ("bores", "drills"):
+        # same milldrill machinery either way; which HOLES differ is the
+        # drl_cut partition opened above (exactly one of the two phases
+        # exists per setup — the grammar's chains)
+        if hole_ph not in gen:
+            continue
+        drill_t = job.phase_tool(hole_ph)
+        p = ph[hole_ph]
         L += [f"milldrills drl -milled_dias all "
               f"-tooldia {drill_t.diameter:.6g} -diatol 5 -outname drl_geo",
               cnc("drl_geo", drill_t, p["depth"], p["feed"], p["plunge"],
                   "drl_cnc", dpp=p["dpp"]),
-              f"write_gcode drl_cnc $OUT/{PHASE_NC['drills']}"]
+              f"write_gcode drl_cnc $OUT/{PHASE_NC[hole_ph]}"]
     if "cutout" in gen:
         cut_t = job.phase_tool("cutout")
         p = ph["cutout"]

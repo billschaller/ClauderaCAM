@@ -1,0 +1,9 @@
+# non-pad holes cut in SETUP 1 (the ordering law) — gerber/lht frame
+8.500,47.500,1.000  # gauge G1
+57.500,47.500,1.000  # gauge G2
+8.500,8.500,1.000  # gauge G3
+57.500,8.500,1.000  # gauge G4
+4.750,51.250,3.400  # mount H1
+61.250,51.250,3.400  # mount H2
+4.750,4.750,3.400  # mount H3
+61.250,4.750,3.400  # mount H4

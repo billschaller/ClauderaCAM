@@ -313,6 +313,33 @@ def main() -> int:
         write_merged(pth + npth, OUT / f"{STEM}.drl")
         (HERE / "stitch-drills.txt").write_text(
             (raw / f"{STEM}-PTH.drl").read_text())
+
+        # --- the 2026-08-03 ordering-law partition -----------------------
+        # Setup 1 cuts only the NON-PAD holes (gauges + mounts, listed by
+        # the board generator in orbit-bores.txt, gerber frame); every pad
+        # hole waits for setup 2, after BOTH scrubs. The grammar re-checks
+        # this partition at load (multiset equality) — splitting here and
+        # checking there keeps generator and gate independent.
+        bores_want = []
+        for ln in (HERE / "orbit-bores.txt").read_text().splitlines():
+            body = ln.partition("#")[0].strip()
+            if body:
+                x, y, d = (float(v) for v in body.split(","))
+                bores_want.append((round(x, 3), round(y, 3), round(d, 3)))
+        allh = pth + npth
+        bores = [(x, y, d) for x, y, d in allh
+                 if (round(x, 3), round(y, 3), round(d, 3)) in bores_want]
+        pads = [h for h in allh if h not in bores]
+        if len(bores) != len(bores_want):
+            missing = set(bores_want) - {(round(x, 3), round(y, 3),
+                                          round(d, 3)) for x, y, d in bores}
+            raise SystemExit(
+                f"bores list names holes the Excellon does not have: "
+                f"{sorted(missing)[:4]} — board and fab disagree")
+        write_merged(bores, OUT / f"{STEM}-bores.drl")
+        write_merged(pads, OUT / f"{STEM}-pads.drl")
+        print(f"      partition: {len(bores)} setup-1 bores "
+              f"(gauges+mounts) + {len(pads)} setup-2 pad holes")
         # Stamp WHICH board these gerbers came from, by content.  MATRIX's pour
         # census is measured off this artwork and must refuse to report on a
         # board it does not belong to — and mtime cannot answer that here: the

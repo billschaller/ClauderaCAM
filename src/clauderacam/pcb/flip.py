@@ -111,12 +111,15 @@ SHORT_FREE_MIN = 0.5    # a pad-side whose rays mostly run to the cap (a hole
 #                         in a pour) has no boundary to centre on. Below this
 #                         fraction of free rays the pad-side is reported
 #                         unmeasurable and counted, never quietly measured.
-SCRUB_ANNULAR_INSIDE = 0.15   # orbit SPEC "scrub Δ NEW": on side 2 the holes
-SCRUB_ANNULAR_RIM = 0.20      # are already drilled, and a 0.3 spring tip
-#                               spiralling across a Ø1.0 hole drops in and
-#                               levers the pad off the laminate. Ø2.4 pad +
-#                               Ø1.0 hole leaves exactly one legal 0.3-wide
-#                               lap at r≈0.9, which is these two numbers.
+SCRUB_ANNULAR_RIM = 0.20      # a 0.3 spring tip crossing an open bore drops
+#                               in and levers the pad off (the 2026-07-30
+#                               incident). Under the 2026-08-03 ordering law
+#                               the only holes that exist at ANY scrub are
+#                               the setup-1 bores, and this is the tool-edge
+#                               clearance bar scrub_plan_checks holds every
+#                               lap to against them. (Its former companion
+#                               SCRUB_ANNULAR_INSIDE died with the annular
+#                               lap generator.)
 TAB_KEEPOUT = 1.0       # orbit SPEC "tab-zone copper NEW": tabs are snapped by
 #                         hand, and a tab that bridges copper tears it off the
 #                         laminate
@@ -161,7 +164,10 @@ class FlipContext:
 
     @staticmethod
     def mirror(side: str) -> str:
-        return "none" if side == pcbjob.SIDE_ORDER[0] else "x"
+        # mirror is a FACE property (front-up needs none, back-up flips) —
+        # never an order property; the 2026-08-03 ordering law made the
+        # distinction load-bearing
+        return "none" if side == "front" else "x"
 
     def maps(self, side: str) -> BoardMaps:
         """A BoardMaps for one side, sharing this context's rasters — so the
@@ -201,8 +207,8 @@ class FlipContext:
         """The cross-side checks that belong to ONE program of ONE side.
         checks.verify_program calls this when it was handed a flip context."""
         out: list[Check] = []
-        if job.side == pcbjob.SIDE_ORDER[1] and "scrub" in samples:
-            out += annular_scrub_checks(self, job, maps, samples["scrub"])
+        if "scrub" in samples:
+            out += scrub_plan_checks(self, job, maps, samples["scrub"])
         if "cutout" in samples:
             out += tab_zone_checks(self, job, samples["cutout"])
         return out
@@ -492,8 +498,10 @@ def paste_checks(ctx: FlipContext) -> list[Check]:
                       "no paste layer in this document — the grammar requires "
                       "one for a double-sided board")]
     if not ctx.paste.any():
-        return [Check("paste clear of the hole schedule", float("inf"),
-                      f"> {PASTE_HOLE_MIN}", True,
+        # count-shaped value, never inf: bare `Infinity` in the session
+        # JSON kills the viewer client (the back/scrub incident, 2026-08-03)
+        return [Check("paste clear of the hole schedule", 0.0,
+                      "0 apertures to judge", True,
                       "the paste layer is empty (no stencil apertures)")]
     d = ctx.dist("paste", ctx.paste)
     worst = float("inf")
@@ -521,56 +529,110 @@ def board_checks(ctx: FlipContext) -> list[Check]:
 
 
 # ----------------------------------------------------------- program-level set
-def annular_scrub_checks(ctx: FlipContext, job: PcbJob, maps: BoardMaps,
-                         s: Samples) -> list[Check]:
-    """Side 2's scrub, over hole-centred pads (orbit SPEC "scrub Δ NEW").
+def scrub_plan_checks(ctx: FlipContext, job: PcbJob, maps: BoardMaps,
+                      s: Samples) -> list[Check]:
+    """The ordering law's convictions on EVERY scrub program (operator
+    ruling 2026-08-03: a pad is never drilled before it is scrubbed, and
+    every area the bench expects to solder is always scrubbed).
 
-    On side 1 the holes do not exist yet and a disc lap over a pad is right.
-    On side 2 they all do, and a 0.3 spring tip spiralling across a Ø1.0 hole
-    drops in and levers the pad off the laminate. The two laws below are the
-    annular lap: stay ON copper, and stay OFF the rim.
-
-    The second one is the reason this check exists at all — `scrub plateau
-    margin` cannot express it. The copper gerber draws a pad as a SOLID disc
-    (the hole lives only in the Excellon), so a lap straight across the hole
-    centre reads as deeply inside copper and passes every single-sided scrub
-    law there is.
+    1. `scrub clear of existing holes` — the only holes that exist when a
+       setup scrubs are the ones its own chain already cut: setup 1 none,
+       setup 2 the non-pad bores. A 0.3 spring tip crossing an open bore
+       drops in and levers the copper off — the 2026-07-30
+       paint-across-bores incident. The GENERATOR can no longer produce
+       that geometry (the grammar's chains put every pad hole after both
+       scrubs), but the conviction stays until the incident is impossible
+       in the bytes, not just the intent (Articles I and II).
+    2. `solder plan scrubbed` — every mask aperture except the declared
+       inert ones takes cutting path. On this process the flood coat is
+       only ever opened by the scrub: an aperture the scrub misses is a
+       pad the bench cannot solder, whatever the artwork promises.
+    3. `inert stays under mask` — no cutting sample inside a declared
+       inert aperture. An unscrubbed opening keeps its coat; that is the
+       protective finish dead copper wants, and a lap there would strip it
+       for nothing.
     """
+    from scipy import ndimage
+    from . import reemit
     tool = job.phase_tool("scrub")
     r = tool.radius
     slop = checks.SAMPLE_STEP / 2
-    pads = [(hx, hy, hd) for (hx, hy, hd), wa, wb
-            in zip(ctx.holes, ctx.rings(pcbjob.SIDE_ORDER[0]),
-                   ctx.rings(pcbjob.SIDE_ORDER[1])) if wa["pad"] or wb["pad"]]
-    if not pads:
-        return []
-    dh = np.min(np.stack([np.hypot(s.bx - hx, s.by - hy)
-                          for hx, hy, _ in pads]), axis=0)
-    which = np.argmin(np.stack([np.hypot(s.bx - hx, s.by - hy)
-                                for hx, hy, _ in pads]), axis=0)
-    rim = np.array([pads[k][2] / 2.0 for k in which])
-    on_pad = dh <= rim + RING_PROBE
-    if not on_pad.any():
-        return [Check("annular scrub laps", 0.0, "unmeasurable", False,
-                      f"the side-2 scrub never comes near any of the "
-                      f"{len(pads)} hole-centred pads — either the program or "
-                      f"the mask apertures belong to another board")]
-    inside = maps.sample(maps.dist("in_cu"), s.bx[on_pad], s.by[on_pad]) \
-        - maps.eps - slop - r
-    k = int(inside.argmin())
-    idx = np.nonzero(on_pad)[0]
-    out = [Check("annular scrub inside copper", float(inside.min()),
-                 f">= {SCRUB_ANNULAR_INSIDE}",
-                 float(inside.min()) >= SCRUB_ANNULAR_INSIDE,
-                 f"{int(on_pad.sum())} laps on {len(pads)} hole-centred pads; "
-                 f"worst at {s.at(int(idx[k]))}")]
-    clear = dh[on_pad] - rim[on_pad] - r - slop
-    k = int(clear.argmin())
-    out.append(Check("annular scrub clear of the hole rim",
-                     float(clear.min()), f">= {SCRUB_ANNULAR_RIM}",
-                     float(clear.min()) >= SCRUB_ANNULAR_RIM,
-                     f"tool EDGE to the drilled rim; worst at "
-                     f"{s.at(int(idx[k]))}"))
+    out: list[Check] = []
+
+    role = pcbjob.role_of(job)
+    existing = ([] if role == "first"
+                else boardmaps.excellon(job.files["bores_drl"]))
+    if existing:
+        dh = np.min(np.stack([np.hypot(s.bx - hx, s.by - hy)
+                              for hx, hy, _ in existing]), axis=0)
+        which = np.argmin(np.stack([np.hypot(s.bx - hx, s.by - hy)
+                                    for hx, hy, _ in existing]), axis=0)
+        rim = np.array([existing[k][2] / 2.0 for k in which])
+        clear = dh - rim - r - slop
+        k = int(clear.argmin())
+        out.append(Check(
+            "scrub clear of existing holes", float(clear.min()),
+            f">= {SCRUB_ANNULAR_RIM}",
+            float(clear.min()) >= SCRUB_ANNULAR_RIM,
+            f"tool EDGE to the nearest of the {len(existing)} bores this "
+            f"setup inherits; worst at {s.at(k)}"))
+    else:
+        # value is the COUNT of holes existing at this scrub — never inf:
+        # Python's json writes inf as bare `Infinity`, which the browser's
+        # JSON.parse refuses, and the whole viewer session dies client-side
+        # (found by the operator on back/scrub, 2026-08-03)
+        out.append(Check(
+            "scrub clear of existing holes", 0.0, "0 holes exist yet",
+            True, "setup 1 scrubs a blank with zero holes — the ordering "
+                  "law's whole point"))
+
+    # mask regions vs cutting samples, 8-connected like every copper census
+    lbl, nreg = ndimage.label(maps.layers["mask"], structure=checks._EIGHT)
+    if nreg == 0:
+        return out + [Check("solder plan scrubbed", 0.0, "unmeasurable",
+                            False, "no mask apertures on this side at all")]
+    si, sj = ctx.win.world_to_px(s.bx, s.by)
+    si = np.clip(np.round(si).astype(int), 0, lbl.shape[0] - 1)
+    sj = np.clip(np.round(sj).astype(int), 0, lbl.shape[1] - 1)
+    hit = np.zeros(nreg + 1, bool)
+    hit[lbl[si, sj]] = True
+    hit[0] = False
+
+    inert_lbls: set[int] = set()
+    stale = []
+    for ix, iy, why in reemit.inert_apertures(job):
+        ii, jj = ctx.win.world_to_px(np.array([ix]), np.array([iy]))
+        v = int(lbl[int(np.clip(round(float(ii[0])), 0, lbl.shape[0] - 1)),
+                    int(np.clip(round(float(jj[0])), 0, lbl.shape[1] - 1))])
+        if v == 0:
+            stale.append((ix, iy))
+        else:
+            inert_lbls.add(v)
+    if stale:
+        out.append(Check("inert list names apertures", float(len(stale)),
+                         "0 stale", False,
+                         f"inert entries on NO mask ink: {stale[:4]} — the "
+                         f"list drifted from the artwork"))
+
+    live = [k for k in range(1, nreg + 1) if k not in inert_lbls]
+    missed = [k for k in live if not hit[k]]
+    cent = ndimage.center_of_mass(np.ones_like(lbl), lbl, missed[:4]) \
+        if missed else []
+    where = [(round(float(ctx.win.px_to_world(i, j)[0]), 2),
+              round(float(ctx.win.px_to_world(i, j)[1]), 2))
+             for i, j in cent]
+    out.append(Check(
+        "solder plan scrubbed", float(len(missed)), "0 apertures missed",
+        not missed,
+        f"{len(live)} solderable apertures, {len(inert_lbls)} declared "
+        f"inert" + (f"; UNSCRUBBED near {where}" if missed else "")))
+
+    wrong = sorted(k for k in inert_lbls if hit[k])
+    out.append(Check(
+        "inert stays under mask", float(len(wrong)), "0 inert scrubbed",
+        not wrong,
+        "an unscrubbed opening keeps its flood coat — scrubbing dead "
+        "copper strips its finish for nothing"))
     return out
 
 

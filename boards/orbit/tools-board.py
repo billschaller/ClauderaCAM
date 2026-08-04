@@ -2943,6 +2943,42 @@ def build(route: dict | None = None, out_lht: str = OUT_LHT) -> dict:
         fh.write(emit_dsn(parts, nets))
     with open(TDX_FILE, "w", encoding="utf-8") as fh:
         fh.write(kicadnet.to_tedax(nets))
+    # --- the 2026-08-03 ordering-law exports, gerber/lht frame ------------
+    # inert-front: every dead front ring the FINAL board carries — the mask
+    # opens over them (the uniformity/checkability law above) but the bench
+    # never solders them, so the scrub skips them and they keep their flood
+    # coat. Consumed by reemit.scrub_mask via [phases.front.scrub] inert.
+    promoted = set((route or {}).get("promoted", ()))
+    # BOARD frame, not lht: the FILTERED mask gerbers carry board-frame
+    # coordinates (measured 2026-08-03: F_Mask flash (16.342, 8.117) == the
+    # board-frame via), while the Excellon is the y-flipped export — the
+    # bores list below matches THAT frame instead. Two exports, two frames,
+    # each matched to its consumer and each refused loudly on drift.
+    inert = [(pid, q(x), q(y))
+             for pid, x, y, dia, joins in dead_front_rings(parts)
+             if pid not in promoted]
+    with open(os.path.join(HERE, "orbit-inert-front.txt"),
+              "w", encoding="utf-8") as fh:
+        fh.write(
+        "# dead front rings of the FINAL board — mask-open, never soldered,"
+        " never scrubbed\n# x,y in the BOARD frame"
+        " (board frame - the filtered gerbers\' own)\n"
+        + "".join(f"{x:.3f},{y:.3f}  # {pid} dead front ring\n"
+                  for pid, x, y in sorted(inert, key=lambda t: t[0])))
+    # bores: the NON-PAD holes setup 1 cuts (gauges + mounts). tools-fab
+    # splits the merged Excellon on these positions; everything else is a
+    # pad hole and waits for setup 2, after both scrubs.
+    bores = ([(f"gauge {r}", *lht_xy(gx, gy), HOLE_GAUGE)
+              for r, (gx, gy) in GAUGES.items()]
+             + [(f"mount {r}", *lht_xy(mx, my), HOLE_MOUNT)
+                for r, (mx, my) in MOUNTS.items()])
+    with open(os.path.join(HERE, "orbit-bores.txt"),
+              "w", encoding="utf-8") as fh:
+        fh.write(
+        "# non-pad holes cut in SETUP 1 (the ordering law) — gerber/lht"
+        " frame\n"
+        + "".join(f"{x:.3f},{y:.3f},{d:.3f}  # {name}\n"
+                  for name, x, y, d in bores))
     return {"parts": parts, "nets": nets, "stats": stats, "labels": labels,
             "unplaced": uf + ub, "placed": len(pf) + len(pb), "route": route}
 

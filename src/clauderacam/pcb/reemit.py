@@ -174,42 +174,59 @@ _PROGRAM_STEPS = {
 # A step may be a TUPLE of lines: the flip is genuinely a paragraph of
 # instructions and the dialect's 128-char law is not negotiable, so it gets
 # continuation comment lines rather than a truncated one.
+# keyed by SETUP ROLE, not face: which face runs first is the job's own
+# [twosided] `first` (the 2026-08-03 ordering law), and these instructions
+# are about the SEQUENCE — {first}/{second} format to the face names.
 _SIDE_STEPS = {
-    ("front", "mill"): (
+    ("first", "mill"): (
         ("FULL-coverage tape is mandatory - a bowed blank makes every depth "
          "number fiction",
-         "FRONT copper up, auto-level over the board, Z0 = front copper, "
-         "G54 = board SW corner"),
+         "{first} copper up on the virgin blank, auto-level over the board, "
+         "Z0 = {first} copper, G54 = board SW corner"),
         None),
-    ("front", "holes"): (
-        "same setup; ALL through-holes bored from side A, so both artworks "
-        "reference the same physical holes",
+    ("first", "scrub"): (
+        ("legend wiped, spring tool fitted; ZERO holes exist",
+         "every solderable pad takes FULL disc laps, bare to its future "
+         "rim"),
+        "program D holes - the non-pad bores, no operator step between"),
+    ("first", "holes"): (
+        "same setup; ONLY the non-pad bores - flip gauges + mounts. Every "
+        "PAD hole waits for setup 2, after BOTH scrubs",
         "program E pins - no operator step between"),
-    ("front", "pins"): (
+    ("first", "pins"): (
         "same setup, still; fit the pin drill - the registration holes are "
-        "the LAST thing cut on side A",
-        ("FLIP: set the {pins} dowels, turn the blank about {axis} onto them, "
-         "re-tape FULL coverage",
-         "deburr the BACK by hand first - the drill's exit burr lives there",
-         "re-level and re-touch Z0 on the back copper; NEVER re-zero XY - it "
-         "is the registration the holes bought")),
-    ("back", "mill"): (
-        ("blank FLIPPED onto the pins, re-taped, re-leveled, Z0 = BACK "
+        "the LAST thing cut in setup 1",
+        ("FLIP: set the {pins} dowels, turn the blank about {axis} onto "
+         "them, re-tape FULL coverage",
+         "deburr the bores' exits on the still-raw {second} face first - "
+         "it is bare copper and machines next",
+         "re-level and re-touch Z0 on the {second} copper; NEVER re-zero "
+         "XY - it is the registration the pins bought")),
+    ("second", "mill"): (
+        ("blank FLIPPED onto the pins, re-taped, re-leveled, Z0 = {second} "
          "copper, XY untouched",
-         "confirm no auto-level probe point sat in a drilled hole - one that "
-         "did wrote a false low into the height map"),
-        ("READ THE FLIP GAUGES with a loupe and write the numbers down - an "
-         "even ring means a perfect flip",
+         "confirm no auto-level probe point sat in a bore - one that did "
+         "wrote a false low into the height map"),
+        ("READ THE FLIP GAUGES with a loupe and write the numbers down - "
+         "an even ring means a perfect flip",
          "THEN squeegee + UV-cure this side's mask and coat white")),
-    ("back", "scrub"): (
-        "legend wiped, spring tool fitted; the holes are all there now - "
-        "hole-centred pads get ANNULAR laps, never a disc",
-        "program D holes - the cutout, no operator step between"),
-    ("back", "holes"): (
-        "same setup; the outline cut with tabs - side 2 only, and last",
-        ("snap the {gaps} tabs{where} of {gapsize}mm, file the stubs, deburr",
-         "off-machine: stencil + paste + hotplate reflow the BACK, THEN the "
-         "wire vias, THEN the THT parts from the front")),
+    ("second", "scrub"): (
+        ("legend wiped, spring tool fitted; still no pad holes",
+         "the laps are this face's SOLDER PLAN - declared inert rings "
+         "keep their coat",
+         "setup 1's gauge + mount bores ARE open under the tool; the "
+         "laps stay clear of them and the gate proves it"),
+        "program D holes - every pad hole then the cutout, no operator "
+        "step between"),
+    ("second", "holes"): (
+        "same setup; EVERY pad hole - both faces' solder plans are "
+        "scrubbed by now - then the outline cut with tabs, last",
+        ("snap the {gaps} tabs{where} of {gapsize}mm, file the stubs, "
+         "deburr the edge",
+         "chase the pad-hole exits on the {first} pads GENTLY and IPA the "
+         "tape residue off that face",
+         "off-machine: stencil + paste + hotplate reflow the BACK, THEN "
+         "the wire vias, THEN the THT parts from the front")),
 }
 
 
@@ -240,10 +257,11 @@ def program_header(job: PcbJob, name: str,
     lines = [f"(program {letter} of {len(split)} - {name}{side}: "
              + " + ".join(f"pcb-{p}" for p in phases) + ")"]
     before, after = _PROGRAM_STEPS.get(name, ("", ""))
-    if job.side:
-        sb, sa = _SIDE_STEPS.get((job.side, name), (None, None))
-        before, after = sb or before, sa or after
     fmt = {}
+    if job.side:
+        sb, sa = _SIDE_STEPS.get((pcbjob.role_of(job), name), (None, None))
+        before, after = sb or before, sa or after
+        fmt.update(first=job.sides[0].upper(), second=job.sides[1].upper())
     if job.has_phase("cutout"):
         c = job.phases["cutout"]
         # the operator snaps tabs, not a placement token: the note carries the
@@ -305,7 +323,7 @@ def assemble_program(job: PcbJob, name: str, ops: list[OpResult]) -> str:
     if want is None or got != want:
         raise ValueError(
             f"program {name!r} must carry phases {want}, got {got} — the "
-            f"split is the job (pcbjob.PROGRAM_PHASES / SIDE_PROGRAMS)")
+            f"split is the job (pcbjob.PROGRAM_PHASES / ROLE_PROGRAMS)")
     return assemble(job, ops, header=program_header(job, name, ops))
 
 
@@ -680,37 +698,19 @@ def _stroke_chains(gbr: Path) -> list[list[tuple]]:
     return chains
 
 
-# ------------------------------------------------- side-2 annular scrub laps
-# The 2026-07-30 paint-across-bores finding (the twosided suite's tripwire,
-# now flipped): FlatCAM's `paint` fills mask apertures from the mask layer
-# alone and knows NOTHING about the Excellon, so on side 2 of a flipped board
-# — where every hole is already drilled — it drove the 0.3 spring tip
-# straight across each bore and the gate refused the program (flip.py's
-# annular-scrub laws, rim margin −0.60 on the fixture). The generator's fix
-# is an APERTURE-CLASS SPLIT:
-#
-#   * SMD apertures (no hole underneath) keep FlatCAM `paint`, fed a FILTERED
-#     mask (scrub_mask below) in which every hole-centred flash became a D02
-#     move — zero ink, modal state intact. Filtering an INPUT gerber is not a
-#     G-code emission; Article V is untouched.
-#   * hole-centred apertures get ANNULAR laps generated HERE, like the silk
-#     strokes: concentric segment polylines (no arcs — Article V refuses
-#     them) around the hole the Excellon declares, appended to the scrub op.
-#
-# A mask aperture that OVERLAPS a hole off-centre refuses: neither a disc nor
-# a concentric annulus scrubs it honestly. So does a non-circle aperture or
-# pad over a hole — Board B's hole-centred pads are circles, and the day an
-# oval DIP pad needs laps this refusal is where that work starts.
-SCRUB_LAP_CHORD = 0.01   # mm: max chord sagitta of a lap polyline — one
-#                          raster pixel at the lane's 2540dpi, so the polygon
-#                          and every raster reading of it agree
-SCRUB_LAP_MARGIN = 0.05  # mm engineered headroom over flip.py's bars: the
-#                          checks re-measure the bytes with their own EDT
-#                          (raster eps + SAMPLE_STEP/2 ≈ 0.012) and a lap
-#                          that needs this margin to pass is a lap on the
-#                          edge of levering a pad off
-SCRUB_WINDOW_MIN = 0.05  # the single-sided scrub-window bar (checks.py) —
-#                          a lap must also satisfy the laws side 1 lives by
+# --------------------------------------------------- hole-centred apertures
+# HISTORICAL NOTE (2026-07-30 → 2026-08-03): the paint-across-bores finding
+# — FlatCAM's `paint` knows nothing about the Excellon and drove the spring
+# tip across open bores — was first fixed with an APERTURE-CLASS SPLIT
+# (hole-centred flashes filtered to D02, annular ring laps generated here).
+# The 2026-08-03 ordering law made that machinery unnecessary: no scrub runs
+# after a pad hole exists any more, so every solderable aperture takes
+# paint's full disc and the annular generator was deleted. The incident's
+# CONVICTION lives on in flip.scrub_plan_checks ("scrub clear of existing
+# holes", keyed to the setup-1 bores). hole_apertures() below survives as a
+# pure artwork READER: its three refusals (off-centre aperture over a hole,
+# non-circle aperture, pad drawn some other way) are design-sanity laws the
+# suite still enforces.
 LAP_CONCENTRIC_TOL = 0.05  # "hole-centred" tolerance: pcbjob.GAUGE_MATCH_TOL
 #                          and flip.CONCENTRIC_TOL's artwork budget, restated
 #                          here only because both licensing modules sit above
@@ -724,11 +724,13 @@ def _concentric(fl, x: float, y: float):
 
 
 def hole_apertures(job: PcbJob) -> list[dict]:
-    """Side 2's hole-centred scrub set, from DESIGN numbers only (gerber
-    flash text + the Excellon — no raster): one entry per drilled hole that
-    carries a mask aperture, with the hole, mask and copper-pad diameters the
-    lap band is computed from. Holes with no mask aperture (flip gauges, bare
-    bores) are legitimately not in the scrub set and are skipped."""
+    """The hole-centred apertures, from DESIGN numbers only (gerber flash
+    text + the Excellon — no raster): one entry per scheduled hole that
+    carries a mask aperture, with the hole, mask and copper-pad diameters.
+    Since the 2026-08-03 ordering law this feeds NO generator (see the
+    historical note above) — it is an artwork reader whose refusals are the
+    point. Holes with no mask aperture (flip gauges, bare bores) are
+    legitimately absent and skipped."""
     holes = boardmaps.excellon(job.files["drl"])
     mfl = boardmaps.flashes(job.files["mask"])
     cfl = boardmaps.flashes(job.files["cu"])
@@ -772,125 +774,90 @@ def hole_apertures(job: PcbJob) -> list[dict]:
     return out
 
 
-def scrub_mask(job: PcbJob, work_dir: Path) -> Path:
-    """The mask file `paint` should read for THIS job's scrub phase. On
-    anything but side 2 of a flipped board that is the export itself; on
-    side 2 it is a filtered copy beside the engine's Tcl, with every
-    hole-centred flash rewritten to a D02 move so paint never laps a bore."""
-    if job.side != pcbjob.SIDE_ORDER[1]:
-        return job.files["mask"]
-    hp = hole_apertures(job)
-    centres = [(h["hx"], h["hy"]) for h in hp]
-
-    def drop(x: float, y: float) -> bool:
-        return any(abs(x - cx) <= LAP_CONCENTRIC_TOL
-                   and abs(y - cy) <= LAP_CONCENTRIC_TOL
-                   for cx, cy in centres)
-
-    out = Path(work_dir) / "mask-scrub.gbr"
-    n = boardmaps.rewrite_flashes(job.files["mask"], out, drop)
-    if n != len(hp):
-        raise ValueError(f"filtered {n} mask flashes but classified "
-                         f"{len(hp)} hole-centred apertures — the two scans "
-                         f"disagree about the same file")
-    text = out.read_text()
-    if "D03*" not in text and "D01*" not in text:
-        raise ValueError(
-            "side 2's mask holds ONLY hole-centred apertures — paint would "
-            "run on an empty layer and FlatCAM's failure mode there is not "
-            "modeled; an all-annular side-2 scrub needs its own path the "
-            "day a real board asks for it")
+def inert_apertures(job: PcbJob) -> list[tuple[float, float, str]]:
+    """The scrub phase's declared INERT apertures — mask openings the bench
+    will never solder (a milled board's dead front rings), listed by the
+    board generator in the file [phases.<side>.scrub] `inert` names, one
+    `x,y  # reason` per line in the GERBER frame. The 2026-08-03 ordering
+    law: the scrub set is the SOLDER PLAN, and the physical opening on this
+    process is made by the scrub alone — an inert aperture left unscrubbed
+    simply keeps its flood-coat mask, which is the protective finish dead
+    copper wants. Artwork stays uniform-open (the mask-blind gate's
+    checkability law, tools-board.py); this list is the machining subset."""
+    p = job.phases.get("scrub") or {}
+    src = p.get("inert")
+    if not src:
+        return []
+    f = Path(src)
+    if not f.is_absolute():
+        f = job.path.parent / f
+    if not f.is_file():
+        raise ValueError(f"phases.{job.side}.scrub inert names {f} and it "
+                         f"does not exist — an inert list is board truth, "
+                         f"exported by the board generator, never typed")
+    out = []
+    for ln in f.read_text().splitlines():
+        body, _, why = ln.partition("#")
+        body = body.strip()
+        if not body:
+            continue
+        x, y = (float(v) for v in body.replace(",", " ").split()[:2])
+        out.append((x, y, why.strip()))
     return out
 
 
-def annular_laps(job: PcbJob,
-                 win: boardmaps.BoardWindow | None = None
-                 ) -> tuple[list[str], dict]:
-    """Side 2's annular laps as ready-to-append scrub-op lines (machine
-    frame, phase feeds, no arcs). -> (lines, stats).
+def scrub_mask(job: PcbJob, work_dir: Path) -> Path:
+    """The mask file `paint` should read for THIS job's scrub phase: the
+    export itself, unless the phase declares INERT apertures — then a
+    filtered copy beside the engine's Tcl, with each inert flash rewritten
+    to a D02 move so paint never cleans a pad nobody solders. (The
+    2026-07-30 hole-centred filtering is GONE with the ordering law: no
+    hole exists at scrub time any more, so paint covers every hole-centred
+    pad fully — that full bare disc is the law's whole point.)"""
+    inert = inert_apertures(job)
+    if not inert:
+        return job.files["mask"]
+    hits = [0] * len(inert)
 
-    Band per hole (tool radius r, everything else a design number):
-        rc_max = min(pad_r  − r − (INSIDE + MARGIN),          # stay ON copper
-                     mask_r − r − max(deflate, WINDOW+MARGIN))# and IN the window
-        rc_min =     hole_r + r + (RIM + MARGIN)              # stay OFF the rim
-    An empty band refuses by hole — a pad with no legal lap is a design
-    problem the operator must see, not a pad silently skipped (a skipped pad
-    would pass the gate: scrub COVERAGE deliberately has no bar).
-    One lap at the band's midpoint when the band is narrower than the
-    stepover; else evenly spaced laps no farther apart than the stepover."""
-    # flip.py owns the two bars but sits above this module in the import
-    # graph (flip → checks → reemit), so they are imported at call time
-    from .flip import SCRUB_ANNULAR_INSIDE, SCRUB_ANNULAR_RIM
-    if job.side != pcbjob.SIDE_ORDER[1]:
-        raise ValueError("annular laps are side 2's geometry — side 1 has "
-                         "no holes yet and paint's disc laps are right")
-    p = job.phases["scrub"]
-    tool = job.phase_tool("scrub")
-    r = tool.diameter / 2
-    win = win or boardmaps.extents(job.files["edge"])
-    off = boardmaps.machine_offset(win, job.anchor, job.mirror)
-    step = tool.diameter * (1.0 - float(p["overlap"]) / 100.0)
-    depth, feed, plunge = (float(p[k]) for k in ("depth", "feed", "plunge"))
-    inside_need = SCRUB_ANNULAR_INSIDE + SCRUB_LAP_MARGIN
-    rim_need = SCRUB_ANNULAR_RIM + SCRUB_LAP_MARGIN
-    window_need = max(float(p["offset"]), SCRUB_WINDOW_MIN + SCRUB_LAP_MARGIN)
-    lines: list[str] = []
-    nlaps = 0
-    pads = hole_apertures(job)
-    for h in pads:
-        pad_r, mask_r, hole_r = (h["pad_d"] / 2, h["mask_d"] / 2,
-                                 h["hole_d"] / 2)
-        rc_max = min(pad_r - r - inside_need, mask_r - r - window_need)
-        rc_min = hole_r + r + rim_need
-        if rc_min > rc_max + 1e-9:
-            raise ValueError(
-                f"no legal annular lap on the Ø{h['pad_d']:g} pad / "
-                f"Ø{h['mask_d']:g} aperture over the Ø{h['hole_d']:g} hole "
-                f"at ({h['hx']:.3f},{h['hy']:.3f}): the tool centre must "
-                f"stay ≤{rc_max:.3f} and ≥{rc_min:.3f} — a pad this tight "
-                f"cannot be scrubbed with a Ø{tool.diameter:g} tool")
-        band = rc_max - rc_min
-        n = 1 + int(band / step)
-        radii = ([0.5 * (rc_min + rc_max)] if n == 1
-                 else list(np.linspace(rc_min, rc_max, n)))
-        for rc in radii:
-            nseg = max(24, int(np.ceil(
-                np.pi / np.arccos(1.0 - SCRUB_LAP_CHORD / rc))))
-            t = np.linspace(0.0, 2.0 * np.pi, nseg + 1)
-            bx = h["hx"] + rc * np.cos(t)
-            by = h["hy"] + rc * np.sin(t)
-            bx[-1], by[-1] = bx[0], by[0]      # closed exactly, not to eps
-            mx, my = boardmaps.machine_xy(off, job.mirror, bx, by)
-            lines += [f"G0 Z2.0000",
-                      f"G0 X{mx[0]:.4f} Y{my[0]:.4f}",
-                      f"G1 Z{depth:.4f} F{plunge:g}",
-                      f"G1 X{mx[1]:.4f} Y{my[1]:.4f} F{feed:g}"]
-            lines += [f"G1 X{x:.4f} Y{y:.4f}"
-                      for x, y in zip(mx[2:], my[2:])]
-            nlaps += 1
-    lines.append("G0 Z2.0000")
-    return lines, {"pads": len(pads), "laps": nlaps,
-                   "margin": SCRUB_LAP_MARGIN, "chord": SCRUB_LAP_CHORD}
+    def drop(x: float, y: float) -> bool:
+        for i, (cx, cy, _) in enumerate(inert):
+            if (abs(x - cx) <= LAP_CONCENTRIC_TOL
+                    and abs(y - cy) <= LAP_CONCENTRIC_TOL):
+                hits[i] += 1
+                return True
+        return False
+
+    out = Path(work_dir) / "mask-scrub.gbr"
+    n = boardmaps.rewrite_flashes(job.files["mask"], out, drop)
+    missed = [(x, y, why) for (x, y, why), h in zip(inert, hits) if h == 0]
+    if missed:
+        raise ValueError(
+            f"inert entries with NO matching mask flash: "
+            f"{[(round(x, 3), round(y, 3)) for x, y, _ in missed[:4]]} — "
+            f"the inert list has drifted from the artwork; regenerate both "
+            f"from the same board build")
+    if n != sum(hits):
+        raise ValueError(f"rewrote {n} flashes but matched {sum(hits)} "
+                         f"inert entries — the two scans disagree")
+    return out
 
 
 def scrub_op(nc_path: Path, job: PcbJob,
              win: boardmaps.BoardWindow | None = None) -> OpResult:
     """The scrub phase's ONE op: FlatCAM's paint interchange strict-read
-    (read_phase, unchanged), and — on side 2 of a flipped board — the
-    annular laps appended in the same op: same tool, same feeds, same floor,
-    one stage marker. Anything single-sided or side-1 passes through
-    byte-identical to read_phase, which is why the coupon goldens cannot
-    move. This is the entry every side-2 scrub assembly must use; the paint
-    file it reads must have been generated against scrub_mask()'s filtered
-    input, or the gate will refuse the result exactly as it did the day the
-    tripwire was written."""
-    base = read_phase(nc_path, job, "scrub")
-    if job.side != pcbjob.SIDE_ORDER[1]:
-        return base
-    lap_lines, _ = annular_laps(job, win=win)
-    lines = base.lines + lap_lines
-    plen = path_length(lines)
-    return OpResult(label=base.label, kind=base.kind, tool=base.tool,
-                    lines=lines, path_len_mm=plen,
-                    est_min=plen / max(float(job.phases["scrub"]["feed"]),
-                                       1.0))
+    (read_phase), byte-identical to it in every case.
+
+    Until 2026-08-03 this function appended ANNULAR laps on side 2 of a
+    flipped board — the spring tip orbiting each already-drilled bore at a
+    rim margin, because a 0.3 tip crossing an open hole drops in and levers
+    the pad off. The ordering law retired that geometry from the GENERATOR:
+    no scrub runs after a pad hole exists any more, so every solderable pad
+    takes paint's full disc laps and the bench solders to bare copper all
+    the way to what later becomes the drilled rim (the annular band left a
+    0.20 cured-mask collar exactly where the joint wets — the operator
+    caught it on the viewer). The paint-across-open-bores CONVICTION lives
+    on in the gate (Article II: the check stays until the incident is
+    impossible; the grammar's chains are what make it impossible), keyed to
+    the holes that DO exist at each setup's scrub — setup 1 none, setup 2
+    the corner bores."""
+    return read_phase(nc_path, job, "scrub")

@@ -2412,3 +2412,52 @@ byte-identical to before the knob existed — the golden coupon proves it.
 This supersedes the S0.04 prediction; the superseded bracket history
 stays in orbit.toml's silk block. Dose and coat still move together:
 re-bracket on scrap when the coat changes, the rig is reusable as-is.
+
+## The ordering law: no pad hole before its scrubs, and the scrub set is the solder plan (2026-08-03)
+
+The operator looked at the viewer's back-scrub session and pulled the
+thread all the way to a process inversion. The chain of findings: the
+side-2 annular laps — this lane's own 2026-07-30 invention to keep the
+spring tip out of open bores — obey a 0.20mm rim margin, which means
+every solder-side pad kept a CURED-MASK COLLAR exactly where the joint
+wets; meanwhile the front's inert dead rings (mask-open for the
+mask-blind gate's uniformity law, never soldered by anyone) got the full
+disc treatment. Backwards on both counts. The ruling, generalized past
+any side: **a pad is never drilled before it is scrubbed, and every area
+the bench expects to solder is always scrubbed** — on a flood-coat
+process the scrub IS the aperture, so scrub-set membership is the solder
+plan, not the artwork.
+
+What the law derives, with no free choices left: the solder-heavy face
+machines FIRST on an unholed blank (its whole plan takes full disc laps,
+bare to each future rim); setup 1 ends with only the NON-pad bores (the
+flip gauges — which must exist before setup 2's iso cuts their read-out
+discs — and the mounts) plus the pin block; setup 2 scrubs ITS solder
+plan (orbit: 23 stitch vias + PAD2-1; the 38 dead rings are declared
+inert and keep their coat), then drills EVERY pad hole, then cuts out.
+The costs moved where they are cheapest: pad-drill exit burrs land on
+finished solder pads against the tape backing (each one meets an iron;
+the run sheet chases them gently), and the first face rides tape through
+setup 2 (IPA before paste).
+
+Mechanism: `[twosided] first` (REQUIRED — which face is setup 1 is a
+process decision, orbit says "back"), ROLE_CHAIN/ROLE_PROGRAMS keyed by
+setup role with `role_of()` (mirror stays FACE-keyed — the conflation of
+face and order was latent everywhere SIDE_ORDER[0] was read), a `bores`
+phase riding the same milldrill path as `drills`, a hole PARTITION
+(stem-bores.drl + stem-pads.drl, validated at load as exact multisets —
+a hole in neither file is never cut, a hole in both is a slot), and
+scrub_mask's INERT filtering (board-exported list, refused on drift).
+reemit.annular_laps and the hole-centred mask filtering are deleted
+GENERATION; the paint-across-bores incident keeps its CONVICTION
+(Article II) as `scrub clear of existing holes`, now keyed to the holes
+that truly exist at each setup's scrub, joined by two new laws with
+negative controls: `solder plan scrubbed` (a live aperture the scrub
+misses is a pad the bench cannot solder) and `inert stays under mask`
+(an unscrubbed opening keeps its protective coat — that is the point).
+
+One measurement note for honesty: the frames of the two export families
+DIFFER — the filtered gerbers carry board-frame coordinates while the
+Excellon is y-flipped — discovered when the first inert list matched
+zero flashes. Each export now states its frame and is refused loudly on
+drift; nothing guesses.

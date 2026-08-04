@@ -5,41 +5,59 @@ double-sided list + WS8; the four additions boards/orbit/SPEC.md asks for).
 THE FIXTURE. `stub2` is a synthetic double-sided board, 20 x 15 mm, built here
 from gerber text so the whole suite runs with no board files and no FlatCAM:
 
-    hole            F.Cu pad   B.Cu pad   what it is for
-    V1 (5,5)  Ø1.0  Ø2.6       Ø2.6       a wire via: 0.8 ring both sides
-    V2 (15,5) Ø1.0  Ø2.6       Ø2.6       a second one, so "every" means >1
-    G1 (5,11) Ø1.0  Ø1.6       Ø1.6       a FLIP GAUGE: 0.3 ring, the named
-                                          exception the job declares
-    H1 (15,11) Ø3.4 none       none       a mounting bore: bare on both sides,
-                                          excluded from the ring census
-    P1 (10,3)  --   none       Ø2.0       an SMD pad, the only B.Paste aperture
+    hole            F.Cu pad   B.Cu pad   cut in   what it is for
+    V1 (5,5)  Ø1.0  Ø2.6       Ø2.6       setup 2  a wire via: 0.8 ring both
+                                                   sides — a PAD hole
+    V2 (15,5) Ø1.0  Ø2.6       Ø2.6       setup 2  a second one, so "every"
+                                                   means >1
+    G1 (5,11) Ø1.0  Ø1.6       Ø1.6       setup 1  a FLIP GAUGE: 0.3 ring, the
+                                                   named exception the job
+                                                   declares — a non-pad BORE
+    H1 (15,11) Ø3.4 none       none       setup 1  a mounting bore: bare on
+                                                   both sides, excluded from
+                                                   the ring census
+    P1 (10,3)  --   none       Ø2.0       --       an SMD pad, the only
+                                                   B.Paste aperture
+
+The 2026-08-03 ORDERING LAW (operator ruling) is what "cut in" says: a pad is
+never drilled before it is scrubbed, and every area the bench expects to
+solder is always scrubbed. So the schedule is PARTITIONED — stub2-bores.drl
+(G1, H1: the non-pad holes, cut in setup 1 because setup 2's iso must cut the
+gauges' read-out discs) and stub2-pads.drl (V1, V2: every pad hole, cut in
+setup 2 after BOTH scrubs) — and the two files must split stub2.drl exactly.
 
 Everything the double-sided path can get wrong is reachable from that: two
 frames from one Edge.Cuts, rings on both sides, a declared exception, a bare
-bore, a paste aperture that must stay off the holes, tabs on side 2, and the
-registration pins in the blank's waste.
+bore, a paste aperture that must stay off the holes, tabs on setup 2, a hole
+partition that can be broken in both directions, and the registration pins in
+the blank's waste.
 
 WHAT MUST HOLD
   - the single-sided form is untouched: the coupon goldens' program HEADERS
     regenerate byte-identically from the shipped job, and PROGRAM_PHASES still
     spells A..D (nothing in this work may re-bless tests/golden_pcb)
-  - the grammar refuses: per-phase tables on a flipped document, a cutout on
-    side A, a drilling pass on side B, hand-written pin phases, missing F.*/
-    paste artwork, no [pins], asymmetric pins, pins inside the machined
-    envelope, pins that do not fit the blank, a pin hole that reaches the bed,
-    an undeclared annular value, a gauge with no reason, a gauge that names no
+  - the grammar refuses: per-phase tables on a flipped document, a [twosided]
+    that will not SAY which face runs first, a cutout or a pad-drilling pass
+    on setup 1, the non-pad bores on setup 2, hand-written pin phases, a hole
+    partition that leaves a hole uncut or cuts one twice, missing F.*/paste
+    artwork, no [pins], asymmetric pins, pins inside the machined envelope,
+    pins that do not fit the blank, a pin hole that reaches the bed, an
+    undeclared annular value, a gauge with no reason, a gauge that names no
     hole
   - the FRAMES: both derive from the ONE Edge.Cuts, side A unmirrored and side
     B mirrored, and the pair closes the loop on the WS2 mirror law
     (`mirror -axis X` NEGATES X) — asserted against an independent
     re-derivation and falsified by a deliberately wrong mirror
   - the TCL is templated twice from one document: side A with no `mirror` line
-    and no cutout, side B with the mirror and no drills
-  - side 2's scrub is the APERTURE-CLASS SPLIT (the paint-across-bores
-    finding, made law): `paint` reads a FILTERED mask in which hole-centred
-    flashes became D02 moves, and the hole-centred pads get in-repo annular
-    laps (reemit.scrub_op) that satisfy the same checks that refused paint's
-    disc laps the day the tripwire was written
+    and no cutout, side B with the mirror — and each side opens its OWN
+    partition of the Excellon, so no hole is bored twice from two frames
+  - the ORDERING LAW's three convictions run on EVERY scrub program
+    (flip.scrub_plan_checks): the scrub stays clear of the holes that already
+    exist (setup 1 none, setup 2 the bores it inherits — the 2026-07-30
+    paint-across-bores incident, kept convictable after the geometry that
+    caused it was retired), every live mask aperture takes cutting path (the
+    flood coat is opened by the scrub and by nothing else), and a DECLARED
+    inert aperture keeps its coat. Each has a negative control that convicts
   - the PIN BLOCK composes the shipped machinery: ops/drill.py's spot-face and
     peck, positions symmetric about the DERIVED mirror line, keep-out carried
     into every program of both setups
@@ -57,8 +75,8 @@ WHAT MUST HOLD
     — the artwork report plus nine keyed `<side>/<program>`, each pointing at
     its own side's .nc, its own frame and its own phase numbers — the gate's
     verdicts (cross-side checks included) folded in, and a run-sheet card in
-    MACHINING order: side A's phases, the holes, the pins, the flip, side B's
-    phases, the cutout last
+    MACHINING order: setup 1's phases, the non-pad bores, the pins, the flip,
+    setup 2's phases, then every pad hole and the cutout last
 
 gerbv-dependent sections skip LOUDLY (same posture as pcb_checks_suite): the
 grammar, the frame math, the Tcl and the pin block need no raster and always
@@ -136,6 +154,13 @@ VIA_PAD, GAUGE_PAD, SMD_PAD = 2.6, 1.7, 2.0
 VIA_HOLE, MOUNT_HOLE = 1.0, 3.4
 HOLES = [(V1[0], V1[1], VIA_HOLE), (V2[0], V2[1], VIA_HOLE),
          (G1[0], G1[1], VIA_HOLE), (H1[0], H1[1], MOUNT_HOLE)]
+# the 2026-08-03 partition of that schedule: the NON-PAD holes are bored in
+# setup 1 (the gauge must exist before setup 2's iso cuts its read-out disc;
+# the mount is never soldered), every PAD hole waits for setup 2 — after both
+# faces' solder plans are scrubbed. bores + pads == HOLES, disjoint, and the
+# loader proves it as an exact multiset.
+BORE_HOLES = [h for h in HOLES if (h[0], h[1]) in (G1, H1)]
+PAD_HOLES = [h for h in HOLES if (h[0], h[1]) in (V1, V2)]
 
 HDR = "%FSLAX46Y46*%\n%MOMM*%\n%LPD*%\n"
 
@@ -215,12 +240,24 @@ B_MASK = flashes([(VIA_PAD, [V1, V2]), (SMD_PAD, [SMD])])
 F_SILK = strokes([((2.0, 8.5), (18.0, 8.5))])
 B_SILK = strokes([((2.0, 8.5), (18.0, 8.5)), ((3.0, 13.0), (9.0, 13.0))])
 B_PASTE = flashes([(1.8, [SMD])])
-DRL = ("M48\nFMAT,2\nMETRIC\n"
-       f"T1C{VIA_HOLE:.3f}\nT2C{MOUNT_HOLE:.3f}\n%\nG90\nG05\nT1\n"
-       + "".join(f"X{x:.3f}Y{y:.3f}\n" for x, y, d in HOLES if d == VIA_HOLE)
-       + "T2\n"
-       + "".join(f"X{x:.3f}Y{y:.3f}\n" for x, y, d in HOLES if d == MOUNT_HOLE)
-       + "T0\nM30\n")
+
+
+def drl_text(holes):
+    """One Excellon in the suite's dialect, tools in diameter order. The full
+    schedule and BOTH partition files are written by this one function, so a
+    partition can never differ from the schedule by dialect — only by which
+    holes it carries, which is the thing the loader judges."""
+    dias = sorted({d for _, _, d in holes})
+    out = "M48\nFMAT,2\nMETRIC\n"
+    out += "".join(f"T{n + 1}C{d:.3f}\n" for n, d in enumerate(dias))
+    out += "%\nG90\nG05\n"
+    for n, d in enumerate(dias):
+        out += f"T{n + 1}\n" + "".join(f"X{x:.3f}Y{y:.3f}\n"
+                                       for x, y, hd in holes if hd == d)
+    return out + "T0\nM30\n"
+
+
+DRL = drl_text(HOLES)
 
 TD = Path(tempfile.mkdtemp(prefix="clauderacam-ws8-"))
 G = TD / "gerbers"
@@ -230,7 +267,9 @@ for name, text in (("stub2-Edge_Cuts.gbr", EDGE),
                    ("stub2-F_Mask.gbr", F_MASK), ("stub2-B_Mask.gbr", B_MASK),
                    ("stub2-F_Silkscreen.gbr", F_SILK),
                    ("stub2-B_Silkscreen.gbr", B_SILK),
-                   ("stub2-B_Paste.gbr", B_PASTE), ("stub2.drl", DRL)):
+                   ("stub2-B_Paste.gbr", B_PASTE), ("stub2.drl", DRL),
+                   ("stub2-bores.drl", drl_text(BORE_HOLES)),
+                   ("stub2-pads.drl", drl_text(PAD_HOLES))):
     (G / name).write_text(text)
 
 TOOLS = f"""
@@ -335,8 +374,11 @@ plunge = 200
 {extra}"""
 
 
+# setup 1 (front, per [twosided] first) ends with the non-pad BORES and the
+# derived pin block; setup 2 (back) carries every PAD hole and then the
+# cutout, in that order and both in its ONE holes program.
 FRONT = side_block("front", """
-[phases.front.drills]
+[phases.front.bores]
 tool = 3
 depth = -1.7
 dpp = 0.4
@@ -344,6 +386,13 @@ feed = 250
 plunge = 150
 """)
 BACK = side_block("back", """
+[phases.back.drills]
+tool = 3
+depth = -1.7
+dpp = 0.4
+feed = 250
+plunge = 150
+
 [phases.back.cutout]
 tool = 7
 depth = -1.7
@@ -375,6 +424,11 @@ name = "fr4"
 
 [twosided]
 flip_axis = "y"
+# which face machines FIRST is a real process decision, and the document must
+# say it (the 2026-08-03 ordering law). FRONT first here: the mirror math is
+# face-keyed, so the frame/pin/tcl laws below still read the unmirrored face
+# as setup 1, exactly as they did before the reordering.
+first = "front"
 
 [pins]
 diameter = 2.0
@@ -426,15 +480,21 @@ check("a [pcb] + [twosided] document loads with per-side phase tables",
       and job.side_phases["back"]["silk"]["dose"] == 0.04,
       f"sides {job.sides}")
 front, back = (pcbjob.side_view(job, s) for s in job.sides)
-check("side A is FRONT, unmirrored, and carries drills + the pin block",
+check("the RUN ORDER is the document's, and the roles follow it",
+      job.sides == ("front", "back") and pcbjob.role_of(front) == "first"
+      and pcbjob.role_of(back) == "second",
+      f"first={job.sides[0]}, second={job.sides[1]}")
+check("setup 1 is FRONT, unmirrored, and carries the BORES + the pin block",
       front.side == "front" and front.mirror == "none"
-      and front.has_phase("drills") and not front.has_phase("cutout")
+      and front.has_phase("bores") and not front.has_phase("drills")
+      and not front.has_phase("cutout")
       and front.has_phase("pindrill") and front.has_phase("pinspot"),
       f"{front.name} mirror={front.mirror} phases={sorted(front.phases)}")
-check("side 2 is BACK, mirrored, and carries the cutout and NO drills",
+check("setup 2 is BACK, mirrored, and carries the PAD drills + the cutout "
+      "and NO bores",
       back.side == "back" and back.mirror == "x"
-      and back.has_phase("cutout") and not back.has_phase("drills")
-      and not back.has_phase("pindrill"),
+      and back.has_phase("drills") and back.has_phase("cutout")
+      and not back.has_phase("bores") and not back.has_phase("pindrill"),
       f"{back.name} mirror={back.mirror} phases={sorted(back.phases)}")
 check("each side's artwork is its own; the outline and the drill file are ONE",
       front.files["cu"].name == "stub2-F_Cu.gbr"
@@ -442,13 +502,26 @@ check("each side's artwork is its own; the outline and the drill file are ONE",
       and front.files["silk"].name == "stub2-F_Silkscreen.gbr"
       and front.files["edge"] == back.files["edge"]
       and front.files["drl"] == back.files["drl"])
-check("the program split is per side, and the pin block is side A's fifth",
-      pcbjob.programs_of(front) == pcbjob.SIDE_PROGRAMS["front"]
+check("each setup CUTS its own partition of that one schedule",
+      front.files["drl_cut"].name == "stub2-bores.drl"
+      and back.files["drl_cut"].name == "stub2-pads.drl"
+      and [(x, y) for x, y, d in bm.excellon(front.files["drl_cut"])]
+      == [G1, H1]
+      and [(x, y) for x, y, d in bm.excellon(back.files["drl_cut"])]
+      == [V1, V2]
+      and front.files["bores_drl"] == back.files["bores_drl"],
+      f"{front.files['drl_cut'].name} / {back.files['drl_cut'].name}")
+check("the program split is per SETUP, and the pin block is setup 1's fifth",
+      pcbjob.programs_of(front) == pcbjob.ROLE_PROGRAMS["first"]
+      and pcbjob.programs_of(back) == pcbjob.ROLE_PROGRAMS["second"]
       and list(pcbjob.programs_of(front)) == ["mill", "silk", "scrub",
                                               "holes", "pins"]
       and list(pcbjob.programs_of(back)) == ["mill", "silk", "scrub", "holes"]
-      and pcbjob.programs_of(front)["holes"] == ("drills",)
-      and pcbjob.programs_of(back)["holes"] == ("cutout",))
+      and pcbjob.programs_of(front)["holes"] == ("bores",)
+      and pcbjob.programs_of(back)["holes"] == ("drills", "cutout"))
+# every reader below asks the JOB what a side's programs are — the face->role
+# mapping is the document's, and nothing may key a split on a face name
+SPROGS = {s: pcbjob.programs_of(pcbjob.side_view(job, s)) for s in job.sides}
 check("program names carry the side (twosided's name-side convention)",
       pcbjob.program_stem(front, "mill") == "stub2-front-mill"
       and pcbjob.program_stem(back, "holes") == "stub2-back-holes")
@@ -471,21 +544,34 @@ caught("a flipped document with ONE phase table refuses",
        lambda: pcbjob.load(variant(
            "v-flat.toml", ("[phases.front.iso]", "[phases.iso]"))),
        "chain TWICE")
-caught("a cutout on side A refuses",
+caught("a flipped document that will not SAY which face runs first refuses",
+       lambda: pcbjob.load(variant("v-nofirst.toml",
+                                   ('first = "front"\n', ""))),
+       "which face machines first")
+caught("...and a face name it does not have refuses the same way",
+       lambda: pcbjob.load(variant("v-badfirst.toml",
+                                   ('first = "front"', 'first = "top"'))),
+       "which face machines first")
+caught("a cutout on setup 1 refuses",
        lambda: pcbjob.load(variant(
            "v-cutfront.toml", ("[phases.back.cutout]",
                                "[phases.front.cutout]"))),
-       "cutout runs on side 2")
-caught("a second drilling pass on side B refuses",
+       "belongs to the second setup only")
+caught("PAD drills on setup 1 refuse — a pad hole before a scrub is a mask "
+       "collar on a solder joint",
        lambda: pcbjob.load(variant(
-           "v-drillback.toml", ("[phases.back.cutout]",
-                                "[phases.back.drills]\ntool = 3\n"
-                                "depth = -1.7\ndpp = 0.4\nfeed = 250\n"
-                                "plunge = 150\n\n[phases.back.cutout]"))),
-       "bored once from side A")
+           "v-drillfront.toml", ("[phases.front.bores]",
+                                 "[phases.front.drills]"))),
+       "belongs to the second setup only")
+caught("the non-pad bores on setup 2 refuse — the gauges must exist before "
+       "setup 2's iso cuts their read-out discs",
+       lambda: pcbjob.load(variant(
+           "v-boresback.toml", ("[phases.back.drills]",
+                                "[phases.back.bores]"))),
+       "belongs to the first setup only")
 caught("hand-written pin phases refuse (the coin lane's law)",
        lambda: pcbjob.load(variant(
-           "v-handpin.toml", ("[phases.front.drills]",
+           "v-handpin.toml", ("[phases.front.bores]",
                               "[phases.front.pindrill]"))),
        "DERIVED from [pins]")
 caught("a flipped document with no [pins] refuses",
@@ -573,6 +659,42 @@ caught("a missing F.Cu export refuses",
        lambda: without("stub2-F_Cu.gbr"), "missing gerber")
 caught("a missing paste export refuses",
        lambda: without("stub2-B_Paste.gbr"), "one stencil, back side")
+caught("a flipped document with no partition export refuses",
+       lambda: without("stub2-bores.drl"), "missing excellon")
+
+
+def partition(name, bores, pads):
+    """A job whose two partition Excellons carry `bores`/`pads` instead of the
+    honest split — same artwork, same full schedule, so the ONLY thing that
+    can refuse is the partition law itself."""
+    d = TD / name
+    d.mkdir(exist_ok=True)
+    for f in G.iterdir():
+        (d / f.name).write_text(f.read_text())
+    (d / "stub2-bores.drl").write_text(drl_text(bores))
+    (d / "stub2-pads.drl").write_text(drl_text(pads))
+    p = TD / f"{name}.toml"
+    p.write_text(JOB.replace('gerbers = "gerbers"', f'gerbers = "{name}"'))
+    return p
+
+
+check("the honest partition of the fixture loads (the control for the three "
+      "refusals below)",
+      pcbjob.load(partition("p-ok", BORE_HOLES, PAD_HOLES)).name == "stub2")
+caught("a hole in NEITHER partition file refuses — it would never be cut",
+       lambda: pcbjob.load(partition("p-never", BORE_HOLES[:1], PAD_HOLES)),
+       "cut NEVER")
+caught("a hole in BOTH files refuses — bored from two frames, a via becomes "
+       "a slot",
+       lambda: pcbjob.load(partition("p-twice", BORE_HOLES + PAD_HOLES[:1],
+                                     PAD_HOLES)),
+       "cut TWICE")
+caught("a hole MOVED by 0.05 between the schedule and its partition refuses "
+       "(multiset equality, no tolerance — one exporter wrote all three)",
+       lambda: pcbjob.load(partition(
+           "p-moved", [(G1[0] + 0.05, G1[1], VIA_HOLE), BORE_HOLES[1]],
+           PAD_HOLES)),
+       "hole partition broken")
 
 # ============================================================== frame math
 print("\nframes: two setups, ONE Edge.Cuts (no raster needed):")
@@ -635,11 +757,27 @@ check("side A opens F.Cu, emits NO mirror, and cuts no outline",
 check("side B opens B.Cu, MIRRORS every object, and cuts the outline",
       "stub2-B_Cu.gbr" in tcl_b and "mirror cu -axis X -origin 0,0" in tcl_b
       and "mirror edge -axis X -origin 0,0" in tcl_b
-      and "geocutout" in tcl_b and "milldrills" not in tcl_b
+      and "geocutout" in tcl_b and "milldrills" in tcl_b
       and f"offset cu -x {BW:g} -y 0" in tcl_b,
       [ln for ln in tcl_b.splitlines() if ln.startswith("offset cu")])
-check("only side A opens the Excellon (drill once, from the front)",
-      "open_excellon" in tcl_a and "open_excellon" not in tcl_b)
+# each setup opens its OWN partition, and each writes its own phase file: no
+# hole is ever opened in both frames, which is what "cut exactly once" means
+# down at the interchange level
+check("each side opens ITS partition of the Excellon, and only that one",
+      "stub2-bores.drl" in tcl_a and "stub2-pads.drl" not in tcl_a
+      and "stub2-pads.drl" in tcl_b and "stub2-bores.drl" not in tcl_b
+      and tcl_a.count("open_excellon") == tcl_b.count("open_excellon") == 1,
+      [ln for ln in (tcl_a + tcl_b).splitlines()
+       if ln.startswith("open_excellon")])
+check("...and each writes its own hole phase file (bores vs drills), the "
+      "cutout still side 2's alone",
+      engine.PHASE_NC["bores"] in tcl_a
+      and engine.PHASE_NC["drills"] not in tcl_a
+      and engine.PHASE_NC["drills"] in tcl_b
+      and engine.PHASE_NC["bores"] not in tcl_b
+      and engine.PHASE_NC["cutout"] in tcl_b
+      and engine.PHASE_NC["cutout"] not in tcl_a,
+      f"{engine.PHASE_NC['bores']} / {engine.PHASE_NC['drills']}")
 check("each side's own depths reach its own Tcl",
       "-z_cut -0.15" in tcl_a and "-z_cut -0.12" in tcl_b
       and "-z_cut -0.21" in tcl_a and "-z_cut -0.19" in tcl_b)
@@ -657,14 +795,16 @@ src = inspect.getsource(engine.run)
 check("engine.run resolves work_dir to absolute itself (the cwd fold-in)",
       "Path(work_dir).resolve()" in src and "cwd" in src)
 
-# ==================================== side 2's annular laps (no raster needed)
-# The paint-across-bores finding, FIXED by the aperture-class split: paint
-# keeps the SMD apertures (fed a filtered mask), hole-centred apertures get
-# in-repo annular laps. This section proves the split's design numbers with
-# no gerbv and no FlatCAM; the live section proves the gate passes the result.
-print("\nside 2's annular laps: the aperture-class split (no raster needed):")
+# ============================= the scrub is the SOLDER PLAN (no raster needed)
+# The 2026-08-03 ordering law replaced the aperture-class split: no hole
+# exists under ANY scrub any more, so `paint` covers every hole-centred pad
+# fully — that bare disc is the law's whole point — and the only thing that
+# may be held back from paint is a DECLARED INERT aperture (a mask opening
+# the bench will never solder). This section proves that machinery with no
+# gerbv and no FlatCAM; the raster sections below prove the gate convicts a
+# scrub that gets the solder plan wrong.
+print("\nthe scrub is the SOLDER PLAN: inert apertures (no raster needed):")
 import copy  # noqa: E402
-import re  # noqa: E402
 
 mfl = bm.flashes(G / "stub2-B_Mask.gbr")
 check("the flash scan reads the mask's apertures as DESIGN numbers",
@@ -676,76 +816,67 @@ bm.rewrite_flashes(G / "stub2-B_Silkscreen.gbr", same, lambda x, y: False)
 check("rewrite_flashes with nothing to drop is byte-identical "
       "(draws untouched)",
       same.read_text() == (G / "stub2-B_Silkscreen.gbr").read_text())
-hp = reemit.hole_apertures(back)
-check("hole-centred classification: the two vias and ONLY them (gauge has "
-      "no aperture, bore has no pad)",
-      [(h["hx"], h["hy"]) for h in hp] == [V1, V2]
-      and all(h["mask_d"] == VIA_PAD and h["pad_d"] == VIA_PAD
-              and h["hole_d"] == VIA_HOLE for h in hp))
-fmp = reemit.scrub_mask(back, TD)
+check("NO inert declaration: BOTH setups paint the export itself — the whole "
+      "flood coat over every pad, hole-centred or not",
+      reemit.scrub_mask(front, TD) == front.files["mask"]
+      and reemit.scrub_mask(back, TD) == back.files["mask"]
+      and reemit.inert_apertures(front) == []
+      and reemit.inert_apertures(back) == [],
+      f"{back.files['mask'].name}")
+
+# the ONE thing that may be held back from paint: a mask opening the bench
+# will never solder. It is board truth (a file the board generator exports),
+# it names positions in the GERBER frame, and every entry must land on a real
+# flash — a list that has drifted from the artwork is refused, never guessed.
+(TD / "inert-back.txt").write_text(
+    "# x, y  # why — written by the board generator, never typed\n"
+    f"{SMD[0]}, {SMD[1]}  # P1 is dead copper on this control\n")
+IJOB = pcbjob.load(variant("v-inert.toml",
+                           ("[phases.back.drills]",
+                            'inert = "inert-back.txt"\n\n'
+                            "[phases.back.drills]")))
+iback = pcbjob.side_view(IJOB, "back")
+check("an inert list loads as board truth: position in the gerber frame, "
+      "and the REASON carried with it",
+      [(round(x, 3), round(y, 3)) for x, y, _ in
+       reemit.inert_apertures(iback)] == [SMD]
+      and reemit.inert_apertures(iback)[0][2]
+      == "P1 is dead copper on this control",
+      str(reemit.inert_apertures(iback)))
+fmp = reemit.scrub_mask(iback, TD)
 fmt_ = fmp.read_text()
-check("scrub_mask: via flashes became D02 MOVES (modal state intact), the "
-      "SMD flash still fires",
-      fmp.name == "mask-scrub.gbr" and fmt_.count("D03*") == 1
-      and f"X{gnum(V1[0])}Y{gnum(V1[1])}D02*" in fmt_
-      and f"X{gnum(V2[0])}Y{gnum(V2[1])}D02*" in fmt_
-      and f"X{gnum(SMD[0])}Y{gnum(SMD[1])}D03*" in fmt_)
-check("side 1 and a single-sided job get the export back untouched",
-      reemit.scrub_mask(front, TD) == front.files["mask"])
+check("scrub_mask: the INERT flash became a D02 MOVE (modal state intact) "
+      "and every live pad still fires",
+      fmp.name == "mask-scrub.gbr" and fmt_.count("D03*") == 2
+      and f"X{gnum(SMD[0])}Y{gnum(SMD[1])}D02*" in fmt_
+      and f"X{gnum(V1[0])}Y{gnum(V1[1])}D03*" in fmt_
+      and f"X{gnum(V2[0])}Y{gnum(V2[1])}D03*" in fmt_,
+      f"{fmt_.count('D03*')} flashes left")
 check("render_tcl paints the OVERRIDE mask when handed one",
       f"open_gerber {fmp} -outname mask"
       in engine.render_tcl(back, win, TD / "work" / "back", mask_path=fmp))
+(TD / "inert-drift.txt").write_text(
+    f"{G1[0]}, {G1[1]}  # the flip gauge — which has NO mask aperture\n")
+IDRIFT = pcbjob.side_view(pcbjob.load(variant(
+    "v-inert-drift.toml", ("[phases.back.drills]",
+                           'inert = "inert-drift.txt"\n\n'
+                           "[phases.back.drills]"))), "back")
+caught("an inert entry matching no flash refuses — the list drifted from the "
+       "artwork",
+       lambda: reemit.scrub_mask(IDRIFT, TD), "NO matching mask flash")
+INOFILE = pcbjob.side_view(pcbjob.load(variant(
+    "v-inert-gone.toml", ("[phases.back.drills]",
+                          'inert = "inert-nope.txt"\n\n'
+                          "[phases.back.drills]"))), "back")
+caught("an inert list that is not on disk refuses — it is exported, never "
+       "typed",
+       lambda: reemit.inert_apertures(INOFILE), "does not exist")
 
-lap_lines, lstats = reemit.annular_laps(back, win=win)
-check("two hole-centred pads -> two laps (band 0.05 < stepover 0.165)",
-      lstats == {"pads": 2, "laps": 2, "margin": 0.05, "chord": 0.01},
-      lstats)
-_cre = re.compile(r"X([-\d.]+) Y([-\d.]+)")
-laps, _cur = [], []
-for ln in lap_lines:
-    if ln.startswith("G0 Z"):
-        if _cur:
-            laps.append(_cur)
-            _cur = []
-        continue
-    m2 = _cre.search(ln)
-    if m2:
-        _cur.append((float(m2.group(1)), float(m2.group(2))))
-if _cur:
-    laps.append(_cur)
-offb2 = bm.machine_offset(win, back.anchor, back.mirror)
-ok_geo = len(laps) == 2
-geo_note = []
-for lp in laps:
-    xs = np.array([q[0] for q in lp])
-    ys = np.array([q[1] for q in lp])
-    bx3, by3 = bm.board_xy(offb2, "x", xs, ys)
-    cx, cy = min((V1, V2),
-                 key=lambda c: math.hypot(bx3[0] - c[0], by3[0] - c[1]))
-    rr = np.hypot(bx3 - cx, by3 - cy)
-    rc = float(rr.mean())
-    ang = np.unwrap(np.arctan2(by3 - cy, bx3 - cx))
-    sag = rc * (1 - math.cos(float(np.abs(np.diff(ang)).max()) / 2))
-    ok_geo &= (float(np.abs(rr - rc).max()) < 1e-3
-               and abs(rc - 0.925) < 1e-3          # the band's midpoint
-               and lp[0] == lp[-1]                 # closed exactly
-               # the two flip bars, re-derived LONGHAND from design numbers
-               and VIA_PAD / 2 - (rc + 0.15)
-               >= flip.SCRUB_ANNULAR_INSIDE + 0.049
-               and (rc - 0.15) - VIA_HOLE / 2
-               >= flip.SCRUB_ANNULAR_RIM + 0.049
-               and sag <= 0.0101)                  # one raster pixel
-    geo_note.append(f"rc={rc:.4f} sag={sag:.4f}")
-check("every lap vertex ON its circle at the band midpoint, closed, both "
-      "bars hold with the engineered margin, chords under one pixel",
-      ok_geo, "; ".join(geo_note))
-_fw = set(re.findall(r"F([\d.]+)", "\n".join(lap_lines)))
-_zw = [float(z) for z in re.findall(r"G1 Z([-\d.]+)", "\n".join(lap_lines))]
-check("lap feeds are the phase's own pair and the floor is side 2's depth",
-      _fw == {"400", "200"} and bool(_zw)
-      and all(abs(z + 0.19) < 1e-9 for z in _zw))
-
-print("\n...and its refusals, each by name:")
+print("\n...and the aperture classifier's own refusals, each by name:")
+# reemit.hole_apertures no longer feeds any generator (the ordering law
+# retired the hole-centred filtering it served), but it is still the module's
+# reader of "which pad sits on a hole" and its refusals are the artwork
+# ambiguities nobody may guess past. They stay convictable here.
 
 
 def with_files(sj, **repl):
@@ -754,12 +885,12 @@ def with_files(sj, **repl):
     return b
 
 
-(G / "v-mask-gauge.gbr").write_text(
-    flashes([(2.8, [V1, V2]), (2.4, [SMD]), (1.6, [G1])]))
-caught("a gauge handed a mask aperture refuses: a 0.35 ring has no legal lap",
-       lambda: reemit.annular_laps(
-           with_files(back, mask=G / "v-mask-gauge.gbr"), win=win),
-       "no legal annular lap")
+hp = reemit.hole_apertures(back)
+check("hole-centred classification: the two vias and ONLY them (gauge has "
+      "no aperture, bore has no pad)",
+      [(h["hx"], h["hy"]) for h in hp] == [V1, V2]
+      and all(h["mask_d"] == VIA_PAD and h["pad_d"] == VIA_PAD
+              and h["hole_d"] == VIA_HOLE for h in hp))
 (G / "v-mask-ecc.gbr").write_text(
     flashes([(2.8, [(V1[0] + 0.6, V1[1])]), (2.8, [V2]), (2.4, [SMD])]))
 caught("an aperture overlapping a hole OFF-CENTRE refuses",
@@ -782,8 +913,6 @@ caught("a masked hole with no copper flash refuses (no pad number to trust)",
        lambda: reemit.hole_apertures(
            with_files(back, cu=G / "v-cu-nopad.gbr")),
        "no copper flash")
-caught("annular laps on side 1 refuse (no holes there yet)",
-       lambda: reemit.annular_laps(front, win=win), "side 2")
 (G / "v-mask-lpc.gbr").write_text(
     flashes([(2.8, [V1, V2])]).replace("%LPD*%", "%LPC*%"))
 caught("clear polarity refuses — a cleared flash is not ink",
@@ -901,38 +1030,41 @@ def build_clear(sj, into_copper=False):
     return op("clear", p["tool"], lines, p["feed"])
 
 
-def build_scrub(sj, radii=None, centre=False):
-    """Side 1: disc laps (no holes yet). Side 2: ANNULAR laps on hole-centred
-    pads (the holes are all there) and a disc lap on the SMD pad."""
+def build_scrub(sj, skip=(), extra=()):
+    """The 2026-08-03 ordering law's scrub, on BOTH setups: a full DISC lap on
+    every solderable aperture. No hole exists under any scrub any more, so the
+    annular band (and the 0.20 cured-mask collar it left exactly where the
+    joint wets) is gone — the tip cleans each pad bare all the way to what
+    later becomes its drilled rim.
+
+    `skip` drops an aperture from the plan (the missed-pad control) and
+    `extra` adds laps of (board centre, radius) that no aperture asked for."""
     p = sj.phases["scrub"]
     m = machof(sj)
     lines = []
     for c, dia in PADS[sj.side]:
-        if c == G1:
+        if c == G1 or c in skip:
             continue        # gauges are not in the scrub set (no mask opening)
-        if sj.side == "back" and c != SMD:
-            r = 0.925 if radii is None else radii
-            ch = ring(m(c), r)
-            if centre:
-                lines += cut_chain([m(c), m(c)], p["depth"], p["feed"],
-                                   p["plunge"])
-            lines += cut_chain(ch + [ch[0]], p["depth"], p["feed"],
-                               p["plunge"])
-        else:
-            lines += cut_chain([m(c), m(c)], p["depth"], p["feed"],
-                               p["plunge"])
-            ch = ring(m(c), dia / 2 - 0.6)
-            lines += cut_chain(ch + [ch[0]], p["depth"], p["feed"],
-                               p["plunge"])
+        lines += cut_chain([m(c), m(c)], p["depth"], p["feed"], p["plunge"])
+        ch = ring(m(c), dia / 2 - 0.6)
+        lines += cut_chain(ch + [ch[0]], p["depth"], p["feed"], p["plunge"])
+    for c, r in extra:
+        ch = ring(m(c), r)
+        lines += cut_chain(ch + [ch[0]], p["depth"], p["feed"], p["plunge"])
     return op("scrub", p["tool"], lines, p["feed"])
 
 
-def build_drills(sj):
-    p = sj.phases["drills"]
-    tool = sj.phase_tool("drills")
+def build_drills(sj, holes, phase=None):
+    """The hole program of ONE setup, over the partition IT cuts: setup 1's
+    `bores` (the non-pad holes) or setup 2's `drills` (every pad hole), each
+    in its own frame. Handing a builder the whole schedule is exactly the
+    thing the ordering law forbids, so it is not the default."""
+    phase = phase or ("drills" if sj.has_phase("drills") else "bores")
+    p = sj.phases[phase]
+    tool = sj.phase_tool(phase)
     m = machof(sj)
     lines = []
-    for hx, hy, hd in HOLES:
+    for hx, hy, hd in holes:
         c = m((hx, hy))
         r_orbit = max((hd - tool.diameter) / 2, 0.0)
         for z in np.arange(-p["dpp"], p["depth"] - 1e-9, -p["dpp"]):
@@ -941,7 +1073,7 @@ def build_drills(sj):
             lines += cut_chain(o + [o[0]], z, p["feed"], p["plunge"])
         o = ring(c, r_orbit, step=0.05) if r_orbit > 0 else [c, c]
         lines += cut_chain(o + [o[0]], p["depth"], p["feed"], p["plunge"])
-    return op("drills", p["tool"], lines, p["feed"])
+    return op(phase, p["tool"], lines, p["feed"])
 
 
 def cutout_chains(sj, tabs=4):
@@ -1006,40 +1138,82 @@ def mutate(src, name, fn):
     return path
 
 
+def back_holes(sj=None, tabs=4):
+    """Setup 2's ONE holes program, two ops in machining order: every PAD hole
+    first (both faces' solder plans are scrubbed by now), then the outline cut
+    with tabs, last of everything."""
+    sj = sj or back
+    return [build_drills(sj, PAD_HOLES), build_cutout(sj, tabs)]
+
+
 PROGS = {"front": {}, "back": {}}
 PROGS["front"]["mill"] = write_program(front, "mill",
                                        [build_iso(front), build_clear(front)])
 PROGS["front"]["scrub"] = write_program(front, "scrub", [build_scrub(front)])
-PROGS["front"]["holes"] = write_program(front, "holes", [build_drills(front)])
+PROGS["front"]["holes"] = write_program(front, "holes",
+                                        [build_drills(front, BORE_HOLES)])
 PROGS["front"]["pins"] = write_program(front, "pins", reemit.pin_ops(front))
 PROGS["back"]["mill"] = write_program(back, "mill",
                                       [build_iso(back), build_clear(back)])
 PROGS["back"]["scrub"] = write_program(back, "scrub", [build_scrub(back)])
-PROGS["back"]["holes"] = write_program(back, "holes", [build_cutout(back)])
+PROGS["back"]["holes"] = write_program(back, "holes", back_holes())
 check("eight mill-dialect programs assemble through reemit.assemble_program",
       all(p.is_file() for side in PROGS for p in PROGS[side].values()),
       ", ".join(f"{s}/{n}" for s in PROGS for n in PROGS[s]))
-caught("a program carrying the other side's phases refuses",
-       lambda: reemit.assemble_program(back, "holes", [build_drills(front)]),
+caught("a program carrying the other setup's phases refuses",
+       lambda: reemit.assemble_program(
+           back, "holes", [build_drills(front, BORE_HOLES)]),
+       "must carry phases")
+caught("...and setup 2's holes program refuses the cutout WITHOUT the pad "
+       "drills — the order is the program",
+       lambda: reemit.assemble_program(back, "holes", [build_cutout(back)]),
        "must carry phases")
 
 hdr_a = reemit.program_header(front, "pins", reemit.pin_ops(front))
 hdr_b = reemit.program_header(back, "mill", [build_iso(back)])
+hdr_sc = reemit.program_header(front, "scrub", [build_scrub(front)])
+hdr_h1 = reemit.program_header(front, "holes",
+                               [build_drills(front, BORE_HOLES)])
+hdr_h2 = reemit.program_header(back, "holes", back_holes())
 blob_a, blob_b = " ".join(hdr_a), " ".join(hdr_b)
-check("side A's LAST program hands the operator the FLIP",
+blob_sc, blob_h1, blob_h2 = (" ".join(h) for h in (hdr_sc, hdr_h1, hdr_h2))
+# the steps are keyed by SETUP ROLE and formatted with the faces THIS document
+# chose, so the words the operator reads follow [twosided] first
+check("setup 1's LAST program hands the operator the FLIP, and the deburr it "
+      "names is the BORES' exits on the face that machines next",
       "program E of 5 - pins [side FRONT]" in blob_a
       and "FLIP: set the 2 dowels" in blob_a and "about Y" in blob_a
-      and "NEVER re-zero XY" in blob_a and "deburr the BACK" in blob_a,
+      and "NEVER re-zero XY" in blob_a
+      and "deburr the bores' exits on the still-raw BACK face" in blob_a,
       [ln for ln in hdr_a if "FLIP" in ln][:1])
-check("side B's FIRST program starts from the flipped blank",
+check("setup 2's FIRST program starts from the flipped blank, and the probe "
+      "warning names the only holes that exist: the bores",
       "program A of 4 - mill [side BACK]" in blob_b
       and "FLIPPED onto the pins" in blob_b
-      and "probe point sat in a drilled hole" in blob_b
+      and "Z0 = BACK copper" in blob_b
+      and "probe point sat in a bore" in blob_b
       and "READ THE FLIP GAUGES" in blob_b,
       [ln for ln in hdr_b if "before" in ln][:1])
+check("setup 1's scrub says ZERO holes exist and every pad takes FULL discs",
+      "ZERO holes exist" in blob_sc
+      and "FULL disc laps" in blob_sc
+      and "program D holes - the non-pad bores" in blob_sc,
+      [ln for ln in hdr_sc if "ZERO" in ln][:1])
+check("setup 1's holes program says ONLY the bores, pad holes wait for "
+      "setup 2 and BOTH scrubs",
+      "ONLY the non-pad bores" in blob_h1
+      and "Every PAD hole waits for setup 2, after BOTH scrubs" in blob_h1,
+      [ln for ln in hdr_h1 if "PAD" in ln][:1])
+check("setup 2's holes program says EVERY pad hole, then the cutout last, "
+      "and sends the operator to chase the exits on the FRONT",
+      "EVERY pad hole" in blob_h2
+      and "then the outline cut with tabs, last" in blob_h2
+      and "chase the pad-hole exits on the FRONT pads" in blob_h2,
+      [ln for ln in hdr_h2 if "EVERY pad hole" in ln][:1])
+hdr_all = hdr_a + hdr_b + hdr_sc + hdr_h1 + hdr_h2
 check("every header line survives the 128-char dialect law",
-      all(len(ln) <= 128 for ln in hdr_a + hdr_b),
-      f"longest {max(len(ln) for ln in hdr_a + hdr_b)}")
+      all(len(ln) <= 128 for ln in hdr_all),
+      f"longest {max(len(ln) for ln in hdr_all)}")
 
 # ===================================================== steered cutout tabs
 # Tab PLACEMENT is a manufacturing free variable and the tab-zone law judges
@@ -1150,9 +1324,9 @@ check("the single-sided split still spells A of 4 .. D of 4",
 # ===================================================== raster sections (gerbv)
 if not bm.have_gerbv():
     print("\nSKIP: gerbv not available — the flip's raster checks (annular "
-          "ring, concentricity, paste-vs-holes, annular scrub, tab-zone "
-          "keep-out) are NOT checkable here (install: sudo apt install "
-          "gerbv)")
+          "ring, concentricity, paste-vs-holes, the ordering law's scrub "
+          "plan, tab-zone keep-out) are NOT checkable here (install: sudo "
+          "apt install gerbv)")
     print("\nPCB TWOSIDED " + ("FAIL: " + ", ".join(fails) if fails
                                else "PASS (raster skipped)"))
     sys.exit(1 if fails else 0)
@@ -1227,10 +1401,10 @@ for name, rep in reports.items():
 check("nine programs plus the artwork report, keyed side/program",
       len(reports) == 10 and set(reports) == {"board"} | {
           f"{s2}/{n}" for s2 in ("front", "back")
-          for n in pcbjob.SIDE_PROGRAMS[s2]}, str(sorted(reports)))
+          for n in SPROGS[s2]}, str(sorted(reports)))
 short = flip.verify_twosided(job, {"front": PROGS["front"]}, ctx=ctx)
 check("a side that was not handed over is FATAL per program, never skipped",
-      all(not short[f"back/{n}"].ok for n in pcbjob.SIDE_PROGRAMS["back"])
+      all(not short[f"back/{n}"].ok for n in SPROGS["back"])
       and "unverified" in short["back/mill"].checks[0].detail,
       short["back/mill"].checks[0].detail[:70])
 check("report_text names the artwork and every side/program",
@@ -1250,7 +1424,7 @@ check("each session is keyed by the .nc the operator posts, under its own "
       "side's stem",
       all(Path(vby[f"{s2}/{n}"].path).name
           == f"{pcbjob.program_stem(pcbjob.side_view(job, s2), n)}.nc"
-          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2])
+          for s2 in job.sides for n in SPROGS[s2])
       and Path(vby["front/mill"].path).name == "stub2-front-mill.nc",
       Path(vby["back/holes"].path).name)
 check("every program session names its side, its document and its phases",
@@ -1258,8 +1432,8 @@ check("every program session names its side, its document and its phases",
           and vby[f"{s2}/{n}"].meta["board"] == job.name
           and vby[f"{s2}/{n}"].meta["program"] == f"{s2}/{n}"
           and tuple(vby[f"{s2}/{n}"].meta["phases"])
-          == pcbjob.SIDE_PROGRAMS[s2][n]
-          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2]))
+          == SPROGS[s2][n]
+          for s2 in job.sides for n in SPROGS[s2]))
 check("each side's sessions carry that side's OWN frame and phase numbers",
       vby["front/mill"].meta["sheet"] != vby["back/mill"].meta["sheet"]
       or front.phases["iso"]["depth"] != back.phases["iso"]["depth"],
@@ -1292,12 +1466,15 @@ check("the same card rides every session", all(s.meta["run_sheet"] == card
                                                for s in vs))
 check("numbered, gapless, in order",
       [st["n"] for st in card] == list(range(1, len(card) + 1)))
-check("the run sheet machines side A's phases, then the holes, then the "
-      "pins, then side B's phases, and the cutout LAST",
+check("the run sheet machines setup 1's phases, then its BORES, then the "
+      "pins, then setup 2's phases, then every pad hole and the cutout LAST",
       seq == WANT[1:], str(seq))
 n_of = {st["program"]: st["n"] for st in card if st["kind"] == "program"}
 n_flip = next(st["n"] for st in card if "FLIP" in st["title"])
-n_gauge = next(st["n"] for st in card if "flip gauges" in st["title"])
+# "read the flip gauges..." — the OPERATOR step, not setup 1's bores program
+# (whose title names the gauges too, because it is what cuts them)
+n_gauge = next(st["n"] for st in card
+               if st["title"].startswith("read the flip gauges"))
 n_mask2 = next(st["n"] for st in card
                if st["title"].startswith("squeegee") and "BACK" in st["title"])
 check("the FLIP sits between side 1's pin bores and side 2's first program",
@@ -1338,14 +1515,19 @@ check("the artwork session carries the board report's checks, and nobody "
       == [c.name for c in reports["board"].checks]
       and gby["board"].meta["checks"],
       f"{len(gby['board'].meta['checks'])} checks")
-check("the CROSS-SIDE checks reach the operator's screen",
-      any(c["name"] == "annular scrub inside copper"
-          for c in gby["back/scrub"].meta["checks"])
+check("the CROSS-SIDE checks reach the operator's screen — on BOTH setups' "
+      "scrubs, since the ordering law judges every one of them",
+      all({"scrub clear of existing holes", "solder plan scrubbed",
+           "inert stays under mask"}
+          <= {c["name"] for c in gby[f"{s2}/scrub"].meta["checks"]}
+          for s2 in job.sides)
       and any(c["name"] == "tab-zone copper keep-out"
-              for c in gby["back/holes"].meta["checks"]))
+              for c in gby["back/holes"].meta["checks"]),
+      str(sorted({c["name"] for c in gby["front/scrub"].meta["checks"]}
+                 - {c["name"] for c in gby["front/mill"].meta["checks"]})))
 check("a session downloads the bytes the GATE judged, not the live file",
       all(gby[f"{s2}/{n}"].program.decode() == reports[f"{s2}/{n}"].program
-          for s2 in job.sides for n in pcbjob.SIDE_PROGRAMS[s2]))
+          for s2 in job.sides for n in SPROGS[s2]))
 check("session.report_text names the artwork and every side/program",
       "artwork board" in session.report_text(gvs)
       and "program back/holes" in session.report_text(gvs)
@@ -1496,29 +1678,135 @@ try:
 finally:
     flip.FlipContext.mirror = staticmethod(_m)
 
-# 7/8. the annular scrub laws, on side 2's bytes
-sc_far = write_program(back, "scrub", [build_scrub(back, radii=1.05)])
-rep = checks.verify_program(back, "scrub", sc_far, ctx.maps("back"), flip=ctx)
-catches("a side-2 lap only 0.10 inside copper (annular bar is 0.15)",
-        rep.checks, "annular scrub inside copper",
-        must_pass=("scrub window", "scrub plateau margin",
-                   "annular scrub clear of the hole rim"))
-sc_hole = write_program(back, "scrub", [build_scrub(back, centre=True)])
-rep = checks.verify_program(back, "scrub", sc_hole, ctx.maps("back"),
-                            flip=ctx)
-catches("a side-2 DISC lap straight across a drilled hole",
-        rep.checks, "annular scrub clear of the hole rim",
-        must_pass=("scrub window", "scrub plateau margin",
-                   "annular scrub inside copper"))
-print("      ^ the point of the check: the copper gerber draws a pad as a "
-      "SOLID\n        disc, so a lap over the hole centre reads as deeply "
-      "inside copper\n        and passes every single-sided scrub law there "
-      "is")
+# 7/8/9. THE ORDERING LAW's three convictions, on real scrub bytes. The
+# honest fixture passes all three on BOTH setups (asserted first, so a
+# control that convicts cannot be convicting the fixture); each hazard below
+# then breaks exactly one of them while its neighbours still pass.
+SCRUB_LAWS = ("scrub clear of existing holes", "solder plan scrubbed",
+              "inert stays under mask")
+
+
+def scrub_report(sj, tag, prog=None, **kw):
+    """One scrub program's report. `prog` reuses bytes already on disk;
+    otherwise the laps are built for `sj` and written under their own name so
+    no control ever overwrites the fixture's assembled program."""
+    if prog is None:
+        prog = OUT / f"neg-scrub-{tag}.nc"
+        prog.write_text(reemit.assemble_program(sj, "scrub",
+                                                [build_scrub(sj, **kw)]))
+    return checks.verify_program(sj, "scrub", prog, ctx.maps(sj.side),
+                                 flip=ctx)
+
+
+for sj in (front, back):
+    d = by_name(scrub_report(sj, "pos", prog=PROGS[sj.side]["scrub"]).checks)
+    check(f"POS {sj.side}'s honest scrub PASSES all three ordering-law checks",
+          all(d[n].ok for n in SCRUB_LAWS),
+          "; ".join(f"{n} {d[n].value:.4f} ({d[n].limit})"
+                    for n in SCRUB_LAWS))
+# 7. the 2026-07-30 paint-across-bores incident, still convictable. The
+# GENERATOR can no longer produce it (setup 2 inherits only the non-pad bores,
+# and no aperture sits on one), so the hazard is injected where it would
+# actually come from: a partition that put a PAD hole in setup 1. The bytes
+# are the fixture's own honest disc laps — unchanged, and now lapping across
+# an open Ø1.0 bore.
+(TD / "v-bores-at-via.drl").write_text(drl_text(BORE_HOLES + PAD_HOLES[:1]))
+crossed = with_files(back, bores_drl=TD / "v-bores-at-via.drl")
+catches("a setup-2 disc lap straight across a hole that setup 1 already "
+        "bored (a 0.3 spring tip drops in and levers the pad off)",
+        scrub_report(crossed, "bore", prog=PROGS["back"]["scrub"]).checks,
+        "scrub clear of existing holes",
+        must_pass=("solder plan scrubbed", "inert stays under mask",
+                   "scrub window", "scrub plateau margin"))
+print("      ^ the copper gerber draws a pad as a SOLID disc (the hole lives "
+      "only in\n        the Excellon), so a lap over the hole centre reads as "
+      "deeply inside\n        copper and passes every single-sided scrub law "
+      "there is")
+# and the same law on the REAL inherited set, no injection: a lap that
+# wanders over the Ø3.4 mount bore setup 1 left in the blank. (`scrub window`
+# and `scrub plateau margin` convict this one too — it is off the mask and
+# off copper — so only the ordering law's own neighbours are claimed here.)
+catches("a setup-2 lap over the mount bore this setup INHERITED",
+        scrub_report(back, "bore-real", extra=((H1, 0.6),)).checks,
+        "scrub clear of existing holes",
+        must_pass=("solder plan scrubbed", "inert stays under mask"))
+# 8. a pad the bench expects to solder that the scrub never opens. On this
+# process the flood coat is opened by the scrub and by NOTHING else, so a
+# missed aperture is an unsolderable pad however perfect the artwork is.
+catches("a setup-2 scrub that never laps the SMD aperture",
+        scrub_report(back, "miss", skip=(SMD,)).checks,
+        "solder plan scrubbed",
+        must_pass=("scrub clear of existing holes", "inert stays under mask",
+                   "scrub window", "scrub plateau margin"))
+catches("...and the same hazard on setup 1, whose solder plan is judged by "
+        "the identical law",
+        scrub_report(front, "miss1", skip=(V2,)).checks,
+        "solder plan scrubbed",
+        must_pass=("scrub clear of existing holes", "inert stays under mask",
+                   "scrub window", "scrub plateau margin"))
+# 9. the inert list is a machining subset, not a licence: an opening the
+# document declares dead must KEEP its flood coat (that coat is the
+# protective finish dead copper wants), and one that is scrubbed anyway is
+# stripped for nothing.
+ipos = by_name(scrub_report(iback, "inert-ok", skip=(SMD,)).checks)
+check("POS a DECLARED inert aperture left unscrubbed passes all three — the "
+      "solder plan is the live apertures, not every opening",
+      all(ipos[n].ok for n in SCRUB_LAWS),
+      "; ".join(f"{n} {ipos[n].value:.4f}" for n in SCRUB_LAWS))
+catches("a lap on an aperture the document declares INERT",
+        scrub_report(iback, "inert-bad", prog=PROGS["back"]["scrub"]).checks,
+        "inert stays under mask",
+        must_pass=("scrub clear of existing holes", "solder plan scrubbed",
+                   "scrub window", "scrub plateau margin"))
+(TD / "inert-nowhere.txt").write_text(
+    f"{G1[0]}, {G1[1]}  # the flip gauge: no mask aperture is there at all\n")
+inowhere = pcbjob.side_view(pcbjob.load(variant(
+    "v-inert-nowhere.toml", ("[phases.back.drills]",
+                             'inert = "inert-nowhere.txt"\n\n'
+                             "[phases.back.drills]"))), "back")
+catches("an inert entry sitting on NO mask ink (the list drifted from the "
+        "artwork) is caught by the GATE too, not only by the generator",
+        scrub_report(inowhere, "inert-stale",
+                     prog=PROGS["back"]["scrub"]).checks,
+        "inert list names apertures",
+        must_pass=("scrub clear of existing holes", "solder plan scrubbed",
+                   "inert stays under mask"))
+# 9b. THE PARTITION, ON THE BYTES. The grammar proves the two Excellons split
+# the schedule; these two prove the PROGRAMS cut the partition they were
+# handed — each setup's hole checks judge against its own drl_cut, so a setup
+# that bores one of the other's holes and a setup that skips one of its own
+# are different, separately-named convictions.
+
+
+def holes_file(tag, sj, ops):
+    p = OUT / f"neg-holes-{tag}.nc"
+    p.write_text(reemit.assemble_program(sj, "holes", ops))
+    return p
+
+
+catches("setup 1 boring a PAD hole it must leave for setup 2 (that hole "
+        "would then predate BOTH scrubs — and be cut twice)",
+        checks.verify_program(
+            front, "holes",
+            holes_file("stray", front,
+                       [build_drills(front, BORE_HOLES + PAD_HOLES[:1])]),
+            ctx.maps("front"), flip=ctx).checks,
+        "stray bores", must_pass=("hole schedule", "hole bore depth"))
+catches("setup 2 leaving one of its PAD holes undrilled — nothing else ever "
+        "cuts it",
+        checks.verify_program(
+            back, "holes",
+            holes_file("short", back,
+                       [build_drills(back, PAD_HOLES[:1]),
+                        build_cutout(back)]),
+            ctx.maps("back"), flip=ctx).checks,
+        "hole schedule",
+        must_pass=("stray bores", "cutout tab census", "cutout ride band"))
 # 9. copper inside a tab zone
 nj, nctx = rebuild(B_Cu=flashes([(VIA_PAD, [V1, V2]), (GAUGE_PAD, [G1]),
                                  (SMD_PAD, [SMD, (BW / 2, 0.6)])]))
 nback = pcbjob.side_view(nj, "back")
-tabp = write_program(nback, "holes", [build_cutout(nback)])
+tabp = write_program(nback, "holes", back_holes(nback))
 rep = checks.verify_program(nback, "holes", tabp, nctx.maps("back"),
                             flip=nctx)
 catches("copper 0.6 from the board edge, inside a cutout tab's zone",
@@ -1592,14 +1880,18 @@ if live:
     out = engine.run_sides(job, work)
     check("both sides ran, each in its own dir, each with its own phases",
           set(out) == {"front", "back"}
-          and set(out["front"]) == {"iso", "clear", "scrub", "drills"}
-          and set(out["back"]) == {"iso", "clear", "scrub", "cutout"},
+          and set(out["front"]) == {"iso", "clear", "scrub", "bores"}
+          and set(out["back"]) == {"iso", "clear", "scrub", "drills",
+                                   "cutout"},
           {s: sorted(out[s]) for s in out})
-    check("side 2's engine painted the FILTERED mask (the Tcl says so)",
-          (work / "back" / "mask-scrub.gbr").is_file()
-          and "mask-scrub.gbr" in (work / "back" / "engine.tcl").read_text()
-          and "mask-scrub" not in (work / "front"
-                                   / "engine.tcl").read_text())
+    check("with nothing declared inert, BOTH engines painted the mask EXPORT "
+          "— the hole-centred filtering is gone with the ordering law",
+          not (work / "back" / "mask-scrub.gbr").exists()
+          and not (work / "front" / "mask-scrub.gbr").exists()
+          and all("mask-scrub" not in (work / s / "engine.tcl").read_text()
+                  and job.files[f"{s}_mask"].name
+                  in (work / s / "engine.tcl").read_text()
+                  for s in job.sides))
     lprogs = {}
     for side in job.sides:
         sj = pcbjob.side_view(job, side)
@@ -1607,15 +1899,15 @@ if live:
         ops = {ph: (reemit.scrub_op(nc, sj, win=ctx.tight)
                     if ph == "scrub" else reemit.read_phase(nc, sj, ph))
                for ph, nc in out[side].items()}
-        if side == "front":
-            check("side 1: scrub_op IS read_phase, byte for byte (the "
-                  "single-sided/coupon path cannot move)",
-                  ops["scrub"].lines == reemit.read_phase(
-                      out[side]["scrub"], sj, "scrub").lines)
+        check(f"{side}: scrub_op IS read_phase, byte for byte (no generated "
+              "geometry rides the scrub on EITHER setup any more, so the "
+              "single-sided/coupon path cannot move)",
+              ops["scrub"].lines == reemit.read_phase(
+                  out[side]["scrub"], sj, "scrub").lines)
         check(f"{side}: every phase re-emits clean under the param-match law",
               all(o.lines for o in ops.values()),
               ", ".join(f"{k}:{len(v.lines)}" for k, v in sorted(ops.items())))
-        for name, want in pcbjob.SIDE_PROGRAMS[side].items():
+        for name, want in SPROGS[side].items():
             if name == "silk":
                 mt = bm.rasterize(sj.files["mask"], ctx.tight)
                 text = reemit.silk_program(sj, ctx.tight, mt)[0]
@@ -1634,22 +1926,28 @@ if live:
           "PASS",
           all(lreps[n].ok for n in lreps if not n.endswith("/scrub")),
           str({n: v for n, v in bad.items() if not n.endswith("/scrub")}))
-    # THE TRIPWIRE, FLIPPED (2026-07-30, the paint-across-bores finding made
-    # law): `paint` used to lap straight across side 2's bores because the
-    # mask layer knows nothing about the Excellon — the gate refused it at
-    # rim margin −0.60 and THIS assertion was the loud TODO. The generator
-    # now splits by aperture class (reemit.scrub_mask filters what paint
-    # reads; reemit.scrub_op appends the annular laps), and the SAME checks
-    # that refused the old geometry now pass the new — with the hand-built
-    # disc-lap negative above still proving they can refuse.
-    s2 = by_name(lreps["back/scrub"].checks)
-    check("side 2's scrub PASSES the gate: paint kept off the bores, "
-          "annular laps on every hole-centred pad",
-          lreps["back/scrub"].ok,
-          f"inside {s2['annular scrub inside copper'].value:.4f} "
-          f"(>= {flip.SCRUB_ANNULAR_INSIDE}), rim "
-          f"{s2['annular scrub clear of the hole rim'].value:.4f} "
-          f"(>= {flip.SCRUB_ANNULAR_RIM})")
+    # THE TRIPWIRE, RETIRED BY REORDERING (2026-07-30 paint-across-bores →
+    # the 2026-08-03 ordering law): `paint` used to lap straight across side
+    # 2's bores because the mask layer knows nothing about the Excellon, and
+    # the gate refused it at rim margin −0.60. The first fix was an
+    # aperture-class split with annular laps; the operator then found the
+    # 0.20 cured-mask collar those laps leave exactly where the joint wets.
+    # The fix now is the ORDER: no pad hole exists under any scrub, so
+    # FlatCAM's own disc laps are correct on BOTH setups and the same check
+    # that refused the old geometry passes them — with the injected
+    # bore-under-a-lap negative above still proving it can refuse.
+    for s2n in job.sides:
+        s2 = by_name(lreps[f"{s2n}/scrub"].checks)
+        check(f"{s2n}: FlatCAM's own paint PASSES the ordering law — full "
+              f"disc laps, every solderable aperture, nothing to steer "
+              f"around",
+              lreps[f"{s2n}/scrub"].ok
+              and all(s2[n].ok for n in SCRUB_LAWS),
+              "; ".join(f"{n} {s2[n].value:.4f} ({s2[n].limit})"
+                        for n in SCRUB_LAWS)
+              + ("" if lreps[f"{s2n}/scrub"].ok else "; FAILED "
+                 + ", ".join(c.name for c in lreps[f"{s2n}/scrub"].checks
+                             if not c.ok)))
     check(f"ALL {len(lreps)} live reports PASS — the flip generates, "
           f"re-emits and verifies end to end",
           all(lreps[n].ok for n in lreps), str(bad))

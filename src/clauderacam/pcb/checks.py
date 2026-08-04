@@ -556,7 +556,9 @@ def iso_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     # slop: half a pixel of ink bias + a rounded path pixel (0.71px) + the
     # sampling step, rounded up to 1.5px
     gap = float(d_path[ring].max()) + 1.5 / maps.win.ppmm if ring.any() \
-        else float("inf")
+        else 0.0     # nothing to cover is vacuously covered — and never
+    #                  inf: bare `Infinity` in session JSON kills the
+    #                  viewer client (the back/scrub incident, 2026-08-03)
     detail = f"{int(ring.sum())} ring px"
     if gap > ISO_COVERAGE_TOL and ring.any():
         ii, jj = np.nonzero(ring)
@@ -653,9 +655,17 @@ def hole_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     diameter is 2*(worst radius + tool radius) and the bore CENTER is the
     midpoint of the sample bounding box (robust for a plunge, an orbit and a
     helix alike — a centroid is not).
+
+    The schedule judged is THIS setup's cut set (files drl_cut — the
+    2026-08-03 partition: setup 1 the non-pad bores, setup 2 every pad
+    hole); a single-sided job cuts the whole Excellon. A setup carries
+    exactly one of the two hole phases, so the phase resolves from the job.
     """
-    tool = job.phase_tool("drills")
-    p = job.phases["drills"]
+    ph_name = "drills" if job.has_phase("drills") else "bores"
+    tool = job.phase_tool(ph_name)
+    p = job.phases[ph_name]
+    sched = boardmaps.excellon(job.files.get("drl_cut")
+                               or job.files["drl"])
     depth, dpp = float(p["depth"]), float(p["dpp"])
     need_passes = int(np.ceil(abs(depth) / dpp))
     defects: list[str] = []
@@ -665,7 +675,7 @@ def hole_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
     worst_depth = 0.0
     fewest = 99
     assigned = np.zeros(len(s), bool)
-    for hx, hy, hd in maps.holes:
+    for hx, hy, hd in sched:
         rr = np.hypot(s.bx - hx, s.by - hy)
         cap = hd / 2 + tool.radius + HOLE_POS_TOL
         g = rr <= cap
@@ -694,7 +704,7 @@ def hole_checks(job: PcbJob, maps: BoardMaps, s: Samples) -> list[Check]:
             bad_holes.add((hx, hy, hd))
     out = [Check("hole schedule", float(len(defects)), "0 defects",
                  not defects,
-                 f"{len(maps.holes) - len(bad_holes)}/{len(maps.holes)} "
+                 f"{len(sched) - len(bad_holes)}/{len(sched)} "
                  f"bores, worst dia err {worst_dia:.3f}, worst center off "
                  f"{worst_pos:.3f}" + ("; " + "; ".join(defects[:3])
                                        if defects else ""))]
@@ -1060,6 +1070,7 @@ def pin_keepout_checks(job: PcbJob,
 
 PHASE_CHECKS = {"iso": iso_checks, "clear": clear_checks,
                 "scrub": scrub_checks, "drills": hole_checks,
+                "bores": hole_checks,     # same laws, this setup's drl_cut
                 "cutout": cutout_checks,
                 "pinspot": pin_checks, "pindrill": pin_checks}
 
