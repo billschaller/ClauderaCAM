@@ -63,6 +63,13 @@ needs an ISP programmer (a USBasp is fine).
 
 ## Step 1 — surface mount, back side up
 
+BEFORE ANY PART GOES DOWN, stitch via V16. One via hides UNDER the chip — on the
+map its diamond sits inside U1's outline. Wire through the hole, solder BOTH
+faces, clip flush, then file the back-side joint flat: U1 has to sit on top of
+it, and once the chip is down that hole is gone for good. If you are stenciling
+paste and the filed joint still tilts the stencil at U1's lands, reflow
+everything except U1 and hand-solder the chip afterwards.
+
 Everything in the SMD table goes on the back. Paste-and-reflow the lot, or hand
 solder in any order. Watch these:
 
@@ -80,7 +87,7 @@ solder in any order. Watch these:
 - Capacitors and resistors have no orientation. The diode and transistors only
   fit one way (2 legs one side, 1 leg the other).
 
-## Step 2 — stitch the wire vias (all 23 of them)
+## Step 2 — stitch the wire vias (the other 22)
 
 The small filled diamonds on the map are wire vias: a bare wire through the hole,
 soldered on BOTH faces, clipped flush on both sides. They carry signals between
@@ -88,8 +95,13 @@ the faces — every single one matters, and a missed or half-soldered one means 
 LEDs or a dead board.
 
 Thread a straightened wire through, bend it slightly so it stays put, solder one
-face, flip, solder the other, clip both sides flush. Count diamonds when you are
-done: 23.
+face, flip, solder the other, clip both sides flush. V16 is already in from
+step 1 — when you are done, all 23 diamonds must be stitched.
+
+Five of these sit tight against a part outline on the FRONT face: V4 tucks under
+the buzzer's rim, and V8, V10, V12 and V13 touch the base of the LED next to
+them. Keep those five front joints low and flat — a tall blob there and the part
+that lands on it in step 3 will rock instead of seating flush.
 
 ## Step 3 — through-hole parts, from the front
 
@@ -157,7 +169,8 @@ mode a dot orbits lazily while the marker position (the arrow, 12 o'clock) blink
 
 ## Before first power — 60-second check
 
-- [ ] all 23 via diamonds stitched, soldered both sides, clipped
+- [ ] all 23 via diamonds stitched, soldered both sides, clipped — including V16
+  under the chip (step 1)
 - [ ] "-" power pad soldered on BOTH faces
 - [ ] every LED flat/short leg pointing at the ring center
 - [ ] the three 3-leg parts in the right seats (Q1 by the switch, Q2+D1 by the buzzer)

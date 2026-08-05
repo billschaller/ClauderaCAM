@@ -241,8 +241,9 @@ def main() -> int:
         "clock ticks 12/3/6/9 on the board silk agree",
         "U1 filled dot = pin 1; BZ1 double ring = pin 1; ISP pads are "
         "numbered: 1 MISO  2 VCC  3 SCK  4 MOSI  5 RST  6 GND",
-        "order: 1 stencil+reflow the BACK   2 stitch the vias   3 seat THT "
-        "from the FRONT, solder on the back   4 PAD wires last",
+        "order: 1 stitch V16 - it is UNDER U1, unreachable later   2 stencil"
+        "+reflow the BACK   3 stitch the other vias   4 seat THT from the "
+        "FRONT, solder on the back   5 PAD wires last",
     ]
     for i, ln in enumerate(legend):
         d.text((60, y0 - 10 + i * 42), ln, font=FS, fill=(0, 0, 0))
