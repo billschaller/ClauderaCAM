@@ -84,6 +84,20 @@ def parse_laps(text: str) -> list[dict]:
     return laps
 
 
+def via_names() -> list[tuple[str, str, float, float]]:
+    """(name, net, x, y) for every front solder-plan joint, board frame:
+    the MATRIX via ledger + the promoted PAD2-1. The front machine frame IS
+    the board frame (unmirrored), so lap centroids match directly."""
+    txt = (Path(HERE) / "MATRIX.md").read_text()
+    # the ledger's y is the LHT/emission frame (y-down): board_y = 56 - y —
+    # the same two-frames fact every export states (V1 ledger 47.883 is the
+    # board's 8.117 via, verified against the F_Mask flash)
+    out = [(f"V{n}", net, float(x), 56.0 - float(y)) for n, x, y, net in
+           re.findall(r"`V(\d+)\s*\(\s*([\d.]+),\s*([\d.]+)\)\s+(\S+)", txt)]
+    out.append(("PAD2-1", "GND", 10.0, 4.0))
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--side", choices=("back", "front"), default="back")
@@ -92,6 +106,11 @@ def main() -> int:
     ap.add_argument("--radius", type=float, default=20.0)
     ap.add_argument("--box", default=None,
                     help="x0,y0,x1,y1 machine frame; overrides center/radius")
+    ap.add_argument("--only", default=None,
+                    help="front: comma list of names, e.g. V3,V12,PAD2-1 — "
+                         "exactly these, region ignored")
+    ap.add_argument("--skip", default=None,
+                    help="front: names to drop from the region selection")
     a = ap.parse_args()
 
     if not (SCRUB_Z_MIN <= a.depth <= SCRUB_Z_MAX):
@@ -106,6 +125,24 @@ def main() -> int:
         raise SystemExit(f"no {src} — generate the board's programs first")
     laps = parse_laps(src.read_text())
 
+    # front laps get NAMES: the solder plan is 23 ledgered vias + PAD2-1,
+    # and a rescue should say which JOINTS it re-scrubs, not point at a blob
+    if a.side == "front":
+        names = via_names()
+        for L in laps:
+            best = min(names, key=lambda v: (v[2] - L["cx"]) ** 2
+                       + (v[3] - L["cy"]) ** 2)
+            d = ((best[2] - L["cx"]) ** 2 + (best[3] - L["cy"]) ** 2) ** 0.5
+            if d > 0.6:
+                raise SystemExit(
+                    f"front lap at {L['cx']:.2f},{L['cy']:.2f} matches no "
+                    f"ledger joint - nearest {best[0]} is {d:.2f} away; "
+                    f"MATRIX and the program disagree")
+            L["name"], L["net"] = best[0], best[1]
+    else:
+        for i, L in enumerate(laps, 1):
+            L["name"], L["net"] = f"lap{i}", ""
+
     if a.box:
         x0, y0, x1, y1 = (float(v) for v in a.box.split(","))
         sel = [(x0 <= L["cx"] <= x1 and y0 <= L["cy"] <= y1) for L in laps]
@@ -117,6 +154,22 @@ def main() -> int:
         where = f"r<={a.radius:g} of {cx:g},{cy:g}"   # no parens: a nested
         #                                   paren in a G-code comment is
         #                                   unparseable (the styled-tab law)
+    if a.only:
+        want = {w.strip() for w in a.only.split(",")}
+        unknown = want - {L["name"] for L in laps}
+        if unknown:
+            raise SystemExit(f"--only names not in the ledger: "
+                             f"{sorted(unknown)}")
+        sel = [L["name"] in want for L in laps]
+        where = f"only {','.join(sorted(want))}"
+    elif a.skip:
+        drop = {w.strip() for w in a.skip.split(",")}
+        unknown = drop - {L["name"] for L in laps}
+        if unknown:
+            raise SystemExit(f"--skip names not in the ledger: "
+                             f"{sorted(unknown)}")
+        sel = [s and L["name"] not in drop for L, s in zip(laps, sel)]
+        where += f" minus {','.join(sorted(drop))}"
     picked = [L for L, s in zip(laps, sel) if s]
     if not picked:
         raise SystemExit(f"selection {where} picks 0 of {len(laps)} laps")
@@ -174,9 +227,18 @@ def main() -> int:
             for q in pts:
                 d.ellipse([P(*q)[0] - 1, P(*q)[1] - 1,
                            P(*q)[0] + 1, P(*q)[1] + 1], fill=col)
+        if a.side == "front":
+            lx, ly = P(L["cx"], L["cy"])
+            d.text((lx + 6, ly - 14), L["name"], fill=col)
     png = Path(HERE) / f"rescue-scrub-{a.side}.png"
     im.save(png)
 
+    if a.side == "front":
+        print("the front solder plan, joint by joint:")
+        for L, s in sorted(zip(laps, sel),
+                           key=lambda t: (not t[1], t[0]["name"])):
+            print(f"  [{'RESCRUB' if s else 'leave  '}] {L['name']:<8} "
+                  f"{L['net']:<5} at ({L['cx']:6.2f},{L['cy']:6.2f})")
     print(f"{out.name}: {len(picked)}/{len(laps)} laps at Z{a.depth:g} "
           f"({where})")
     print(f"map: {png.name}  — GREEN = will re-scrub, RED = left alone. "
