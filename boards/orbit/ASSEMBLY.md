@@ -114,8 +114,11 @@ Bodies seat FLUSH on the front; solder on the BACK only; clip the leads.
   only fits the correct way round.
 - SW1 (power slide, bottom): fits either way round — both work, the ON direction
   just swaps.
-- BZ1 (buzzer): the "+" printed on its body goes to the hole marked with the
-  DOUBLE RING on the map. Backwards = silence.
+- BZ1 (buzzer): the "+"/"-" marking is on the UNDERSIDE of the buzzer — note
+  which lead is "+" BEFORE you seat it, because the marking is hidden once it
+  sits. The "+" lead goes in the hole marked with the DOUBLE RING on the map
+  (board front-up, arrow at 12 o'clock: the lower of its two holes, the one
+  toward CATCH). Backwards = silence.
 
 ## Step 4 — power wires
 
